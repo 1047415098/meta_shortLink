@@ -6,14 +6,13 @@ import {
   pixelForm,
   pixelPayload,
   buildMetaTrackingURL,
-  expiryDatePayload,
   credentialStatus,
-  expiryDateInput,
   pixelSelectable,
   pixelsForConnection,
   preferredPixelID,
   connectionIDForPixel,
   pixelUnavailableReason,
+  GRAPH_API_VERSION,
 } from "../src/utils/meta.js";
 
 test("Meta account payload contains only Pixel grouping fields", () => {
@@ -22,7 +21,7 @@ test("Meta account payload contains only Pixel grouping fields", () => {
   const form = connectionForm({
     name: "Account",
     account_id: "123",
-    api_version: "v26.0",
+    api_version: "v99.0",
     insights_enabled: true,
     read_token: "must-not-copy",
     report_time: "conversion",
@@ -30,8 +29,10 @@ test("Meta account payload contains only Pixel grouping fields", () => {
   assert.deepEqual(connectionPayload(form, false), {
     name: "Account",
     account_id: "123",
-    api_version: "v26.0",
   });
+  // Client payloads cannot override the system Graph contract.
+  assert.equal("api_version" in form, false);
+  assert.equal(GRAPH_API_VERSION, "v26.0");
   assert.equal("read_token" in form, false);
   assert.equal("insights_enabled" in form, false);
 });
@@ -44,7 +45,9 @@ test("Pixel edits omit immutable IDs and blank credentials", () => {
   assert.equal("connection_id" in payload, false);
   assert.equal("pixel_id" in payload, false);
   assert.equal("capi_token" in payload, false);
-  assert.equal(payload.manual_event_name, "WhatsAppConsultClick");
+  // Event names are fixed by the backend; the form sends only independent rules.
+  assert.equal("manual_event_name" in payload, false);
+  assert.equal(payload.auto_enabled, true);
 });
 test("a new Pixel starts with qualified PageView and consultation delivery enabled", () => {
   // A saved Pixel is ready for the complete landing funnel without requiring
@@ -53,6 +56,7 @@ test("a new Pixel starts with qualified PageView and consultation delivery enabl
   assert.equal(form.enabled, true);
   assert.equal(form.pageview_enabled, true);
   assert.equal(form.manual_enabled, true);
+  assert.equal(form.auto_enabled, true);
 });
 
 test("link Pixel choices stay inside the selected account and reject unusable targets", () => {
@@ -78,10 +82,11 @@ test("link Pixel choices stay inside the selected account and reject unusable ta
   assert.equal(pixelSelectable(pixels[0]), true);
   assert.equal(pixelSelectable(pixels[1]), false);
   assert.equal(pixelSelectable(pixels[3]), false);
-  assert.equal(pixelSelectable(pixels[4]), false);
+  // The removed manual expiry state no longer disables a configured token.
+  assert.equal(pixelSelectable(pixels[4]), true);
   assert.equal(pixelUnavailableReason(pixels[1]), "已停用");
   assert.equal(pixelUnavailableReason(pixels[3]), "未保存 CAPI Token");
-  assert.equal(pixelUnavailableReason(pixels[4]), "凭证已过期");
+  assert.equal(pixelUnavailableReason(pixels[4]), "");
 });
 
 test("a single usable Pixel is selected automatically but multiple targets require a choice", () => {
@@ -130,19 +135,6 @@ test("tracking URL uses explicit Meta IDs and never includes a token", () => {
   );
   assert.equal(value.includes("secret"), false);
 });
-test("manual expiry dates serialize to RFC3339 UTC day-end and null clears", () => {
-  assert.equal(expiryDatePayload("2026-09-30"), "2026-09-30T23:59:59Z");
-  assert.equal(expiryDatePayload(null), null);
-  assert.equal(
-    expiryDatePayload("2026-09-30T08:00:00Z"),
-    "2026-09-30T08:00:00Z",
-  );
-  assert.equal(
-    pixelPayload(pixelForm({ token_expires_at: "2026-09-30" }), true)
-      .token_expires_at,
-    "2026-09-30T23:59:59Z",
-  );
-});
 test("credential status maps validity to clear Chinese labels and colors", () => {
   assert.deepEqual(credentialStatus("valid"), {
     label: "有效",
@@ -157,8 +149,8 @@ test("credential status maps validity to clear Chinese labels and colors", () =>
     type: "danger",
   });
   assert.deepEqual(credentialStatus("expired"), {
-    label: "已过期",
-    type: "warning",
+    label: "未验证",
+    type: "info",
   });
 });
 test("tracking URL rejects embedded credentials without echoing secrets", () => {
@@ -187,12 +179,4 @@ test("missing credential status is presented as unconfigured", () => {
     label: "未配置",
     type: "info",
   });
-});
-test("editing a Pixel expiry keeps its UTC calendar day through reopen and save", () => {
-  assert.equal(expiryDateInput("2026-12-31T23:59:59Z"), "2026-12-31");
-  const pixel = pixelForm({ token_expires_at: "2026-12-31T23:59:59Z" });
-  assert.equal(
-    pixelPayload(pixel, true).token_expires_at,
-    "2026-12-31T23:59:59Z",
-  );
 });

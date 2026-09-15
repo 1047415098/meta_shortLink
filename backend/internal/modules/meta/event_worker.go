@@ -77,9 +77,6 @@ func (s *Service) ProcessEvent(ctx context.Context) (bool, error) {
 		}
 		var token, plain string
 		token, e = s.open(target.Cipher, "capi:"+c.AccountID)
-		if e == nil && target.CredentialStatus == "expired" {
-			e = errors.New("回传凭证已过期，请更换后重试")
-		}
 		if e == nil {
 			plain, e = s.open(cipher, "event:"+id)
 		}

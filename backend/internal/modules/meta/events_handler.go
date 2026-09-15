@@ -42,7 +42,7 @@ func (h *Handler) listEvents(c *gin.Context) {
 	}
 	name := c.Query("event_name")
 	// Automatic redirects are a separate custom event in both tests and event logs.
-	if name != "" && name != "PageView" && name != "Contact" && name != EventName && name != AutoRedirectEventName {
+	if name != "" && name != "PageView" && name != EventName && name != LegacyManualEventName && name != AutoRedirectEventName {
 		runtime.Bad(c, "事件名称无效")
 		return
 	}

@@ -86,11 +86,11 @@ func (s *Service) enqueueVisit(ctx context.Context, tx pgx.Tx, visit string, inp
 	var at time.Time
 	var clicked, automatic, viewed *time.Time
 	var code, class, eventName, adID string
-	var conflict, measurement, manualEnabled, pageEnabled bool
+	var conflict, measurement, manualEnabled, autoEnabled, pageEnabled bool
 	var params map[string]string
 	// Read the frozen visit configuration and both consultation timestamps in the
 	// same transaction that marked the browser action.
-	e := tx.QueryRow(ctx, `SELECT e.meta_connection_id,e.meta_pixel_id,e.occurred_at,e.whatsapp_clicked_at,e.auto_redirected_at,e.pageview_reported_at,l.code,e.classification,e.attribution_conflict,e.parameters,e.ad_id,e.meta_measurement,e.meta_manual_enabled,e.meta_pageview_enabled,e.meta_manual_event_name FROM click_events e JOIN short_links l ON l.id=e.link_id WHERE e.id=$1`, visit).Scan(&connectionID, &pixelID, &at, &clicked, &automatic, &viewed, &code, &class, &conflict, &params, &adID, &measurement, &manualEnabled, &pageEnabled, &eventName)
+	e := tx.QueryRow(ctx, `SELECT e.meta_connection_id,e.meta_pixel_id,e.occurred_at,e.whatsapp_clicked_at,e.auto_redirected_at,e.pageview_reported_at,l.code,e.classification,e.attribution_conflict,e.parameters,e.ad_id,e.meta_measurement,e.meta_manual_enabled,e.meta_auto_enabled,e.meta_pageview_enabled,e.meta_manual_event_name FROM click_events e JOIN short_links l ON l.id=e.link_id WHERE e.id=$1`, visit).Scan(&connectionID, &pixelID, &at, &clicked, &automatic, &viewed, &code, &class, &conflict, &params, &adID, &measurement, &manualEnabled, &autoEnabled, &pageEnabled, &eventName)
 	if e != nil {
 		return e
 	}
@@ -108,7 +108,7 @@ func (s *Service) enqueueVisit(ctx context.Context, tx pgx.Tx, visit string, inp
 		eventAt = viewed
 		suffix = "view"
 	case "auto":
-		if !manualEnabled {
+		if !autoEnabled {
 			return nil
 		}
 		eventName = AutoRedirectEventName
@@ -174,11 +174,11 @@ func (s *Service) QueuePixelTest(ctx context.Context, p Pixel, code, name string
 	if len(code) < 3 || len(code) > 120 || strings.ContainsAny(code, " \r\n\t") {
 		return EventRecord{}, errors.New("请填写事件管理工具中的测试代码")
 	}
-	if name != "PageView" && name != "Contact" && name != EventName && name != AutoRedirectEventName {
+	if name != "PageView" && name != EventName && name != LegacyManualEventName && name != AutoRedirectEventName {
 		return EventRecord{}, errors.New("不支持的测试事件")
 	}
-	if p.Cipher == "" || p.CredentialStatus == "expired" {
-		return EventRecord{}, errors.New("请先保存未过期的回传凭证")
+	if p.Cipher == "" {
+		return EventRecord{}, errors.New("请先保存回传凭证")
 	}
 	id := "test_" + runtime.Token()
 	at := time.Now()

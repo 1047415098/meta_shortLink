@@ -9,10 +9,10 @@ import (
 func TestAvailableLinkCountIgnoresVisitFilters(t *testing.T) {
 	a := setup(t)
 	admin := login(t, a)
-	_, err := a.DB.Exec(context.Background(), `INSERT INTO short_links(code,name,target_url,enabled,expires_at) VALUES
- ('disabled','Disabled','https://wa.me/13365661092',false,NULL),
- ('expired','Expired','https://wa.me/13365661092',true,now()-interval '1 day'),
- ('future','Future','https://wa.me/13365661092',true,now()+interval '1 day')`)
+	// Dashboard availability follows only the same switch used by link management.
+	_, err := a.DB.Exec(context.Background(), `INSERT INTO short_links(code,name,target_url,enabled) VALUES
+ ('disabled','Disabled','https://wa.me/13365661092',false),
+ ('active','Active','https://wa.me/13365661092',true)`)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -1,8 +1,10 @@
 const defaults = {
   name: "",
   account_id: "",
-  api_version: "v26.0",
 };
+// Graph requests use the backend-owned version below; operators cannot change
+// protocol compatibility from an account form.
+export const GRAPH_API_VERSION = "v26.0";
 const pixelDefaults = {
   name: "",
   connection_id: null,
@@ -12,19 +14,11 @@ const pixelDefaults = {
   enabled: true,
   pageview_enabled: true,
   manual_enabled: true,
-  manual_event_name: "WhatsAppConsultClick",
-  token_expires_at: null,
+  // Manual Contact and automatic redirect delivery are controlled separately.
+  auto_enabled: true,
 };
-export function expiryDatePayload(value) {
-  if (!value) return null;
-  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return `${value}T23:59:59Z`;
-  return value;
-}
-export function expiryDateInput(value) {
-  return value ? String(value).slice(0, 10) : null;
-}
 export function pixelForm(row = {}) {
-  const form = {
+  return {
     ...Object.fromEntries(
       Object.entries(pixelDefaults).map(([key, value]) => [
         key,
@@ -34,20 +28,13 @@ export function pixelForm(row = {}) {
     capi_token: "",
     clear_capi_token: false,
   };
-  form.token_expires_at = expiryDateInput(row.token_expires_at);
-  return form;
 }
 export function pixelPayload(form, editing = false) {
   const payload = {};
   for (const [key, fallback] of Object.entries(pixelDefaults)) {
     if (editing && ["connection_id", "pixel_id"].includes(key)) continue;
     const value = form[key] ?? fallback;
-    payload[key] =
-      key === "token_expires_at"
-        ? expiryDatePayload(value)
-        : typeof value === "string"
-          ? value.trim()
-          : value;
+    payload[key] = typeof value === "string" ? value.trim() : value;
   }
   if (form.clear_capi_token) payload.clear_capi_token = true;
   else if (form.capi_token?.trim()) payload.capi_token = form.capi_token.trim();
@@ -56,14 +43,9 @@ export function pixelPayload(form, editing = false) {
 
 // A short link can target only a Pixel that is enabled and has a usable
 // server-side credential; unverified credentials remain selectable for testing.
-export function pixelSelectable(pixel, now = new Date()) {
+export function pixelSelectable(pixel) {
   if (!pixel?.enabled || !pixel?.has_capi_token) return false;
-  if (["invalid", "expired"].includes(pixel.credential_status)) return false;
-  if (
-    pixel.token_expires_at &&
-    new Date(pixel.token_expires_at).getTime() <= now.getTime()
-  )
-    return false;
+  if (pixel.credential_status === "invalid") return false;
   return true;
 }
 
@@ -77,14 +59,9 @@ export function pixelsForConnection(pixels, connectionID) {
 
 // Auto-select only when there is exactly one valid destination; an ambiguous
 // account deliberately requires the operator to choose.
-export function preferredPixelID(
-  pixels,
-  connectionID,
-  currentPixelID = null,
-  now = new Date(),
-) {
+export function preferredPixelID(pixels, connectionID, currentPixelID = null) {
   const eligible = pixelsForConnection(pixels, connectionID).filter((pixel) =>
-    pixelSelectable(pixel, now),
+    pixelSelectable(pixel),
   );
   if (eligible.some((pixel) => pixel.id === currentPixelID))
     return currentPixelID;
@@ -102,15 +79,9 @@ export function connectionIDForPixel(pixels, pixelID) {
 }
 
 // Explain why a visible Pixel cannot receive link events without exposing its token.
-export function pixelUnavailableReason(pixel, now = new Date()) {
+export function pixelUnavailableReason(pixel) {
   if (!pixel?.enabled) return "已停用";
   if (!pixel?.has_capi_token) return "未保存 CAPI Token";
-  if (
-    pixel.credential_status === "expired" ||
-    (pixel.token_expires_at &&
-      new Date(pixel.token_expires_at).getTime() <= now.getTime())
-  )
-    return "凭证已过期";
   if (pixel.credential_status === "invalid") return "凭证无效";
   return "";
 }
@@ -134,12 +105,14 @@ export function buildMetaTrackingURL(base, values) {
   return url.toString();
 }
 export function credentialStatus(status) {
+  // Legacy expiry markers are shown as unverified because the application no
+  // longer maintains a separate operator-entered expiry date.
+  if (status === "expired") status = "unverified";
   return (
     {
       valid: { label: "有效", type: "success" },
       unverified: { label: "未验证", type: "info" },
       invalid: { label: "无效", type: "danger" },
-      expired: { label: "已过期", type: "warning" },
       missing: { label: "未配置", type: "info" },
     }[status] || { label: status || "未配置", type: "info" }
   );

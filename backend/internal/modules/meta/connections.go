@@ -16,10 +16,9 @@ func (s *Service) SaveConnection(ctx context.Context, in ConnectionInput, id int
 	c.ID = id
 	c.Name = strings.TrimSpace(c.Name)
 	c.AccountID = strings.TrimSpace(c.AccountID)
-	c.APIVersion = strings.TrimSpace(c.APIVersion)
-	if c.APIVersion == "" {
-		c.APIVersion = "v26.0"
-	}
+	// Ignore legacy or forged client versions; all accounts use the system
+	// version verified by the current CAPI implementation.
+	c.APIVersion = GraphAPIVersion
 
 	tx, err := s.Core.DB.Begin(ctx)
 	if err != nil {

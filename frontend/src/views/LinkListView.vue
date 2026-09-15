@@ -22,7 +22,7 @@
           ><el-radio-button value="active"
             >使用中 {{ activeLinks }}</el-radio-button
           ><el-radio-button value="inactive"
-            >已停用 / 过期</el-radio-button
+            >已停用</el-radio-button
           ></el-radio-group
         ><el-input
           v-model="linkSearch"
@@ -62,14 +62,9 @@
           min-width="140"
         /><el-table-column label="状态" width="95"
           ><template #default="{ row }"
-            ><el-tag
-              :type="
-                !row.enabled ? 'info' : isExpired(row) ? 'warning' : 'success'
-              "
-              >{{
-                !row.enabled ? "已停用" : isExpired(row) ? "已过期" : "使用中"
-              }}</el-tag
-            ></template
+            ><el-tag :type="row.enabled ? 'success' : 'info'">{{
+              row.enabled ? "使用中" : "已停用"
+            }}</el-tag></template
           ></el-table-column
         ><el-table-column label="操作" min-width="250" fixed="right"
           ><template #default="{ row }"
@@ -141,6 +136,15 @@
               maxlength="800"
               show-word-limit
           /></el-form-item>
+          <!-- Keep editable landing content together before redirect behavior settings. -->
+          <el-form-item label="详细介绍"
+            ><el-input
+              v-model="form.landing_details"
+              type="textarea"
+              :rows="5"
+              maxlength="2000"
+              show-word-limit
+          /></el-form-item>
           <el-form-item label="定时跳转（秒）"
             ><el-input
               v-model.number="form.landing_delay"
@@ -153,14 +157,6 @@
               秒后自动跳转。自动跳转单独记录，不计入咨询按钮点击。</small
             ></el-form-item
           >
-          <el-form-item label="详细介绍"
-            ><el-input
-              v-model="form.landing_details"
-              type="textarea"
-              :rows="5"
-              maxlength="2000"
-              show-word-limit
-          /></el-form-item>
         </template>
         <el-form-item v-if="!editing" label="自定义短码（留空自动生成）"
           ><el-input
@@ -245,18 +241,8 @@
             ><el-input v-model="form.adset_id"
           /></el-form-item>
         </div>
-        <el-form-item label="过期时间（可选，按当前电脑时区）"
-          ><el-date-picker
-            v-model="form.expires_at"
-            type="datetime"
-            value-format="YYYY-MM-DDTHH:mm:ss"
-            placeholder="选择到期日期与时间"
-            clearable
-            style="width: 100%"
-          /><small class="muted"
-            >留空表示长期有效；过期后不再跳转。</small
-          ></el-form-item
-        ><el-form-item label="链接状态"
+        <!-- Link availability is controlled only by this explicit operator switch. -->
+        <el-form-item label="链接状态"
           ><el-switch
             v-model="form.enabled"
             active-text="启用" /></el-form-item></el-form
@@ -339,7 +325,6 @@ const form = reactive({
   adset_id: "",
   ad_id: "",
   channel: "facebook",
-  expires_at: null,
   meta_connection_id: null,
   meta_pixel_id: null,
   attribution_mode: "bound",
@@ -357,13 +342,12 @@ const visibleLinks = computed(() =>
             .includes(linkSearch.value.toLowerCase()),
         )) &&
       (linkStatus.value === "all" ||
-        (linkStatus.value === "active"
-          ? l.enabled && !isExpired(l)
-          : !l.enabled || isExpired(l))),
+        (linkStatus.value === "active" ? l.enabled : !l.enabled)),
   ),
 );
 const activeLinks = computed(
-  () => links.value.filter((l) => l.enabled && !isExpired(l)).length,
+  // Automatic expiry was removed; only the explicit enabled flag controls availability.
+  () => links.value.filter((l) => l.enabled).length,
 );
 function selectMetaPixel(value) {
   form.meta_pixel_id = value || null;
@@ -401,7 +385,6 @@ function openLink(row) {
       adset_id: "",
       ad_id: "",
       channel: "facebook",
-      expires_at: null,
       meta_connection_id: null,
       meta_pixel_id: null,
       attribution_mode: "bound",
@@ -413,7 +396,6 @@ function openLink(row) {
   form.meta_pixel_id = row?.meta_pixel_id || null;
   form.attribution_mode = row?.attribution_mode || "bound";
   form.legacy_campaign_param = Boolean(row?.legacy_campaign_param);
-  form.expires_at = row?.expires_at ? localDateTime(row.expires_at) : "";
   dialog.value = true;
 }
 async function saveLink() {
@@ -435,12 +417,7 @@ async function saveLink() {
   if (!form.meta_pixel_id) form.meta_connection_id = null;
   saving.value = true;
   try {
-    const payload = {
-      ...form,
-      expires_at: form.expires_at
-        ? new Date(form.expires_at).toISOString()
-        : null,
-    };
+    const payload = { ...form };
     delete payload.id;
     delete payload.created_at;
     await persistLink(editing.value, payload);
@@ -461,15 +438,6 @@ async function toggle(row) {
   } catch (e) {
     ElMessage.error(e.message);
   }
-}
-function localDateTime(value) {
-  const d = new Date(value);
-  return new Date(d.getTime() - d.getTimezoneOffset() * 60000)
-    .toISOString()
-    .slice(0, 16);
-}
-function isExpired(row) {
-  return row.expires_at && new Date(row.expires_at).getTime() <= Date.now();
 }
 function shortURL(row) {
   return (

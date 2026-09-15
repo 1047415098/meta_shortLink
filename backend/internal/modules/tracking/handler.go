@@ -36,8 +36,9 @@ func (a *Handler) Redirect(c *gin.Context) {
 		c.String(503, "This link is temporarily unavailable. Please try again later.")
 		return
 	}
-	if !l.Enabled || (l.ExpiresAt != nil && !time.Now().Before(*l.ExpiresAt)) {
-		a.Landing.Unavailable(c, 410, "This link is disabled or has expired.")
+	// Operators explicitly control availability through the enabled flag.
+	if !l.Enabled {
+		a.Landing.Unavailable(c, 410, "This link is disabled.")
 		return
 	}
 	ip := net.ParseIP(c.ClientIP())

@@ -52,11 +52,11 @@
               >PageView {{ row.pageview_enabled ? "开" : "关" }}</el-tag
             >
             <div class="muted">
-              手动：{{ row.manual_enabled ? row.manual_event_name : "关闭" }}
+              手动：{{ row.manual_enabled ? "Contact" : "关闭" }}
             </div>
-            <!-- 自动跳转沿用咨询回传开关，但使用独立事件名，避免与手动点击混算。 -->
+            <!-- 自动跳转使用独立开关和事件名，避免与主动咨询混算。 -->
             <div class="muted">
-              自动：{{ row.manual_enabled ? "WhatsAppAutoRedirect" : "关闭" }}
+              自动：{{ row.auto_enabled ? "WhatsAppAutoRedirect" : "关闭" }}
             </div></template
           ></el-table-column
         ><el-table-column label="凭证" min-width="170"
@@ -112,15 +112,6 @@
             v-model="form.clear_capi_token"
             aria-label="清除令牌"
             active-text="清除令牌" /></el-form-item
-        ><el-form-item label="人工记录到期日"
-          ><el-date-picker
-            v-model="form.token_expires_at"
-            value-format="YYYY-MM-DD"
-            clearable
-          /><small class="muted"
-            >仅用于提醒，不代表 Meta 平台保证。按 UTC 当日 23:59:59
-            保存；清空后保存会移除提醒日期。</small
-          ></el-form-item
         ><el-form-item label="运行规则"
           ><el-switch
             v-model="form.enabled"
@@ -130,12 +121,11 @@
             aria-label="回传 PageView"
             active-text="回传 PageView" /><el-switch
             v-model="form.manual_enabled"
-            aria-label="回传咨询事件"
-            active-text="回传手动与自动咨询" /></el-form-item
-        ><el-form-item label="手动事件名"
-          ><el-select v-model="form.manual_event_name"
-            ><el-option value="WhatsAppConsultClick" /><el-option
-              value="Contact" /></el-select></el-form-item></el-form
+            aria-label="回传手动咨询"
+            active-text="回传手动咨询 Contact" /><el-switch
+            v-model="form.auto_enabled"
+            aria-label="回传自动跳转"
+            active-text="回传自动跳转" /></el-form-item></el-form
       ><template #footer
         ><el-button @click="dialog = false">取消</el-button
         ><el-button type="primary" :loading="saving" @click="save"
@@ -188,15 +178,10 @@ const connections = ref([]),
 const form = reactive(pixelForm()),
   testForm = reactive({
     test_event_code: "",
-    event_name: "WhatsAppConsultClick",
+    event_name: "Contact",
   }),
   // 测试事件列表与后端允许的真实事件名称保持一致。
-  eventNames = [
-    "PageView",
-    "WhatsAppConsultClick",
-    "WhatsAppAutoRedirect",
-    "Contact",
-  ];
+  eventNames = ["PageView", "Contact", "WhatsAppAutoRedirect"];
 async function load() {
   busy.value = true;
   error.value = "";

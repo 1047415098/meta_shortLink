@@ -18,7 +18,7 @@
       class="notice"
       type="info"
       :closable="false"
-      :title="`当前加密密钥：${keyID || '未报告'}。到期日为人工记录，并非平台保证。`"
+      :title="`当前加密密钥：${keyID || '未报告'}。凭证状态以最近一次 Meta 回传结果为准。`"
     />
     <section class="panel" v-loading="busy">
       <el-table :data="items"
@@ -38,12 +38,10 @@
               credentialState(row).label
             }}</el-tag></template
           ></el-table-column
-        ><el-table-column label="到期 / 验证" min-width="210"
+        ><el-table-column label="最近验证" min-width="190"
           ><template #default="{ row }"
-            ><div>{{ timestamp(row.expires_at) }}</div>
-            <div class="muted">
-              验证 {{ timestamp(row.validated_at) }}
-            </div></template
+            ><!-- Token 不维护人工到期日，只显示最近一次实际回传验证时间。 -->
+            <div>{{ timestamp(row.validated_at) }}</div></template
           ></el-table-column
         ><el-table-column
           prop="last_error"

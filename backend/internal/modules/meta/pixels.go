@@ -17,9 +17,9 @@ type Pixel struct {
 	Enabled          bool       `json:"enabled"`
 	PageviewEnabled  bool       `json:"pageview_enabled"`
 	ManualEnabled    bool       `json:"manual_enabled"`
+	AutoEnabled      bool       `json:"auto_enabled"`
 	ManualEventName  string     `json:"manual_event_name"`
 	HasCapiToken     bool       `json:"has_capi_token"`
-	TokenExpiresAt   *time.Time `json:"token_expires_at"`
 	CredentialStatus string     `json:"credential_status"`
 	ValidatedAt      *time.Time `json:"validated_at"`
 	LastError        string     `json:"last_error"`
@@ -32,21 +32,19 @@ type PixelInput struct {
 	ClearCapiToken bool   `json:"clear_capi_token"`
 }
 
-const pixelColumns = "id,connection_id,name,pixel_id,enabled,pageview_enabled,manual_enabled,manual_event_name,capi_token_cipher,token_expires_at,credential_status,validated_at,last_error,updated_at"
+const pixelColumns = "id,connection_id,name,pixel_id,enabled,pageview_enabled,manual_enabled,auto_enabled,manual_event_name,capi_token_cipher,credential_status,validated_at,last_error,updated_at"
 
 func scanPixel(row pgx.Row) (p Pixel, e error) {
-	e = row.Scan(&p.ID, &p.ConnectionID, &p.Name, &p.PixelID, &p.Enabled, &p.PageviewEnabled, &p.ManualEnabled, &p.ManualEventName, &p.Cipher, &p.TokenExpiresAt, &p.CredentialStatus, &p.ValidatedAt, &p.LastError, &p.UpdatedAt)
+	e = row.Scan(&p.ID, &p.ConnectionID, &p.Name, &p.PixelID, &p.Enabled, &p.PageviewEnabled, &p.ManualEnabled, &p.AutoEnabled, &p.ManualEventName, &p.Cipher, &p.CredentialStatus, &p.ValidatedAt, &p.LastError, &p.UpdatedAt)
 	p.HasCapiToken = p.Cipher != ""
-	p.CredentialStatus = credentialStatus(p.HasCapiToken, p.CredentialStatus, p.TokenExpiresAt)
+	p.CredentialStatus = credentialStatus(p.HasCapiToken, p.CredentialStatus)
 	return
 }
-func credentialStatus(configured bool, status string, expires *time.Time) string {
+func credentialStatus(configured bool, status string) string {
 	if !configured {
 		return "missing"
 	}
-	if expires != nil && !expires.After(time.Now()) {
-		return "expired"
-	}
+	// Legacy expiry markers no longer block a non-expiring CAPI credential.
 	if status == "" || status == "missing" || status == "expired" {
 		return "unverified"
 	}
@@ -75,6 +73,8 @@ func (s *Service) SavePixel(ctx context.Context, in PixelInput, id int64) (Pixel
 	p := in.Pixel
 	p.ID = id
 	p.Name = strings.TrimSpace(p.Name)
+	// Manual consultations always use Meta's standard Contact event.
+	p.ManualEventName = EventName
 	tx, e := s.Core.DB.Begin(ctx)
 	if e != nil {
 		return p, e
@@ -106,9 +106,6 @@ func (s *Service) SavePixel(ctx context.Context, in PixelInput, id int64) (Pixel
 	if p.Name == "" || len(p.Name) > 120 || !idPattern.MatchString(p.PixelID) {
 		return p, errors.New("请填写名称和有效 Pixel 数字编号")
 	}
-	if p.ManualEventName != "WhatsAppConsultClick" && p.ManualEventName != "Contact" {
-		return p, errors.New("手动咨询事件只能是 WhatsAppConsultClick 或 Contact")
-	}
 	if len(in.CapiToken) > 8192 || strings.ContainsAny(in.CapiToken, " \r\n\t") {
 		return p, errors.New("回传凭证格式无效")
 	}
@@ -127,14 +124,14 @@ func (s *Service) SavePixel(ctx context.Context, in PixelInput, id int64) (Pixel
 		p.CredentialStatus = "unverified"
 		p.LastError = ""
 	}
-	if p.Enabled && (p.Cipher == "" || credentialStatus(true, p.CredentialStatus, p.TokenExpiresAt) == "expired") {
-		return p, errors.New("启用 Pixel 前需要未过期的回传凭证")
+	if p.Enabled && p.Cipher == "" {
+		return p, errors.New("启用 Pixel 前需要回传凭证")
 	}
-	args := []any{p.ConnectionID, p.Name, p.PixelID, p.Enabled, p.PageviewEnabled, p.ManualEnabled, p.ManualEventName, p.Cipher, p.TokenExpiresAt, p.CredentialStatus, p.ValidatedAt, p.LastError}
-	q := "INSERT INTO meta_pixels(connection_id,name,pixel_id,enabled,pageview_enabled,manual_enabled,manual_event_name,capi_token_cipher,token_expires_at,credential_status,validated_at,last_error) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING " + pixelColumns
+	args := []any{p.ConnectionID, p.Name, p.PixelID, p.Enabled, p.PageviewEnabled, p.ManualEnabled, p.AutoEnabled, p.ManualEventName, p.Cipher, p.CredentialStatus, p.ValidatedAt, p.LastError}
+	q := "INSERT INTO meta_pixels(connection_id,name,pixel_id,enabled,pageview_enabled,manual_enabled,auto_enabled,manual_event_name,capi_token_cipher,credential_status,validated_at,last_error) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING " + pixelColumns
 	if id > 0 {
 		args = append(args, id)
-		q = "UPDATE meta_pixels SET connection_id=$1,name=$2,pixel_id=$3,enabled=$4,pageview_enabled=$5,manual_enabled=$6,manual_event_name=$7,capi_token_cipher=$8,token_expires_at=$9,credential_status=$10,validated_at=$11,last_error=$12,updated_at=now() WHERE id=$13 RETURNING " + pixelColumns
+		q = "UPDATE meta_pixels SET connection_id=$1,name=$2,pixel_id=$3,enabled=$4,pageview_enabled=$5,manual_enabled=$6,auto_enabled=$7,manual_event_name=$8,capi_token_cipher=$9,credential_status=$10,validated_at=$11,last_error=$12,updated_at=now() WHERE id=$13 RETURNING " + pixelColumns
 	}
 	p, e = scanPixel(tx.QueryRow(ctx, q, args...))
 	if e != nil {

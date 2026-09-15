@@ -36,7 +36,7 @@ func (h *Handler) savePixel(c *gin.Context) {
 	defer cancel()
 	// API clients that omit optional switches receive the complete default
 	// landing funnel: one qualified PageView plus consultation events.
-	in := PixelInput{Pixel: Pixel{PageviewEnabled: true, ManualEnabled: true, ManualEventName: EventName}}
+	in := PixelInput{Pixel: Pixel{PageviewEnabled: true, ManualEnabled: true, AutoEnabled: true, ManualEventName: EventName}}
 	var id int64
 	if c.Request.Method == "PATCH" {
 		var ok bool

@@ -61,12 +61,13 @@ func TestMetaConnectionsProtectCredentials(t *testing.T) {
 	admin := login(t, a)
 	// Deprecated Insights and account-level CAPI fields may still arrive from an
 	// older browser, but the reduced account API must never persist or return them.
-	w := call(a, "POST", "/api/v1/meta/connections", `{"name":"Company","account_id":"123456","pixel_id":"654321","api_version":"v26.0","report_time":"impression","backfill_days":28,"capi_enabled":true,"insights_enabled":true,"capi_token":"sample-capi-token-not-real","read_token":"sample-read-token-not-real"}`, admin)
+	w := call(a, "POST", "/api/v1/meta/connections", `{"name":"Company","account_id":"123456","pixel_id":"654321","api_version":"https://evil.invalid","report_time":"impression","backfill_days":28,"capi_enabled":true,"insights_enabled":true,"capi_token":"sample-capi-token-not-real","read_token":"sample-read-token-not-real"}`, admin)
 	if w.Code != 200 {
 		t.Fatalf("create %d %s", w.Code, w.Body.String())
 	}
 	var c struct {
-		ID int64 `json:"id"`
+		ID         int64  `json:"id"`
+		APIVersion string `json:"api_version"`
 	}
 	if e := json.Unmarshal(w.Body.Bytes(), &c); e != nil {
 		t.Fatal(e)
@@ -76,7 +77,9 @@ func TestMetaConnectionsProtectCredentials(t *testing.T) {
 			t.Fatalf("deprecated account field %s returned: %s", deprecated, w.Body.String())
 		}
 	}
-	if c.ID == 0 || strings.Contains(w.Body.String(), "sample-") {
+	// The API returns the server-owned version even when an older or forged
+	// browser submits a different value.
+	if c.ID == 0 || c.APIVersion != "v26.0" || strings.Contains(w.Body.String(), "sample-") {
 		t.Fatalf("credential response: %s", w.Body.String())
 	}
 	var capiStored, readStored, legacyPixel string
@@ -282,7 +285,8 @@ func TestMetaRealAdClickQueuesDistinctConsultationEvents(t *testing.T) {
 	}
 	var manual, automatic, encrypted int
 	if e := a.DB.QueryRow(context.Background(), `SELECT
-		count(*) FILTER(WHERE id LIKE '%_manual' AND event_name='WhatsAppConsultClick'),
+		-- Deliberate clicks are reported with Meta's standard Contact event.
+		count(*) FILTER(WHERE id LIKE '%_manual' AND event_name='Contact'),
 		count(*) FILTER(WHERE id LIKE '%_auto' AND event_name='WhatsAppAutoRedirect'),
 		count(*) FILTER(WHERE payload_cipher<>'' AND payload_cipher NOT LIKE '%192.0.2.7%')
 		FROM meta_events WHERE is_test=false`).Scan(&manual, &automatic, &encrypted); e != nil {
@@ -370,7 +374,6 @@ func TestMetaConfigRejectsUnsafeInput(t *testing.T) {
 	admin := login(t, a)
 	for _, body := range []string{
 		`{"name":"Bad","account_id":"../123"}`,
-		`{"name":"Bad","account_id":"123456","api_version":"https://evil.invalid"}`,
 		`{"name":"","account_id":"123456","api_version":"v26.0"}`,
 	} {
 		w := call(a, "POST", "/api/v1/meta/connections", body, admin)

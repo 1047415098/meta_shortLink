@@ -34,7 +34,7 @@ func (h *Handler) credentials(c *gin.Context) {
 	for _, p := range pixels {
 		a := names[p.ConnectionID]
 		// Only Pixel CAPI credentials are part of the active product surface.
-		items = append(items, gin.H{"kind": "capi", "connection_id": p.ConnectionID, "pixel_record_id": p.ID, "name": p.Name, "account_id": a.AccountID, "pixel_id": p.PixelID, "configured": p.HasCapiToken, "status": p.CredentialStatus, "expires_at": p.TokenExpiresAt, "validated_at": p.ValidatedAt, "last_error": p.LastError})
+		items = append(items, gin.H{"kind": "capi", "connection_id": p.ConnectionID, "pixel_record_id": p.ID, "name": p.Name, "account_id": a.AccountID, "pixel_id": p.PixelID, "configured": p.HasCapiToken, "status": p.CredentialStatus, "validated_at": p.ValidatedAt, "last_error": p.LastError})
 	}
 	c.JSON(200, gin.H{"items": items, "encryption_key_id": h.Service.encryptionKeyID()})
 }

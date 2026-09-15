@@ -284,16 +284,17 @@ func TestSpendImportAndExport(t *testing.T) {
 	}
 }
 
-func TestExpiredLink(t *testing.T) {
+func TestDisabledLink(t *testing.T) {
 	a := setup(t)
 	admin := login(t, a)
-	w := call(a, "POST", "/api/v1/links", `{"code":"expired","name":"Expired","target_url":"https://wa.me/13365661092","enabled":true,"expires_at":"2020-01-01T00:00:00Z"}`, admin)
+	// Availability now follows only the explicit enabled switch.
+	w := call(a, "POST", "/api/v1/links", `{"code":"disabled","name":"Disabled","target_url":"https://wa.me/13365661092","enabled":false}`, admin)
 	if w.Code != 200 {
 		t.Fatal(w.Body.String())
 	}
-	w = call(a, "GET", "/expired", "", nil)
+	w = call(a, "GET", "/disabled", "", nil)
 	if w.Code != 410 {
-		t.Fatal("expired link must return 410")
+		t.Fatal("disabled link must return 410")
 	}
 }
 

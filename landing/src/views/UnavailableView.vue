@@ -1,7 +1,7 @@
 <template>
   <main class="unavailable">
     <h1>Link unavailable</h1>
-    <p>This link may have expired or is no longer available.</p>
+    <p>This link is disabled or is no longer available.</p>
   </main>
 </template>
 

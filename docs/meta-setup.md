@@ -4,7 +4,7 @@
 
 后台入口：
 
-- `/admin/meta/connections`：管理广告账户分组和 Graph API 版本。
+- `/admin/meta/connections`：管理广告账户分组；Graph API 版本由程序统一维护。
 - `/admin/meta/pixels`：在账户下管理多个 Pixel、CAPI Token、事件规则和测试事件。
 - `/admin/meta/credentials`：查看 Pixel 凭证状态、加密密钥轮换和审计记录。
 - `/admin/meta/source`：生成广告网址参数并诊断来源。
@@ -12,19 +12,18 @@
 
 ## 1. 配置账户和 Pixel
 
-先在「Meta 连接」添加账户名称、广告账户 ID 和 Graph API 版本。账户 ID 只填写数字，不带 `act_`。一个账户可以添加多个 Pixel。
+先在「Meta 连接」添加账户名称和广告账户 ID。账户 ID 只填写数字，不带 `act_`。一个账户可以添加多个 Pixel。
 
 然后在「Meta Pixel」添加：
 
 - 所属账户。
 - Pixel 名称和 Pixel ID。
 - CAPI Token。
-- Token 到期提醒日期（可选）。
-- PageView、手动咨询和自动跳转事件规则。
+- PageView、手动咨询 `Contact` 和自动跳转 `WhatsAppAutoRedirect` 的独立开关。
 
 短链接只需要选择具体 Pixel，系统自动保存该 Pixel 所属账户。多个短链接可以共用一个 Pixel，同一短链接也可以通过每次访问携带的广告参数区分不同广告。
 
-Token 仅在服务端加密保存，后台不会返回明文。Pixel ID 和所属账户保存后不可更改，需要调整时请新建 Pixel，避免改写历史事件归属。
+Token 仅在服务端加密保存，后台不会返回明文，也不维护人工到期日。Pixel ID 和所属账户保存后不可更改，需要调整时请新建 Pixel，避免改写历史事件归属。凭证状态以实际回传结果为准。
 
 ## 2. 验证 CAPI
 
@@ -68,8 +67,8 @@ Meta 在真实广告点击时通常追加 `fbclid`。系统将同时满足以下
 | 站内行为 | 站内统计 | CAPI 事件 |
 | --- | --- | --- |
 | 真实广告落地页访问 | 计入真实广告访问与 Cookie 去重访客 | Pixel 开启 PageView 时回传 `PageView` |
-| 用户手动点击咨询 | 同一次访问最多计一次 | Pixel 开启咨询时回传配置的手动事件名，默认 `WhatsAppConsultClick` |
-| 倒计时自动跳转 | 同一次访问最多计一次并单列 | Pixel 开启咨询时回传 `WhatsAppAutoRedirect` |
+| 用户手动点击咨询 | 同一次访问最多计一次 | Pixel 开启手动咨询时回传标准事件 `Contact` |
+| 倒计时自动跳转 | 同一次访问最多计一次并单列 | Pixel 开启自动跳转时回传 `WhatsAppAutoRedirect` |
 | 非真实广告流量 | 仍可进入普通站内统计 | 记录为跳过，不发送到 Meta |
 
 CAPI 事件异步发送，不阻塞用户跳转。相同访问和动作使用稳定事件 ID，浏览器重复提交不会重复创建业务事件；网络失败自动重试并保持原事件时间和事件 ID。

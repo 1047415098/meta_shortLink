@@ -12,10 +12,18 @@ import (
 	"whatsapp-analytics/internal/platform/runtime"
 )
 
-const EventName = "WhatsAppConsultClick"
+// EventName is fixed to Meta's standard Contact event for deliberate user enquiries.
+const EventName = "Contact"
+
+// LegacyManualEventName remains readable in historical event logs and test filters.
+const LegacyManualEventName = "WhatsAppConsultClick"
 
 // AutoRedirectEventName keeps timer-driven consultations separate from deliberate clicks in Meta.
 const AutoRedirectEventName = "WhatsAppAutoRedirect"
+
+// GraphAPIVersion is application-owned so operators cannot move individual
+// accounts onto an untested Graph contract.
+const GraphAPIVersion = "v26.0"
 
 var idPattern = regexp.MustCompile(`^[0-9]{1,32}$`)
 var versionPattern = regexp.MustCompile(`^v[0-9]{2,3}\.0$`)
@@ -43,9 +51,6 @@ func validateConnection(c Connection) error {
 	}
 	if !idPattern.MatchString(c.AccountID) {
 		return fmt.Errorf("广告账户 ID 必须为数字，不包含 act_ 前缀")
-	}
-	if !versionPattern.MatchString(c.APIVersion) {
-		return fmt.Errorf("API 版本格式应为 v26.0")
 	}
 	return nil
 }

@@ -99,8 +99,10 @@
           />
         </el-form-item>
         <el-form-item label="Graph API 版本" required>
-          <el-input v-model="form.api_version" placeholder="v26.0" />
-          <small>CAPI 请求会使用此版本；账户 ID 保存后不可更换。</small>
+          <!-- The Graph version is application-owned so every account uses the
+          same tested CAPI contract. -->
+          <el-input :model-value="GRAPH_API_VERSION" disabled />
+          <small>由系统统一维护；账户 ID 保存后不可更换。</small>
         </el-form-item>
         <el-alert
           v-if="formError"
@@ -127,7 +129,11 @@ import { Plus, Refresh } from "@element-plus/icons-vue";
 
 import PageHeader from "../components/PageHeader.vue";
 import { listConnections, saveConnection } from "../api/meta";
-import { connectionForm, connectionPayload } from "../utils/meta";
+import {
+  GRAPH_API_VERSION,
+  connectionForm,
+  connectionPayload,
+} from "../utils/meta";
 
 const router = useRouter();
 const connections = ref([]);
@@ -171,10 +177,6 @@ async function save() {
   formError.value = "";
   if (!form.name.trim() || !/^\d{1,32}$/.test(form.account_id.trim())) {
     formError.value = "请填写账户名称和纯数字广告账户 ID";
-    return;
-  }
-  if (!/^v\d{2,3}\.0$/.test(form.api_version.trim())) {
-    formError.value = "Graph API 版本格式应为 v26.0";
     return;
   }
   saving.value = true;

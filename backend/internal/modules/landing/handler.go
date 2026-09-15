@@ -49,8 +49,9 @@ func (a *Handler) contact(c *gin.Context, view bool) {
 		landingError(c, err)
 		return
 	}
-	if !l.Enabled || l.Mode != "landing" || (l.ExpiresAt != nil && !time.Now().Before(*l.ExpiresAt)) {
-		c.String(410, "This enquiry link has expired or changed. Please reopen the original link.")
+	// A saved link remains available until an operator explicitly disables it.
+	if !l.Enabled || l.Mode != "landing" {
+		c.String(410, "This enquiry link is disabled or changed. Please reopen the original link.")
 		return
 	}
 	trigger := c.PostForm("trigger")
