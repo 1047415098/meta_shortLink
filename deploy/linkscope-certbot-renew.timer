@@ -1,0 +1,11 @@
+# 每日检查两次；Persistent 在服务器关机错过计划时补执行。
+[Unit]
+Description=Check meta.lu81.com certificate twice daily
+
+[Timer]
+OnCalendar=*-*-* 00,12:00:00
+Persistent=true
+Unit=linkscope-certbot-renew.service
+
+[Install]
+WantedBy=timers.target

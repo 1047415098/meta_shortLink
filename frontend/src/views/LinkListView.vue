@@ -1,0 +1,640 @@
+<template>
+  <section class="links-page">
+    <PageHeader
+      title="短链接管理"
+      context="链接与渠道管理"
+      description="将每一条广告连接到 WhatsApp，让来源清晰可追踪。"
+      ><el-button :icon="Refresh" :loading="busy" @click="load">刷新</el-button
+      ><el-button type="primary" :icon="Plus" @click="openLink()"
+        >创建短链接</el-button
+      ></PageHeader
+    ><el-alert v-if="error" :title="error" type="error" :closable="false" />
+    <section class="panel" v-loading="busy">
+      <div class="panel-heading">
+        <h2>
+          全部链接 <span class="count">{{ links.length }}</span>
+        </h2>
+        <span class="muted">每条广告建议分配一个独立链接</span>
+      </div>
+      <div class="table-toolbar">
+        <el-radio-group v-model="linkStatus"
+          ><el-radio-button value="all">全部 {{ links.length }}</el-radio-button
+          ><el-radio-button value="active"
+            >使用中 {{ activeLinks }}</el-radio-button
+          ><el-radio-button value="inactive"
+            >已停用 / 过期</el-radio-button
+          ></el-radio-group
+        ><el-input
+          v-model="linkSearch"
+          clearable
+          :prefix-icon="Search"
+          placeholder="搜索名称、短码或广告 ID"
+          aria-label="搜索短链接"
+          class="table-search"
+        />
+      </div>
+      <el-table :data="visibleLinks" empty-text="当前筛选条件下没有短链接"
+        ><el-table-column label="名称 / 短链接" min-width="240"
+          ><template #default="{ row }"
+            ><div class="link-name">
+              <span class="link-avatar"
+                ><el-icon><Link /></el-icon
+              ></span>
+              <div>
+                <b>{{ row.name }}</b>
+                <div class="url">{{ shortURL(row) }}</div>
+              </div>
+            </div></template
+          ></el-table-column
+        ><el-table-column label="访问模式" width="120"
+          ><template #default="{ row }"
+            ><el-tag :type="row.mode === 'landing' ? 'success' : 'info'">{{
+              row.mode === "landing" ? "网站落地页" : "直接跳转"
+            }}</el-tag></template
+          ></el-table-column
+        ><el-table-column
+          prop="channel"
+          label="渠道"
+          width="110"
+        /><el-table-column
+          prop="ad_id"
+          label="广告 ID"
+          min-width="140"
+        /><el-table-column label="状态" width="95"
+          ><template #default="{ row }"
+            ><el-tag
+              :type="
+                !row.enabled ? 'info' : isExpired(row) ? 'warning' : 'success'
+              "
+              >{{
+                !row.enabled ? "已停用" : isExpired(row) ? "已过期" : "使用中"
+              }}</el-tag
+            ></template
+          ></el-table-column
+        ><el-table-column label="操作" min-width="250" fixed="right"
+          ><template #default="{ row }"
+            ><el-button link type="primary" @click="copy(row)">复制</el-button
+            ><el-button link type="primary" @click="detail(row)">统计</el-button
+            ><el-button link @click="openLink(row)">编辑</el-button
+            ><el-button
+              link
+              :type="row.enabled ? 'danger' : 'success'"
+              @click="toggle(row)"
+              >{{ row.enabled ? "停用" : "启用" }}</el-button
+            ></template
+          ></el-table-column
+        ></el-table
+      >
+    </section>
+    <el-dialog
+      v-model="dialog"
+      :title="editing ? '编辑短链接' : '创建短链接'"
+      width="580px"
+      class="link-dialog"
+      :close-on-click-modal="false"
+      ><div class="dialog-intro">
+        <el-icon><Link /></el-icon
+        ><span>选择直接跳转或网站落地页，分别统计访问与咨询按钮点击。</span>
+      </div>
+      <el-form label-position="top" @submit.prevent="saveLink"
+        ><el-form-item label="链接名称" required
+          ><el-input
+            v-model="form.name"
+            maxlength="120"
+            placeholder="例如：秋季活动 · 广告 A" /></el-form-item
+        ><el-form-item label="WhatsApp 目标地址" required
+          ><el-input
+            v-model="form.target_url"
+            placeholder="https://wa.me/13365661092" /></el-form-item
+        ><el-form-item label="访问模式">
+          <el-radio-group v-model="form.mode"
+            ><el-radio-button value="landing">网站落地页</el-radio-button
+            ><el-radio-button value="redirect"
+              >直接跳转</el-radio-button
+            ></el-radio-group
+          >
+        </el-form-item>
+        <template v-if="form.mode === 'landing'">
+          <el-alert
+            title="访客先浏览产品介绍，主动点击按钮后前往 WhatsApp。"
+            type="info"
+            :closable="false"
+            style="margin-bottom: 16px"
+          />
+          <el-form-item label="品牌 / 展示名称" required
+            ><el-input
+              v-model="form.landing_brand"
+              maxlength="40"
+              show-word-limit
+          /></el-form-item>
+          <el-form-item label="页面标题" required
+            ><el-input
+              v-model="form.landing_title"
+              maxlength="80"
+              show-word-limit
+          /></el-form-item>
+          <el-form-item label="产品简介" required
+            ><el-input
+              v-model="form.landing_description"
+              type="textarea"
+              :rows="3"
+              maxlength="800"
+              show-word-limit
+          /></el-form-item>
+          <el-form-item label="定时跳转（秒）"
+            ><el-input
+              v-model.number="form.landing_delay"
+              type="number"
+              min="0"
+              max="300"
+              step="1"
+            /><small class="muted"
+              >0 表示关闭；1–300
+              秒后自动跳转。自动跳转单独记录，不计入咨询按钮点击。</small
+            ></el-form-item
+          >
+          <el-form-item label="详细介绍"
+            ><el-input
+              v-model="form.landing_details"
+              type="textarea"
+              :rows="5"
+              maxlength="2000"
+              show-word-limit
+          /></el-form-item>
+        </template>
+        <el-form-item v-if="!editing" label="自定义短码（留空自动生成）"
+          ><el-input
+            v-model="form.code"
+            maxlength="32"
+            placeholder="仅字母、数字、短横线或下划线" /></el-form-item
+        ><el-divider content-position="left">广告归因</el-divider>
+        <!-- 运营人员只选择最终回传 Pixel，所属账户由 Pixel 关系自动确定。 -->
+        <el-form-item label="Meta Pixel（可选）">
+          <el-select
+            v-model="form.meta_pixel_id"
+            clearable
+            placeholder="选择回传 Pixel"
+            style="width: 100%"
+            @change="selectMetaPixel"
+          >
+            <el-option
+              v-for="pixel in metaPixels"
+              :key="pixel.id"
+              :value="pixel.id"
+              :label="pixelOptionLabel(pixel)"
+              :disabled="!pixelSelectable(pixel)"
+            />
+          </el-select>
+          <small class="muted"
+            >选择 Pixel 后自动绑定所属账户；CAPI Token 仅在 Pixel
+            页面维护。</small
+          >
+          <small v-if="selectedMetaConnection" class="muted"
+            >所属账户：{{ selectedMetaConnection.name }} ·
+            {{ selectedMetaConnection.account_id }}</small
+          >
+          <el-button
+            link
+            type="primary"
+            @click="router.push({ name: 'meta-pixels' })"
+            >管理 Meta Pixel</el-button
+          >
+          <el-alert
+            v-if="metaError"
+            :title="metaError"
+            type="error"
+            :closable="false"
+          />
+        </el-form-item>
+        <el-alert
+          class="meta-binding-notice"
+          :title="metaBindingNotice.title"
+          :type="metaBindingNotice.type"
+          :closable="false"
+          show-icon />
+        <el-form-item label="广告归因方式">
+          <el-select v-model="form.attribution_mode" style="width: 100%">
+            <el-option value="bound" label="固定绑定：使用下方填写的广告 ID" />
+            <el-option
+              value="dynamic"
+              label="动态归因：读取访问 URL 的广告 ID（新 Meta 链接推荐）"
+            />
+          </el-select>
+          <small class="muted"
+            >已有链接保留固定绑定。动态模式适合多个广告共用短链接，投放 URL
+            需携带 campaign_id、adset_id、ad_id。</small
+          >
+        </el-form-item>
+        <el-form-item label="兼容旧版广告系列参数">
+          <el-switch
+            v-model="form.legacy_campaign_param"
+            active-text="将 utm_content 作为广告系列 ID"
+          />
+          <small class="muted"
+            >仅当现有投放确实将广告系列 ID 放在 utm_content 时开启。</small
+          >
+        </el-form-item>
+        <div class="form-grid">
+          <el-form-item label="渠道"
+            ><el-input v-model="form.channel" /></el-form-item
+          ><el-form-item label="广告 ID"
+            ><el-input v-model="form.ad_id" /></el-form-item
+          ><el-form-item label="广告系列 ID"
+            ><el-input v-model="form.campaign_id" /></el-form-item
+          ><el-form-item label="广告组 ID"
+            ><el-input v-model="form.adset_id"
+          /></el-form-item>
+        </div>
+        <el-form-item label="过期时间（可选，按当前电脑时区）"
+          ><el-date-picker
+            v-model="form.expires_at"
+            type="datetime"
+            value-format="YYYY-MM-DDTHH:mm:ss"
+            placeholder="选择到期日期与时间"
+            clearable
+            style="width: 100%"
+          /><small class="muted"
+            >留空表示长期有效；过期后不再跳转。</small
+          ></el-form-item
+        ><el-form-item label="链接状态"
+          ><el-switch
+            v-model="form.enabled"
+            active-text="启用" /></el-form-item></el-form
+      ><template #footer
+        ><el-button @click="dialog = false">取消</el-button
+        ><el-button type="primary" :loading="saving" @click="saveLink"
+          >保存链接</el-button
+        ></template
+      ></el-dialog
+    >
+  </section>
+</template>
+
+<script setup>
+import { ref, reactive, computed, onMounted } from "vue";
+import { useRouter } from "vue-router";
+import { ElMessage } from "element-plus/es/components/message/index";
+import PageHeader from "../components/PageHeader.vue";
+import { Link, Refresh, Plus, Search } from "@element-plus/icons-vue";
+
+import { settings } from "../stores/settings";
+import { validateLink } from "../utils";
+import { listLinks, saveLink as persistLink, updateLink } from "../api/links";
+import { listConnections, listPixels } from "../api/meta";
+import {
+  pixelSelectable,
+  connectionIDForPixel,
+  pixelUnavailableReason,
+} from "../utils/meta";
+const router = useRouter();
+const links = ref([]);
+const metaConnections = ref([]);
+const metaPixels = ref([]);
+const selectedMetaConnection = computed(() =>
+  metaConnections.value.find(
+    (connection) => connection.id === form.meta_connection_id,
+  ),
+);
+const selectedMetaPixel = computed(() =>
+  metaPixels.value.find(
+    (pixel) => Number(pixel.id) === Number(form.meta_pixel_id),
+  ),
+);
+// Keep the operator informed whether the saved link can actually create CAPI events.
+const metaBindingNotice = computed(() => {
+  if (!form.meta_pixel_id)
+    return {
+      type: "warning",
+      title: "未选择 Meta Pixel：访问与咨询仍会统计，但不会回传 Meta。",
+    };
+  if (!selectedMetaConnection.value)
+    return { type: "error", title: "当前 Pixel 的所属账户不存在。" };
+  if (!pixelSelectable(selectedMetaPixel.value))
+    return { type: "error", title: "当前 Pixel 不可用于 CAPI 回传。" };
+  return {
+    type: "success",
+    title: `事件将回传至 ${selectedMetaConnection.value.name} 的 Pixel ${selectedMetaPixel.value.pixel_id}。`,
+  };
+});
+const metaError = ref("");
+const busy = ref(false);
+const saving = ref(false);
+const error = ref("");
+const dialog = ref(false);
+const editing = ref(null);
+const form = reactive({
+  name: "",
+  code: "",
+  target_url: "https://wa.me/13365661092",
+  mode: "landing",
+  landing_delay: 3,
+  landing_brand: "PEPLYRA Research",
+  landing_title: "Research materials. Clearer possibilities.",
+  landing_description:
+    "Explore selected peptide materials and discuss specifications, batch documentation and availability for your laboratory research.",
+  landing_details:
+    "Product specifications\nAsk about the material, format and available pack sizes.\n\nBatch documentation\nRequest the relevant COA and analytical information.\n\nAvailability and delivery\nShare the product name and destination to discuss current options.",
+  enabled: true,
+  campaign_id: "",
+  adset_id: "",
+  ad_id: "",
+  channel: "facebook",
+  expires_at: null,
+  meta_connection_id: null,
+  meta_pixel_id: null,
+  attribution_mode: "bound",
+  legacy_campaign_param: false,
+});
+const linkSearch = ref("");
+const linkStatus = ref("all");
+const visibleLinks = computed(() =>
+  links.value.filter(
+    (l) =>
+      (!linkSearch.value ||
+        [l.name, l.code, l.ad_id].some((v) =>
+          String(v || "")
+            .toLowerCase()
+            .includes(linkSearch.value.toLowerCase()),
+        )) &&
+      (linkStatus.value === "all" ||
+        (linkStatus.value === "active"
+          ? l.enabled && !isExpired(l)
+          : !l.enabled || isExpired(l))),
+  ),
+);
+const activeLinks = computed(
+  () => links.value.filter((l) => l.enabled && !isExpired(l)).length,
+);
+function selectMetaPixel(value) {
+  form.meta_pixel_id = value || null;
+  // Persist the owning account automatically so the backend's composite
+  // relationship remains valid without making the operator choose twice.
+  form.meta_connection_id = connectionIDForPixel(metaPixels.value, value);
+  if (!editing.value && value) form.attribution_mode = "dynamic";
+}
+// Disabled options remain visible so administrators can understand what to fix.
+function pixelOptionLabel(pixel) {
+  const reason = pixelUnavailableReason(pixel);
+  const account = metaConnections.value.find(
+    (connection) => Number(connection.id) === Number(pixel.connection_id),
+  );
+  return `${account?.name || "未知账户"} · ${pixel.name} · ${pixel.pixel_id}${reason ? ` · ${reason}` : ""}`;
+}
+function openLink(row) {
+  editing.value = row?.id || null;
+  Object.assign(
+    form,
+    {
+      name: "",
+      code: "",
+      target_url: "https://wa.me/13365661092",
+      mode: "landing",
+      landing_delay: 3,
+      landing_brand: "PEPLYRA Research",
+      landing_title: "Research materials. Clearer possibilities.",
+      landing_description:
+        "Explore selected peptide materials and discuss specifications, batch documentation and availability for your laboratory research.",
+      landing_details:
+        "Product specifications\nAsk about the material, format and available pack sizes.\n\nBatch documentation\nRequest the relevant COA and analytical information.\n\nAvailability and delivery\nShare the product name and destination to discuss current options.",
+      enabled: true,
+      campaign_id: "",
+      adset_id: "",
+      ad_id: "",
+      channel: "facebook",
+      expires_at: null,
+      meta_connection_id: null,
+      meta_pixel_id: null,
+      attribution_mode: "bound",
+      legacy_campaign_param: false,
+    },
+    row || {},
+  );
+  form.meta_connection_id = row?.meta_connection_id || null;
+  form.meta_pixel_id = row?.meta_pixel_id || null;
+  form.attribution_mode = row?.attribution_mode || "bound";
+  form.legacy_campaign_param = Boolean(row?.legacy_campaign_param);
+  form.expires_at = row?.expires_at ? localDateTime(row.expires_at) : "";
+  dialog.value = true;
+}
+async function saveLink() {
+  const invalid = validateLink(form);
+  if (invalid) {
+    ElMessage.warning(invalid);
+    return;
+  }
+  // Re-derive the pair at save time so stale UI state cannot bind a Pixel to
+  // the wrong account or silently depend on the legacy account CAPI switch.
+  form.meta_connection_id = connectionIDForPixel(
+    metaPixels.value,
+    form.meta_pixel_id,
+  );
+  if (form.meta_pixel_id && !pixelSelectable(selectedMetaPixel.value)) {
+    ElMessage.warning("当前 Pixel 无法用于 CAPI 回传");
+    return;
+  }
+  if (!form.meta_pixel_id) form.meta_connection_id = null;
+  saving.value = true;
+  try {
+    const payload = {
+      ...form,
+      expires_at: form.expires_at
+        ? new Date(form.expires_at).toISOString()
+        : null,
+    };
+    delete payload.id;
+    delete payload.created_at;
+    await persistLink(editing.value, payload);
+    links.value = await listLinks();
+    dialog.value = false;
+    ElMessage.success("链接已保存");
+  } catch (e) {
+    ElMessage.error(e.message);
+  } finally {
+    saving.value = false;
+  }
+}
+async function toggle(row) {
+  try {
+    await updateLink(row.id, { enabled: !row.enabled });
+    row.enabled = !row.enabled;
+    ElMessage.success(row.enabled ? "链接已启用" : "链接已停用");
+  } catch (e) {
+    ElMessage.error(e.message);
+  }
+}
+function localDateTime(value) {
+  const d = new Date(value);
+  return new Date(d.getTime() - d.getTimezoneOffset() * 60000)
+    .toISOString()
+    .slice(0, 16);
+}
+function isExpired(row) {
+  return row.expires_at && new Date(row.expires_at).getTime() <= Date.now();
+}
+function shortURL(row) {
+  return (
+    (settings.value.public_base_url || window.location.origin).replace(
+      /\/$/,
+      "",
+    ) +
+    "/" +
+    row.code
+  );
+}
+async function copy(row) {
+  try {
+    await navigator.clipboard.writeText(shortURL(row));
+    ElMessage.success("短链接已复制");
+  } catch {
+    ElMessage.warning("无法访问剪贴板，请手动复制链接");
+  }
+}
+async function load() {
+  busy.value = true;
+  error.value = "";
+  try {
+    links.value = await listLinks();
+  } catch (e) {
+    error.value = e.message;
+  } finally {
+    busy.value = false;
+  }
+}
+function detail(row) {
+  // Open only this link's ad comparison; the overview remains a separate report.
+  router.push({ name: "link-stats", params: { id: String(row.id) } });
+}
+onMounted(() => {
+  load();
+  listConnections()
+    .then((rows) => {
+      metaConnections.value = rows;
+    })
+    .catch((e) => {
+      metaError.value = "Meta 连接读取失败：" + e.message;
+    });
+  listPixels()
+    .then((rows) => {
+      metaPixels.value = rows;
+      // Existing links retain their selected Pixel while its owning account is
+      // normalized after asynchronous Pixel data arrives.
+      if (dialog.value && form.meta_pixel_id)
+        form.meta_connection_id = connectionIDForPixel(
+          rows,
+          form.meta_pixel_id,
+        );
+    })
+    .catch((e) => {
+      metaError.value = "Pixel 读取失败：" + e.message;
+    });
+});
+</script>
+
+<style scoped>
+.table-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 22px;
+}
+.table-search {
+  max-width: 280px;
+}
+.link-name {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.link-avatar {
+  height: 34px;
+  width: 34px;
+  background: #ecf5ff;
+  color: #409eff;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  font-size: 18px;
+}
+.url {
+  font-size: 12px;
+  color: #909399;
+  margin-top: 5px;
+  word-break: break-all;
+}
+.form-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0 18px;
+}
+.link-dialog {
+  max-width: calc(100vw - 30px);
+  border-radius: 12px;
+  padding: 24px;
+}
+.link-dialog :deep(.el-dialog__title) {
+  font-size: 18px;
+  font-weight: 600;
+}
+.link-dialog :deep(.el-dialog__header) {
+  padding-bottom: 20px;
+  border-bottom: 1px solid #ebeef5;
+  margin-bottom: 18px;
+}
+.link-dialog :deep(.el-dialog__footer) {
+  border-top: 1px solid #ebeef5;
+  padding-top: 20px;
+  margin-top: 10px;
+}
+.dialog-intro {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  color: #689acf;
+  background: #ecf5ff;
+  padding: 12px 14px;
+  border-radius: 6px;
+  font-size: 12px;
+  margin-bottom: 22px;
+}
+.link-dialog :deep(.el-form-item__label) {
+  font-size: 13px;
+}
+.link-dialog :deep(.el-divider__text) {
+  font-size: 12px;
+  color: #909399;
+}
+.link-dialog :deep(.el-divider) {
+  margin: 30px 0 25px;
+}
+.link-dialog small {
+  margin-top: 7px;
+  font-size: 11px;
+}
+.meta-binding-notice {
+  margin-bottom: 18px;
+}
+@media (max-width: 1200px) {
+  .table-toolbar {
+    flex-wrap: wrap;
+  }
+}
+@media (max-width: 1200px) {
+  .table-search {
+    max-width: 100%;
+  }
+}
+@media (max-width: 800px) {
+  .table-toolbar :deep(.el-radio-button__inner) {
+    font-size: 11px;
+    padding: 8px;
+  }
+}
+@media (max-width: 800px) {
+  .form-grid {
+    grid-template-columns: 1fr;
+  }
+}
+</style>

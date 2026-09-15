@@ -1,0 +1,9 @@
+# 由定时器触发的证书续期任务；运行结果可通过系统服务日志检查。
+[Unit]
+Description=Renew meta.lu81.com certificate with Certbot
+Requires=docker.service
+After=docker.service network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/bin/sh /opt/linkscope/deploy/certbot-renew.sh

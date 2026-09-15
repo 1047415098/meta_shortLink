@@ -1,0 +1,15 @@
+.env
+.git
+frontend/node_modules
+frontend/dist
+geoip
+backups
+*.log
+
+ACCESS-PRIVATE.md
+
+# 本地部署包、验证数据和私密配置不进入 Docker 构建上下文。
+.work
+
+landing/node_modules
+landing/dist

@@ -1,0 +1,13 @@
+# 运行镜像只读取已构建资源；覆盖根目录用于源码构建的 dist 排除规则。
+**
+!.release/
+!.release/server-linux-*
+!frontend/
+!frontend/dist/
+!frontend/dist/**
+!landing/
+!landing/dist/
+!landing/dist/**
+!deploy/
+!deploy/Dockerfile.runtime
+!deploy/Dockerfile.runtime.dockerignore

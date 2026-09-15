@@ -1,0 +1,23 @@
+.env
+.env.*
+!.env.example
+.DS_Store
+__pycache__/
+*.py[cod]
+node_modules/
+dist/
+server
+geoip/*.mmdb
+backups/
+*.log
+
+ACCESS-PRIVATE.md
+
+# 部署暂存目录可能包含独立环境密钥，不纳入版本控制。
+.work/
+
+# 本机构建产物由发布流程重新生成，不写入源码仓库。
+.release/
+
+landing/node_modules
+landing/dist

@@ -1,0 +1,16 @@
+# 发布包包含已验证的 Linux 可执行文件及两个 Vue 应用的生产资源。
+# BuildKit 根据服务器架构选择对应文件，避免在小型服务器上编译前端。
+FROM alpine:3.22
+ARG TARGETARCH
+RUN apk add --no-cache ca-certificates tzdata \
+    && addgroup -S app \
+    && adduser -S app -G app
+WORKDIR /app
+COPY .release/server-linux-${TARGETARCH} /app/server
+COPY frontend/dist/ /app/admin/
+COPY landing/dist/ /app/landing/
+# 应用以非 root 身份运行；数据库和宿主机的证书私钥不放入此镜像。
+USER app
+ENV LISTEN_ADDR=0.0.0.0:8080 FRONTEND_DIR=/app/admin LANDING_DIR=/app/landing
+EXPOSE 8080
+CMD ["/app/server"]

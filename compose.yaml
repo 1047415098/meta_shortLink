@@ -1,0 +1,40 @@
+services:
+  db:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: analytics
+      POSTGRES_USER: analytics
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: [CMD-SHELL, pg_isready -U analytics -d analytics]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+  app:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:8080:8080"
+    environment:
+      DATABASE_URL: postgres://analytics:${POSTGRES_PASSWORD}@db:5432/analytics?sslmode=disable
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-http://localhost:8080}
+      ADMIN_USER: ${ADMIN_USER:-admin}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?Set ADMIN_PASSWORD in .env}
+      APP_SECRET: ${APP_SECRET:?Set APP_SECRET in .env}
+      META_ENCRYPTION_KEYS: ${META_ENCRYPTION_KEYS:-}
+      META_ENCRYPTION_KEY_ID: ${META_ENCRYPTION_KEY_ID:-}
+      COOKIE_MODE: ${COOKIE_MODE:-off}
+      REPORT_TIMEZONE: ${REPORT_TIMEZONE:-Asia/Shanghai}
+      RETENTION_DAYS: ${RETENTION_DAYS:-90}
+      TRUSTED_PROXIES: ${TRUSTED_PROXIES:-}
+      GEOIP_DB_PATH: ${GEOIP_DB_PATH:-}
+    volumes:
+      - ./geoip:/app/geoip:ro
+volumes:
+  postgres_data:

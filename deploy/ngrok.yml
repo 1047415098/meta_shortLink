@@ -1,0 +1,8 @@
+version: "3"
+tunnels:
+  linkscope:
+    proto: http
+    addr: http://127.0.0.1:8080
+    schemes: [https]
+    domain: sputter-untimely-pardon.ngrok-free.dev
+    inspect: false

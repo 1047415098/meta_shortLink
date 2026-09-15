@@ -1,0 +1,70 @@
+# 与本地环境使用独立 Compose 项目名，服务器从全新数据卷启动。
+name: linkscope-lu81
+services:
+  db:
+    # 固定本次部署取得的镜像摘要，避免重建容器时标签变化引入未验证版本。
+    image: postgres:17-alpine@sha256:18cfe3ef5e6815560c98237d6216d1e5119702fb0f3894c8785dd58b8bbe5d73
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: analytics
+      POSTGRES_USER: analytics
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set the server database password}
+    # 不发布数据库端口，只有此项目网络中的应用可以连接数据库。
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: [CMD-SHELL, pg_isready -U analytics -d analytics]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+  app:
+    image: linkscope-lu81:20260914
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.runtime
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    # 公网通过使用宿主机网络的 Nginx 容器访问，Go 端口仅绑定回环地址。
+    ports:
+      - "127.0.0.1:8080:8080"
+    environment:
+      DATABASE_URL: postgres://analytics:${POSTGRES_PASSWORD}@db:5432/analytics?sslmode=disable
+      # 后台与落地页共用新子域名，新建短链接也使用此 HTTPS 地址。
+      PUBLIC_BASE_URL: https://meta.lu81.com
+      ADMIN_USER: ${ADMIN_USER:-admin}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?Set the administrator password}
+      APP_SECRET: ${APP_SECRET:?Set the server application secret}
+      META_ENCRYPTION_KEYS: ${META_ENCRYPTION_KEYS:-}
+      META_ENCRYPTION_KEY_ID: ${META_ENCRYPTION_KEY_ID:-}
+      COOKIE_MODE: ${COOKIE_MODE:-all}
+      REPORT_TIMEZONE: Asia/Shanghai
+      RETENTION_DAYS: 90
+      # 安装时填写实测 Docker 网关地址；不接受任意公网来源的伪造 IP。
+      TRUSTED_PROXIES: ${TRUSTED_PROXIES:?Set the exact Docker gateway address}
+      GEOIP_DB_PATH: /app/geoip/dbip-city-lite-2026-09.mmdb
+    volumes:
+      - ../geoip:/app/geoip:ro
+  nginx:
+    # 使用容器内的现代 TLS 库，避免依赖 CentOS 7 的旧版 OpenSSL。
+    image: nginx:stable-alpine@sha256:dc5069ad14f19660b141b21236140b91656bf89bbc3e2417c70ae650cd66104c
+    restart: unless-stopped
+    network_mode: host
+    volumes:
+      - ./runtime/nginx:/etc/nginx/conf.d:ro
+      - /etc/letsencrypt:/etc/letsencrypt:ro
+      - /var/www/letsencrypt:/var/www/letsencrypt:ro
+  certbot:
+    # 只在申请或续期时启动，证书持久化到宿主机并由 Nginx 只读加载。
+    image: certbot/certbot:latest@sha256:f70ad0adbb7e117f0fe42a63c553f28ea451edabc0148757b6efcd9735acaa20
+    profiles: [tools]
+    network_mode: host
+    volumes:
+      - /etc/letsencrypt:/etc/letsencrypt
+      - /var/lib/letsencrypt:/var/lib/letsencrypt
+      - /var/log/letsencrypt:/var/log/letsencrypt
+      - /var/www/letsencrypt:/var/www/letsencrypt
+volumes:
+  # 删除或重建应用容器不会清空此卷；不要执行 down -v。
+  postgres_data:

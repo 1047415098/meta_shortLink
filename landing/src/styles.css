@@ -1,0 +1,36 @@
+:root {
+  color-scheme: light;
+  --navy: #10233e;
+  --teal: #397d83;
+  --muted: #647386;
+  --line: #e0e7ed;
+  --wash: #f4f7fa;
+  /* The landing refresh uses the native WhatsApp green as its main conversion color. */
+  --whatsapp: #20bf55;
+}
+* {
+  box-sizing: border-box;
+}
+html {
+  scroll-behavior: smooth;
+  scroll-padding-top: 24px;
+}
+body {
+  margin: 0;
+  color: var(--navy);
+  background: #fff;
+  font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, Helvetica, sans-serif;
+  line-height: 1.65;
+  -webkit-font-smoothing: antialiased;
+}
+a {
+  color: inherit;
+}
+button {
+  font: inherit;
+}
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+}
