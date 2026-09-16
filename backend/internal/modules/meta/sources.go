@@ -104,9 +104,6 @@ func InspectSource(raw string) SourceInspection {
 	case "an":
 		out.Source = "audience_network"
 	}
-	if out.Parameters["utm_content"] != "" && out.CampaignID == "" {
-		out.Issues = append(out.Issues, "utm_content 不会自动当作广告 ID；旧系列参数需要在短链接显式开启兼容")
-	}
 	out.Valid = len(out.Issues) == 0
 	return out
 }

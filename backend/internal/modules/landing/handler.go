@@ -21,6 +21,13 @@ type Handler struct {
 	Meta *meta.Service
 }
 
+// RecordDirect marks the server-issued handoff before the minimal script is
+// returned. It shares the same frozen Pixel rules and Meta matching data as a
+// landing-page action without exposing a browser action endpoint.
+func (a *Handler) RecordDirect(ctx context.Context, eventID string, linkID int64, input meta.ContactContext) error {
+	return (Repository{DB: a.DB, Meta: a.Meta}).MarkDirect(ctx, eventID, linkID, input)
+}
+
 // Contact accepts a manual or timer-triggered form submission; these are stored separately. Signed visit tickets bind attribution
 // to the landing request; retries update the same row, even without cookies.
 func (a *Handler) View(c *gin.Context)    { a.contact(c, true) }
@@ -49,7 +56,8 @@ func (a *Handler) contact(c *gin.Context, view bool) {
 		landingError(c, err)
 		return
 	}
-	// A saved link remains available until an operator explicitly disables it.
+	// Consultation actions belong to landing mode. Direct mode records only the
+	// incoming visit before its minimal top.location response is returned.
 	if !l.Enabled || l.Mode != "landing" {
 		c.String(410, "This enquiry link is disabled or changed. Please reopen the original link.")
 		return

@@ -5,6 +5,10 @@ const defaults = {
 // Graph requests use the backend-owned version below; operators cannot change
 // protocol compatibility from an account form.
 export const GRAPH_API_VERSION = "v26.0";
+// Keep one canonical template for every Meta ad so attribution fields never
+// drift between operators or fall back to ambiguous legacy UTM meanings.
+export const META_URL_PARAMETERS =
+  "utm_source={{site_source_name}}&utm_medium=paid_social&utm_campaign={{campaign.name}}&utm_content={{ad.id}}&campaign_id={{campaign.id}}&campaign_name={{campaign.name}}&adset_id={{adset.id}}&adset_name={{adset.name}}&ad_id={{ad.id}}&ad_name={{ad.name}}&placement={{placement}}&site_source_name={{site_source_name}}";
 const pixelDefaults = {
   name: "",
   connection_id: null,
@@ -17,7 +21,7 @@ const pixelDefaults = {
   // Manual Contact and automatic redirect delivery are controlled separately.
   auto_enabled: true,
 };
-export function pixelForm(row = {}) {
+export function pixelForm(row = {}, capiToken = "") {
   return {
     ...Object.fromEntries(
       Object.entries(pixelDefaults).map(([key, value]) => [
@@ -25,8 +29,10 @@ export function pixelForm(row = {}) {
         row[key] ?? value,
       ]),
     ),
-    capi_token: "",
-    clear_capi_token: false,
+    capi_token: capiToken,
+    // Remember the fetched secret only in this edit form so unchanged values
+    // are not sent back and marked unverified during unrelated edits.
+    original_capi_token: capiToken,
   };
 }
 export function pixelPayload(form, editing = false) {
@@ -36,9 +42,20 @@ export function pixelPayload(form, editing = false) {
     const value = form[key] ?? fallback;
     payload[key] = typeof value === "string" ? value.trim() : value;
   }
-  if (form.clear_capi_token) payload.clear_capi_token = true;
-  else if (form.capi_token?.trim()) payload.capi_token = form.capi_token.trim();
+  // Credential deletion is not a supported operation: edits either preserve
+  // the stored token or replace it with a new non-empty value.
+  if (
+    form.capi_token?.trim() &&
+    form.capi_token.trim() !== form.original_capi_token
+  )
+    payload.capi_token = form.capi_token.trim();
   return payload;
+}
+
+// A list-level pause changes only the master state; PATCH preserves the Pixel,
+// credential and event rules already stored by the backend.
+export function pixelTogglePayload(pixel) {
+  return { enabled: !pixel?.enabled };
 }
 
 // A short link can target only a Pixel that is enabled and has a usable
@@ -55,17 +72,6 @@ export function pixelsForConnection(pixels, connectionID) {
   return pixels.filter(
     (pixel) => Number(pixel.connection_id) === Number(connectionID),
   );
-}
-
-// Auto-select only when there is exactly one valid destination; an ambiguous
-// account deliberately requires the operator to choose.
-export function preferredPixelID(pixels, connectionID, currentPixelID = null) {
-  const eligible = pixelsForConnection(pixels, connectionID).filter((pixel) =>
-    pixelSelectable(pixel),
-  );
-  if (eligible.some((pixel) => pixel.id === currentPixelID))
-    return currentPixelID;
-  return eligible.length === 1 ? eligible[0].id : null;
 }
 
 // A short link stores both foreign keys, but the operator only needs to choose

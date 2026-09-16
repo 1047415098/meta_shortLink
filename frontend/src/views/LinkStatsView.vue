@@ -83,6 +83,7 @@
     />
     <div v-loading="busy" class="stats-content">
       <template v-if="data">
+        <!-- Direct mode contributes server-side visits and automatic handoffs, but never manual button clicks. -->
         <el-alert
           v-if="data.link.attribution_mode === 'bound' && data.link.ad_id"
           type="warning"
@@ -95,7 +96,7 @@
           type="info"
           :closable="false"
           class="notice"
-          title="此链接当前使用直接跳转模式。此表仅统计落地页访问与咨询，直接跳转请求可在数据总览中查看。"
+          title="此链接当前使用直接跳转模式。访问计入真实广告点击，跳转计入自动跳转；该模式不会产生手动咨询。"
         />
         <div class="stats-grid">
           <el-card v-for="card in cards" :key="card.key" shadow="never">
@@ -109,14 +110,11 @@
           <div class="table-heading">
             <div>
               <h2>真实广告表现</h2>
-              <p>
-                仅统计携带有效 fbclid，并能从 ad_id 或 utm_content 解析广告 ID
-                的正常访客。
-              </p>
+              <p>仅统计携带有效 fbclid 和明确 ad_id 的正常访客。</p>
             </div>
             <el-tag effect="plain">共 {{ number(data.total) }} 条广告</el-tag>
           </div>
-          <!-- Every row uses one resolved advertising ID; ad_id takes priority over utm_content. -->
+          <!-- Every row uses the canonical explicit ad_id from the visit URL. -->
           <el-table
             :data="data.items"
             :row-key="rowKey"
@@ -132,7 +130,7 @@
             >
               <template #default="{ row }">
                 <div class="ad-name">{{ rowTitle(row) }}</div>
-                <!-- The normalized ID comes from ad_id or its utm_content fallback. -->
+                <!-- The normalized ID comes only from the explicit ad_id. -->
                 <div class="source-value">广告 ID：{{ row.source_value }}</div>
                 <div class="source-meta">
                   <el-tag
@@ -143,6 +141,51 @@
                   >
                   <span v-if="row.account_id">账户 {{ row.account_id }}</span>
                 </div>
+              </template>
+            </el-table-column>
+            <!-- Region counts use the same strict real-ad-click visits as the row total. -->
+            <el-table-column label="访问地区" min-width="280">
+              <template #default="{ row }">
+                <div v-if="row.locations?.length" class="location-list">
+                  <div
+                    v-for="location in row.locations.slice(0, 3)"
+                    :key="locationKey(location)"
+                    class="location-row"
+                  >
+                    <span>{{ locationLabel(location) }}</span>
+                    <b>{{ number(location.visits) }}</b>
+                  </div>
+                  <el-popover
+                    v-if="row.locations.length > 3"
+                    placement="bottom-start"
+                    :width="380"
+                    trigger="click"
+                  >
+                    <template #reference>
+                      <el-button link type="primary" class="location-more"
+                        >另外 {{ number(row.locations.length - 3) }} 个地区 ·
+                        {{ number(locationVisitTotal(row.locations.slice(3))) }}
+                        次</el-button
+                      >
+                    </template>
+                    <div class="location-popover">
+                      <div
+                        v-for="location in row.locations.slice(3)"
+                        :key="locationKey(location)"
+                        class="location-row"
+                      >
+                        <span>{{ locationLabel(location) }}</span>
+                        <b>{{ number(location.visits) }}</b>
+                      </div>
+                    </div>
+                  </el-popover>
+                  <!-- This total uses every bucket once, including unresolved GeoIP. -->
+                  <div class="location-total">
+                    地区合计
+                    {{ number(locationVisitTotal(row.locations)) }} 次
+                  </div>
+                </div>
+                <span v-else class="muted">暂无地区数据</span>
               </template>
             </el-table-column>
             <el-table-column
@@ -202,9 +245,8 @@
           />
           <div class="counting-notes">
             <p>
-              真实广告点击要求入口携带有效 fbclid，并且能从 ad_id 或 utm_content
-              解析广告
-              ID，同时访问被识别为正常访客；机器人预览、预取、可疑请求和普通帖子点击均不计入。
+              真实广告点击要求入口携带有效 fbclid 和明确的
+              ad_id，同时访问被识别为正常访客；机器人预览、预取、可疑请求和普通帖子点击均不计入。
             </p>
             <p>
               真实广告去重访客按本站 Cookie
@@ -229,6 +271,7 @@ import { useRoute, useRouter } from "vue-router";
 import PageHeader from "../components/PageHeader.vue";
 import { getLinkStats } from "../api/analytics";
 import { settings } from "../stores/settings";
+import { locationLabel, locationVisitTotal } from "../utils";
 
 const route = useRoute(),
   router = useRouter();
@@ -246,7 +289,7 @@ const cards = [
   {
     key: "visits",
     label: "真实广告点击",
-    help: "携带有效 fbclid，并有 ad_id 或 utm_content 广告 ID",
+    help: "携带有效 fbclid 和明确 ad_id",
   },
   {
     key: "unique_visitors",
@@ -286,6 +329,9 @@ const tableSort = computed(() => ({
   order: order.value === "asc" ? "ascending" : "descending",
 }));
 const number = (v) => Number(v || 0).toLocaleString("zh-CN");
+// GeoIP tuples form a stable Vue key even when several locations share a visit count.
+const locationKey = (location) =>
+  JSON.stringify([location.country, location.region, location.city]);
 const rowKey = (r) =>
   JSON.stringify([
     r.connection_id,
@@ -460,6 +506,45 @@ onBeforeUnmount(() => {
 }
 .manual-count {
   color: #337ecc;
+}
+.location-list,
+.location-popover {
+  display: grid;
+  gap: 6px;
+}
+.location-popover {
+  max-height: 320px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+.location-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+  color: #606266;
+  font-size: 12px;
+  line-height: 1.45;
+}
+.location-row span {
+  overflow-wrap: anywhere;
+}
+.location-row b {
+  color: #303133;
+  font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
+}
+.location-more {
+  justify-self: start;
+  padding: 0;
+  min-height: auto;
+}
+.location-total {
+  color: #909399;
+  font-size: 12px;
+  border-top: 1px dashed #dcdfe6;
+  padding-top: 5px;
+  width: fit-content;
 }
 .pagination {
   margin-top: 20px;

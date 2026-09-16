@@ -18,10 +18,33 @@ func (h *Handler) Register(api *gin.RouterGroup) {
 	g.GET("/connections", h.listConnections)
 	g.POST("/connections", h.saveConnection)
 	g.PATCH("/connections/:id", h.saveConnection)
+	g.DELETE("/connections/:id", h.deleteConnection)
 	h.registerPixels(g)
 	h.registerCredentials(g)
 	g.POST("/source/inspect", h.inspectSource)
 	h.registerEvents(g)
+}
+
+func (h *Handler) deleteConnection(c *gin.Context) {
+	id, ok := requestID(c)
+	if !ok {
+		return
+	}
+	ctx, cancel := context.WithTimeout(c.Request.Context(), 5*time.Second)
+	defer cancel()
+	if err := h.Service.DeleteConnection(ctx, id); err != nil {
+		var inUse *ConfigInUseError
+		switch {
+		case IsNotFound(err):
+			c.JSON(404, gin.H{"error": "Meta 帐号不存在"})
+		case errors.As(err, &inUse):
+			c.JSON(409, gin.H{"error": inUse.Error()})
+		default:
+			runtime.ServerError(c, err)
+		}
+		return
+	}
+	c.JSON(200, gin.H{"ok": true})
 }
 func requestID(c *gin.Context) (int64, bool) {
 	id, e := strconv.ParseInt(c.Param("id"), 10, 64)

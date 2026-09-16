@@ -83,7 +83,7 @@
         <div class="products-grid">
           <article v-for="product in products" :key="product.name" class="product-card">
             <div class="product-image">
-              <img :src="product.image" :alt="`${product.name} research product`" width="640" height="640" loading="lazy" />
+              <img :src="product.image" :alt="`${product.name} research product`" width="640" height="640" loading="lazy" decoding="async" />
             </div>
             <div class="product-copy">
               <span class="badge">RESEARCH USE ONLY</span>
@@ -306,7 +306,7 @@ onBeforeUnmount(() => cleanup?.());
   overflow: hidden;
   background:
     linear-gradient(90deg, rgba(238, 247, 252, 0.98) 0%, rgba(238, 247, 252, 0.88) 44%, rgba(238, 247, 252, 0.48) 100%),
-    url("/landing-assets/images/hero.jpg") center / cover no-repeat;
+    url("/landing-assets/images/hero-79e77a51693b3249.webp") center / cover no-repeat;
 }
 .hero-content {
   position: relative;
@@ -428,6 +428,9 @@ h1 {
   text-decoration: none;
 }
 .products-section {
+  /* Defer below-fold paint and layout while preserving scroll geometry. */
+  content-visibility: auto;
+  contain-intrinsic-size: auto 900px;
   padding-top: 48px;
   padding-bottom: 54px;
 }
@@ -645,7 +648,7 @@ button:focus-visible {
   .hero {
     background:
       linear-gradient(90deg, rgba(237, 247, 252, 0.97) 0%, rgba(237, 247, 252, 0.78) 100%),
-      url("/landing-assets/images/hero.jpg") center / cover no-repeat;
+          url("/landing-assets/images/hero-79e77a51693b3249.webp") center / cover no-repeat;
   }
   .hero-content { padding-top: 42px; padding-bottom: 18px; }
   .eyebrow { font-size: 10px; letter-spacing: 1.7px; }

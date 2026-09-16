@@ -16,7 +16,9 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-var versionedAsset = regexp.MustCompile(`^[^/]+-[A-Za-z0-9_-]{8,}\.(js|css)$`)
+// Versioned frontend assets may live in nested image directories; their
+// content-derived names make one-year immutable caching safe.
+var versionedAsset = regexp.MustCompile(`(?:^|/)[^/]+-[A-Za-z0-9_-]{8,}\.(js|css|webp|avif|png|jpe?g|svg)$`)
 
 // Static public files only: HTML and API responses retain the global no-store policy.
 func Handler(root string) gin.HandlerFunc {

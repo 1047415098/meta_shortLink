@@ -12,9 +12,55 @@ import (
 
 func (h *Handler) registerPixels(g *gin.RouterGroup) {
 	g.GET("/pixels", h.listPixels)
+	g.GET("/pixels/:id/credential", h.pixelCredential)
 	g.POST("/pixels", h.savePixel)
 	g.PATCH("/pixels/:id", h.savePixel)
+	g.DELETE("/pixels/:id", h.deletePixel)
 	g.POST("/pixels/:id/test-event", h.testPixel)
+}
+
+func (h *Handler) deletePixel(c *gin.Context) {
+	id, ok := requestID(c)
+	if !ok {
+		return
+	}
+	ctx, cancel := context.WithTimeout(c.Request.Context(), 5*time.Second)
+	defer cancel()
+	if err := h.Service.DeletePixel(ctx, id); err != nil {
+		var inUse *ConfigInUseError
+		switch {
+		case IsNotFound(err):
+			c.JSON(404, gin.H{"error": "Pixel 不存在"})
+		case errors.As(err, &inUse):
+			c.JSON(409, gin.H{"error": inUse.Error()})
+		default:
+			runtime.ServerError(c, err)
+		}
+		return
+	}
+	c.JSON(200, gin.H{"ok": true})
+}
+func (h *Handler) pixelCredential(c *gin.Context) {
+	id, ok := requestID(c)
+	if !ok {
+		return
+	}
+	ctx, cancel := context.WithTimeout(c.Request.Context(), 5*time.Second)
+	defer cancel()
+	token, e := h.Service.PixelCredential(ctx, id)
+	if e != nil {
+		if IsNotFound(e) {
+			c.Status(404)
+		} else {
+			runtime.ServerError(c, e)
+		}
+		return
+	}
+	// Plaintext is returned only through this authenticated detail endpoint and
+	// must not be retained by browsers or intermediary caches.
+	c.Header("Cache-Control", "no-store")
+	c.Header("Pragma", "no-cache")
+	c.JSON(200, gin.H{"capi_token": token})
 }
 func (h *Handler) listPixels(c *gin.Context) {
 	id, e := strconv.ParseInt(c.DefaultQuery("connection_id", "0"), 10, 64)
@@ -36,7 +82,9 @@ func (h *Handler) savePixel(c *gin.Context) {
 	defer cancel()
 	// API clients that omit optional switches receive the complete default
 	// landing funnel: one qualified PageView plus consultation events.
-	in := PixelInput{Pixel: Pixel{PageviewEnabled: true, ManualEnabled: true, AutoEnabled: true, ManualEventName: EventName}}
+	// New targets start active because the creation flow already requires their
+	// own CAPI credential; operators can pause them explicitly from the list.
+	in := PixelInput{Pixel: Pixel{Enabled: true, PageviewEnabled: true, ManualEnabled: true, AutoEnabled: true, ManualEventName: EventName}}
 	var id int64
 	if c.Request.Method == "PATCH" {
 		var ok bool

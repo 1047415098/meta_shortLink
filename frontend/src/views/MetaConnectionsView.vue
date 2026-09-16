@@ -1,7 +1,7 @@
 <template>
   <section>
     <PageHeader
-      title="Meta 连接"
+      title="Meta 帐号"
       context="广告账户分组"
       description="账户用于归类多个 Pixel；Pixel ID、CAPI Token 和回传规则统一在 Meta Pixel 页面管理。"
     >
@@ -52,7 +52,7 @@
           label="Graph API 版本"
           width="150"
         />
-        <el-table-column label="操作" width="190" fixed="right">
+        <el-table-column label="操作" width="235" fixed="right">
           <template #default="{ row }">
             <el-button link type="primary" @click="open(row)">编辑</el-button>
             <el-button
@@ -65,6 +65,13 @@
               "
               >事件记录</el-button
             >
+            <el-button
+              link
+              type="danger"
+              :loading="deleting === row.id"
+              @click="removeConnection(row)"
+              >删除</el-button
+            >
           </template>
         </el-table-column>
       </el-table>
@@ -75,7 +82,7 @@
     </p>
     <el-dialog
       v-model="dialog"
-      :title="editing ? '编辑 Meta 账户' : '添加 Meta 账户'"
+      :title="editing ? '编辑 Meta 帐号' : '添加 Meta 帐号'"
       width="min(620px, 94vw)"
       :close-on-click-modal="false"
       :close-on-press-escape="!saving"
@@ -125,10 +132,11 @@
 import { onMounted, reactive, ref } from "vue";
 import { useRouter } from "vue-router";
 import { ElMessage } from "element-plus/es/components/message/index";
+import { ElMessageBox } from "element-plus/es/components/message-box/index";
 import { Plus, Refresh } from "@element-plus/icons-vue";
 
 import PageHeader from "../components/PageHeader.vue";
-import { listConnections, saveConnection } from "../api/meta";
+import { deleteConnection, listConnections, saveConnection } from "../api/meta";
 import {
   GRAPH_API_VERSION,
   connectionForm,
@@ -142,6 +150,7 @@ const error = ref("");
 const dialog = ref(false);
 const editing = ref(null);
 const saving = ref(false);
+const deleting = ref(null);
 const formError = ref("");
 const form = reactive(connectionForm());
 
@@ -187,11 +196,40 @@ async function save() {
     );
     dialog.value = false;
     await load();
-    ElMessage.success("Meta 账户已保存");
+    ElMessage.success("Meta 帐号已保存");
   } catch (saveError) {
     formError.value = saveError.message;
   } finally {
     saving.value = false;
+  }
+}
+
+async function removeConnection(row) {
+  try {
+    // Accounts own Pixel groups, so the operator must explicitly clear those
+    // dependencies before this confirmation can result in a deletion.
+    await ElMessageBox.confirm(
+      `确定删除 Meta 帐号“${row.name}”吗？帐号下仍有 Pixel、短链接或历史数据时，系统会拒绝删除。`,
+      "删除 Meta 帐号",
+      {
+        type: "warning",
+        confirmButtonText: "删除",
+        cancelButtonText: "取消",
+        confirmButtonClass: "el-button--danger",
+      },
+    );
+  } catch {
+    return;
+  }
+  deleting.value = row.id;
+  try {
+    await deleteConnection(row.id);
+    ElMessage.success("Meta 帐号已删除");
+    await load();
+  } catch (deleteError) {
+    ElMessage.error(deleteError.message);
+  } finally {
+    deleting.value = null;
   }
 }
 

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -29,7 +30,8 @@ func TestLinkStatsRequireVerifiedAdClick(t *testing.T) {
 		{"real-spaced", "401 ", "person-1", `{"fbclid":"click-1","ad_id":"401 ","utm_content":"999","ad_name":"Captured A "}`, "normal", true, true},
 		{"real-repeat", "401", "person-1", `{"fbclid":"click-2","ad_id":"401"}`, "normal", false, true},
 		{"real-other", "402", "person-2", `{"fbclid":"click-3","ad_id":"402","ad_name":"Ad B"}`, "normal", true, false},
-		// A valid utm_content value resolves the advertising ID only when ad_id is absent.
+		// utm_content remains available for UTM analysis but cannot replace the
+		// explicit ad_id required by the canonical Meta parameter contract.
 		{"utm-fallback", "", "person-7", `{"fbclid":"click-7","utm_content":"405","ad_name":"Captured UTM"}`, "normal", true, false},
 		{"meta-preview", "401", "NULL", `{"ad_id":"401","utm_source":"fb"}`, "bot", true, true},
 		{"organic-post", "", "person-3", `{"fbclid":"organic-click"}`, "normal", true, true},
@@ -58,13 +60,12 @@ func TestLinkStatsRequireVerifiedAdClick(t *testing.T) {
 	if err = json.Unmarshal(w.Body.Bytes(), &body); err != nil {
 		t.Fatal(err)
 	}
-	if body.Total != 3 || body.Summary["visits"] != 4 || body.Summary["unique_visitors"] != 3 || body.Summary["manual_consultations"] != 3 || body.Summary["auto_redirects"] != 2 {
+	if body.Total != 2 || body.Summary["visits"] != 3 || body.Summary["unique_visitors"] != 2 || body.Summary["manual_consultations"] != 2 || body.Summary["auto_redirects"] != 2 {
 		t.Fatalf("non-ad traffic entered strict stats: %s", w.Body.String())
 	}
 	if _, exists := body.Summary["meta_visits"]; exists {
 		t.Fatalf("removed Meta parameter metric still exposed: %s", w.Body.String())
 	}
-	utmFallbackFound := false
 	for _, row := range body.Items {
 		if row["source_kind"] != "ad_id" {
 			t.Fatalf("non-ad source row exposed: %#v", row)
@@ -75,14 +76,88 @@ func TestLinkStatsRequireVerifiedAdClick(t *testing.T) {
 			}
 		}
 		if row["source_value"] == "405" {
-			utmFallbackFound = true
-			if row["visits"] != float64(1) || row["unique_visitors"] != float64(1) || row["manual_consultations"] != float64(1) || row["auto_redirects"] != float64(0) || row["ad_name"] != "Captured UTM" {
-				t.Fatalf("utm_content fallback row is wrong: %#v", row)
-			}
+			t.Fatalf("utm_content was incorrectly treated as ad_id: %#v", row)
 		}
 	}
-	if !utmFallbackFound {
-		t.Fatal("missing utm_content fallback ad group")
+}
+
+// TestLinkStatsLocationsUseStrictRealClicks catches regressions where bot
+// previews, another ad, or Cookie deduplication changes visit-based location totals.
+func TestLinkStatsLocationsUseStrictRealClicks(t *testing.T) {
+	a := setup(t)
+	ctx := context.Background()
+	type visit struct {
+		id, ad, class, country, region, city string
+	}
+	visits := []visit{
+		{"seattle-1", "501", "normal", "US", "Washington", "Seattle"},
+		{"seattle-2", "501", "normal", "US", "Washington", "Seattle"},
+		{"gallatin", "501", "normal", "US", "Tennessee", "Gallatin"},
+		{"unknown", "501", "normal", "", "", ""},
+		{"bot-fort-worth", "501", "bot", "US", "Texas", "Fort Worth"},
+		{"other-ad", "502", "normal", "US", "Washington", "Seattle"},
+	}
+	for _, item := range visits {
+		_, err := a.DB.Exec(ctx, `INSERT INTO click_events(id,link_id,visitor_id,cookie_status,method,target_url,device,os,browser,country,region,city,source,campaign_id,adset_id,ad_id,referrer,classification,reason,event_type,parameters,occurred_at)
+		VALUES($1,1,'same-person','issued','GET','https://wa.me/12345678','mobile','','',$2,$3,$4,'facebook','','',$5::text,'',$6,'','landing',jsonb_build_object('fbclid','click-'||$1,'ad_id',$5::text),'2026-09-02T12:00:00Z')`, item.id, item.country, item.region, item.city, item.ad, item.class)
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	admin := login(t, a)
+	w := call(a, "POST", "/api/v1/links/1/stats", `{"start":"2026-09-02","end":"2026-09-02","tz":"Asia/Shanghai"}`, admin)
+	if w.Code != 200 {
+		t.Fatalf("stats %d: %s", w.Code, w.Body.String())
+	}
+	var body struct {
+		Items []struct {
+			SourceValue string `json:"source_value"`
+			Visits      int    `json:"visits"`
+			Locations   []struct {
+				Country string `json:"country"`
+				Region  string `json:"region"`
+				City    string `json:"city"`
+				Visits  int    `json:"visits"`
+			} `json:"locations"`
+		} `json:"items"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	for _, row := range body.Items {
+		if row.SourceValue != "501" {
+			continue
+		}
+		got := map[string]int{}
+		var locationVisits int
+		for _, location := range row.Locations {
+			key := location.Country + "/" + location.Region + "/" + location.City
+			got[key] = location.Visits
+			locationVisits += location.Visits
+		}
+		want := map[string]int{"US/Washington/Seattle": 2, "US/Tennessee/Gallatin": 1, "//": 1}
+		if !reflect.DeepEqual(got, want) || locationVisits != row.Visits || row.Visits != 4 {
+			t.Fatalf("wrong strict location totals: got=%#v row=%#v", got, row)
+		}
+		return
+	}
+	t.Fatalf("missing ad 501 location row: %s", w.Body.String())
+}
+
+// Canonical links no longer expose or execute the removed legacy campaign flag.
+func TestLinksIgnoreRemovedLegacyCampaignParameter(t *testing.T) {
+	a := setup(t)
+	admin := login(t, a)
+	w := call(a, "PATCH", "/api/v1/links/1", `{"attribution_mode":"dynamic","legacy_campaign_param":true}`, admin)
+	if w.Code != 200 || strings.Contains(w.Body.String(), "legacy_campaign_param") {
+		t.Fatalf("removed legacy field remains public: %d %s", w.Code, w.Body.String())
+	}
+	if w = call(a, "GET", "/hello?utm_content=120001&adset_id=120002&ad_id=120003", "", nil); w.Code != 200 {
+		t.Fatalf("entry request failed: %d %s", w.Code, w.Body.String())
+	}
+	var campaign string
+	if err := a.DB.QueryRow(context.Background(), "SELECT campaign_id FROM click_events LIMIT 1").Scan(&campaign); err != nil || campaign != "" {
+		t.Fatalf("utm_content still promoted to campaign_id: %q %v", campaign, err)
 	}
 }
 
@@ -118,7 +193,9 @@ func TestLinkStatsScopeAttributionAndCookieDedup(t *testing.T) {
 	for _, class := range []string{"bot", "suspicious", "head", "prefetch", "unclassified"} {
 		add(class, "401", class, `{}`, "2026-09-02T12:00:00Z", class, "landing", 1, 1, "101", true, true)
 	}
-	add("redirect", "401", "redirect", `{}`, "2026-09-02T12:00:00Z", "normal", "redirect", 1, 1, "101", true, true)
+	// A direct-mode real ad click contributes a visit and an automatic redirect,
+	// while never manufacturing a manual consultation.
+	add("redirect", "401", "redirect", `{"fbclid":"click-redirect","ad_id":"401"}`, "2026-09-02T12:00:00Z", "normal", "redirect", 1, 1, "101", false, true)
 	add("before", "401", "before", `{}`, "2026-09-01T15:59:59Z", "normal", "landing", 1, 1, "101", true, true)
 	add("after", "401", "after", `{}`, "2026-09-02T16:00:00Z", "normal", "landing", 1, 1, "101", true, true)
 	path := "/api/v1/links/1/stats"
@@ -141,7 +218,7 @@ func TestLinkStatsScopeAttributionAndCookieDedup(t *testing.T) {
 	json.Unmarshal(body["total"], &total)
 	var sum map[string]int
 	json.Unmarshal(body["summary"], &sum)
-	if total != 3 || sum["visits"] != 4 || sum["unique_visitors"] != 2 || sum["manual_consultations"] != 2 || sum["auto_redirects"] != 2 || sum["no_cookie"] != 0 {
+	if total != 3 || sum["visits"] != 5 || sum["unique_visitors"] != 3 || sum["manual_consultations"] != 2 || sum["auto_redirects"] != 3 || sum["no_cookie"] != 0 {
 		t.Fatalf("wrong totals: %s", w.Body.String())
 	}
 	var items []map[string]any
@@ -150,7 +227,7 @@ func TestLinkStatsScopeAttributionAndCookieDedup(t *testing.T) {
 	for _, row := range items {
 		if row["source_kind"] == "ad_id" && row["source_value"] == "401" && row["connection_id"] == float64(1) {
 			found = true
-			if row["visits"] != float64(2) || row["unique_visitors"] != float64(1) || row["manual_consultations"] != float64(1) || row["auto_redirects"] != float64(2) || row["ad_name"] != "Verified Ad A" {
+			if row["visits"] != float64(3) || row["unique_visitors"] != float64(2) || row["manual_consultations"] != float64(1) || row["auto_redirects"] != float64(3) || row["ad_name"] != "Verified Ad A" {
 				t.Fatalf("wrong ad group: %#v", row)
 			}
 		}
@@ -167,7 +244,7 @@ func TestLinkStatsScopeAttributionAndCookieDedup(t *testing.T) {
 	w = call(a, "POST", path+"?ad_id=ignored&start=invalid", strings.TrimSuffix(filters, "}")+`,"ad_id":"401"}`, admin)
 	json.Unmarshal(w.Body.Bytes(), &body)
 	json.Unmarshal(body["summary"], &sum)
-	if w.Code != 200 || sum["visits"] != 3 {
+	if w.Code != 200 || sum["visits"] != 4 {
 		t.Fatalf("identifier filter: %d %s", w.Code, w.Body.String())
 	}
 	// Invalid JSON/types and filters must be rejected; URL parameters must not override the JSON body.
@@ -200,7 +277,8 @@ func TestLinkStatsScopeAttributionAndCookieDedup(t *testing.T) {
 // parameter, and URL-builder whitespace cannot become part of attribution IDs.
 func TestTrackingCanonicalizesFbcliAlias(t *testing.T) {
 	a := setup(t)
-	if w := call(a, "GET", "/hello?fbcli=%20legacy-click%20&utm_campaign=%20Campaign-A%20&ad_id=%20401%20", "", nil); w.Code != 302 {
+	// Direct mode now renders the measurable WhatsApp handoff before navigation.
+	if w := call(a, "GET", "/hello?fbcli=%20legacy-click%20&utm_campaign=%20Campaign-A%20&ad_id=%20401%20", "", nil); w.Code != 200 {
 		t.Fatalf("entry request failed: %d", w.Code)
 	}
 	var fbclid, campaign, ad string

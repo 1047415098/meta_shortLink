@@ -15,6 +15,7 @@ import (
 
 	"whatsapp-analytics/internal/modules/landing"
 	"whatsapp-analytics/internal/modules/links"
+	"whatsapp-analytics/internal/modules/meta"
 	"whatsapp-analytics/internal/platform/geoip"
 	"whatsapp-analytics/internal/platform/runtime"
 )
@@ -89,9 +90,6 @@ func (a *Handler) Redirect(c *gin.Context) {
 		}
 	}
 	conflict := false
-	if l.LegacyCampaignParam && params["campaign_id"] == "" {
-		params["campaign_id"] = params["utm_content"]
-	}
 	resolve := func(bound, key string) string {
 		v := params[key]
 		if strings.Contains(v, "{{") || strings.Contains(v, "}}") {
@@ -137,7 +135,9 @@ func (a *Handler) Redirect(c *gin.Context) {
 		vid = visitor
 	}
 	eventID := runtime.Token()
-	eventType, status := "redirect", 302
+	// Direct mode returns a measured handoff page, so the stored status matches
+	// the 200 response while the event type continues to identify the link mode.
+	eventType, status := "redirect", 200
 	if l.Mode == "landing" {
 		eventType, status = "landing", 200
 	}
@@ -151,7 +151,22 @@ func (a *Handler) Redirect(c *gin.Context) {
 		a.Landing.Render(c, l, eventID, e == nil)
 		return
 	}
-	c.Redirect(302, l.TargetURL)
+	if e == nil && c.Request.Method == "GET" {
+		// Direct mode has no second browser callback, so record the PageView and
+		// automatic handoff on the server before returning the navigation script.
+		fbc, _ := c.Cookie("_fbc")
+		fbp, _ := c.Cookie("_fbp")
+		actionCtx, actionCancel := context.WithTimeout(c.Request.Context(), 2*time.Second)
+		actionErr := a.Landing.RecordDirect(actionCtx, eventID, l.ID, meta.ContactContext{IP: c.ClientIP(), UserAgent: c.GetHeader("User-Agent"), FBC: fbc, FBP: fbp})
+		actionCancel()
+		if actionErr != nil {
+			a.WriteFailures.Add(1)
+			slog.Error("DIRECT_ACTION_WRITE_FAILED: redirect continues; analytics gap", "link_id", l.ID, "error", actionErr)
+		}
+	}
+	// Direct mode has already persisted the visit above; its response only
+	// contains the configured top.location handoff.
+	a.Landing.RenderDirect(c, l)
 }
 
 func platformSource(s string) string {

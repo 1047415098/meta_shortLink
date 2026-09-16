@@ -39,7 +39,9 @@ func (r Repository) Overview(ctx context.Context, f Filter) (OverviewData, error
 	var s Summary
 	// Available link totals now follow the same explicit enabled/disabled state
 	// shown in link management.
-	e := r.DB.QueryRow(ctx, `SELECT (SELECT count(*) FROM short_links WHERE enabled),count(*),count(*) FILTER(WHERE classification='normal'),count(DISTINCT visitor_id) FILTER(WHERE classification='normal'),count(*) FILTER(WHERE classification='bot'),count(*) FILTER(WHERE classification='suspicious'),count(*) FILTER(WHERE classification='unclassified'),count(*) FILTER(WHERE visitor_id IS NULL),count(*) FILTER(WHERE classification='head'),count(*) FILTER(WHERE classification='prefetch'),count(*) FILTER(WHERE event_type='landing' AND classification='normal'),count(*) FILTER(WHERE event_type='landing' AND classification='normal' AND whatsapp_clicked_at IS NOT NULL),count(*) FILTER(WHERE event_type='landing' AND classification='normal' AND auto_redirected_at IS NOT NULL) FROM click_events e`+eventWhere, args...).Scan(&s.AvailableLinks, &s.Total, &s.Filtered, &s.Unique, &s.Bot, &s.Suspicious, &s.Unclassified, &s.NoCookie, &s.Head, &s.Prefetch, &s.LandingViews, &s.WhatsAppClicks, &s.AutoRedirects)
+	// User-facing visits include both rendered landing pages and direct handoffs;
+	// manual consultations remain landing-only while automatic actions include both modes.
+	e := r.DB.QueryRow(ctx, `SELECT (SELECT count(*) FROM short_links WHERE enabled),count(*),count(*) FILTER(WHERE classification='normal'),count(DISTINCT visitor_id) FILTER(WHERE classification='normal'),count(*) FILTER(WHERE classification='bot'),count(*) FILTER(WHERE classification='suspicious'),count(*) FILTER(WHERE classification='unclassified'),count(*) FILTER(WHERE visitor_id IS NULL),count(*) FILTER(WHERE classification='head'),count(*) FILTER(WHERE classification='prefetch'),count(*) FILTER(WHERE event_type IN ('landing','redirect') AND classification='normal'),count(*) FILTER(WHERE event_type='landing' AND classification='normal' AND whatsapp_clicked_at IS NOT NULL),count(*) FILTER(WHERE event_type IN ('landing','redirect') AND classification='normal' AND auto_redirected_at IS NOT NULL) FROM click_events e`+eventWhere, args...).Scan(&s.AvailableLinks, &s.Total, &s.Filtered, &s.Unique, &s.Bot, &s.Suspicious, &s.Unclassified, &s.NoCookie, &s.Head, &s.Prefetch, &s.LandingViews, &s.WhatsAppClicks, &s.AutoRedirects)
 	if e != nil {
 		return OverviewData{}, e
 	}
@@ -48,7 +50,7 @@ func (r Repository) Overview(ctx context.Context, f Filter) (OverviewData, error
 	if f.End.Sub(f.Start) <= 25*time.Hour {
 		format = "YYYY-MM-DD HH24:00"
 	}
-	rows, e := r.DB.Query(ctx, `SELECT to_char(occurred_at AT TIME ZONE $5,$6),count(*),count(*) FILTER(WHERE classification='normal'),count(DISTINCT visitor_id) FILTER(WHERE classification='normal'),count(*) FILTER(WHERE event_type='landing' AND classification='normal'),count(*) FILTER(WHERE event_type='landing' AND classification='normal' AND whatsapp_clicked_at IS NOT NULL),count(*) FILTER(WHERE event_type='landing' AND classification='normal' AND auto_redirected_at IS NOT NULL) FROM click_events e`+eventWhere+` GROUP BY 1 ORDER BY 1`, append(args, f.TZ, format)...)
+	rows, e := r.DB.Query(ctx, `SELECT to_char(occurred_at AT TIME ZONE $5,$6),count(*),count(*) FILTER(WHERE classification='normal'),count(DISTINCT visitor_id) FILTER(WHERE classification='normal'),count(*) FILTER(WHERE event_type IN ('landing','redirect') AND classification='normal'),count(*) FILTER(WHERE event_type='landing' AND classification='normal' AND whatsapp_clicked_at IS NOT NULL),count(*) FILTER(WHERE event_type IN ('landing','redirect') AND classification='normal' AND auto_redirected_at IS NOT NULL) FROM click_events e`+eventWhere+` GROUP BY 1 ORDER BY 1`, append(args, f.TZ, format)...)
 	if e != nil {
 		return OverviewData{}, e
 	}

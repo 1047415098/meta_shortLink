@@ -39,6 +39,12 @@ type Connection struct {
 }
 type ConnectionInput struct{ Connection }
 
+// ConfigInUseError tells the HTTP layer that deleting this Meta configuration
+// would break a current binding or erase the relationship to historical data.
+type ConfigInUseError struct{ Message string }
+
+func (e *ConfigInUseError) Error() string { return e.Message }
+
 const connectionColumns = "id,name,account_id,api_version,created_at"
 
 func scanConnection(row pgx.Row) (c Connection, e error) {

@@ -8,6 +8,25 @@ export function buildQuery(values) {
 export function unitCost(cost, count) {
   return Number(count) > 0 ? (Number(cost) / Number(count)).toFixed(2) : "—";
 }
+// Build a stable three-level GeoIP label while keeping incomplete lookups visible.
+export function locationLabel(location = {}) {
+  // The collector stores the literal value "unknown" when GeoIP cannot resolve a level.
+  const known = (value, fallback) =>
+    value && String(value).toLowerCase() !== "unknown" ? value : fallback;
+  return [
+    known(location.country, "未知国家"),
+    known(location.region, "未知州省"),
+    known(location.city, "未知城市"),
+  ].join(" / ");
+}
+// Sum the visit-based GeoIP buckets so the UI can expose an explicit check
+// against the ad row total without confusing visits with unique visitors.
+export function locationVisitTotal(locations = []) {
+  return locations.reduce(
+    (total, location) => total + Number(location?.visits || 0),
+    0,
+  );
+}
 export function validateLink(link) {
   if (
     link.landing_delay !== undefined &&
@@ -24,6 +43,15 @@ export function validateLink(link) {
   )
     return "请填写落地页品牌、标题和产品简介";
   if (!link.name?.trim()) return "请输入链接名称";
+  // Every saved link needs one concrete CAPI destination and one explicit
+  // attribution rule so visits and consultations use the same business scope.
+  if (
+    !Number.isInteger(Number(link.meta_pixel_id)) ||
+    Number(link.meta_pixel_id) <= 0
+  )
+    return "请选择 Meta Pixel";
+  if (!["bound", "dynamic"].includes(link.attribution_mode))
+    return "请选择广告归因方式";
   try {
     const url = new URL(link.target_url);
     if (

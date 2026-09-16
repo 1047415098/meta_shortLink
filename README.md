@@ -152,7 +152,7 @@ go run ./cmd/server
 
 本地默认读取 `../frontend/dist` 和 `../landing/dist`，可通过 `FRONTEND_DIR`、`LANDING_DIR` 覆盖。Docker 已分别构建并复制两端资源，无需启动两个 Node 服务。
 
-后台热更新：在 `frontend/` 执行 `npm run dev`，API 代理到本机 8080。落地页由 Go 注入真实短链接数据与签名凭证，因此开发时在 `landing/` 执行 `npx vite build --watch`，通过 Go 的 `/:code` 页面刷新检查。正式验收必须重新 `npm run build`，生成配套压缩文件。
+本地热更新：保持 Go 服务运行在 8080，然后执行 `./scripts/dev-local.sh`。运营后台使用 `http://localhost:5173/admin/login`；落地页使用 `http://localhost:5174/:code`。落地页开发服务器从 Go 获取真实短链接数据与签名凭证，再由 Vite 提供热更新。正式验收仍需重新执行 `npm run build`，生成配套压缩文件。
 
 ```sh
 (cd frontend && npm test && npm run build)

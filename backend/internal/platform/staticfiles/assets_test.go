@@ -18,6 +18,10 @@ func TestAssetDelivery(t *testing.T) {
 	source := []byte(strings.Repeat("const message='hello';\n", 100))
 	os.WriteFile(filepath.Join(dir, "index-abcdefgh.js"), source, 0600)
 	os.WriteFile(filepath.Join(dir, "product.webp"), []byte("image"), 0600)
+	// Content-versioned images must keep the same immutable cache contract as
+	// generated JavaScript and CSS assets.
+	os.MkdirAll(filepath.Join(dir, "images"), 0700)
+	os.WriteFile(filepath.Join(dir, "images", "hero-abcdefgh.webp"), []byte("hero image"), 0600)
 	var compressed bytes.Buffer
 	w := gzip.NewWriter(&compressed)
 	w.Write(source)
@@ -66,6 +70,10 @@ func TestAssetDelivery(t *testing.T) {
 	picture := get("GET", "/assets/product.webp", "gzip", "")
 	if picture.Header().Get("Cache-Control") != "public, max-age=0, must-revalidate" {
 		t.Fatal("image caching")
+	}
+	versionedPicture := get("GET", "/assets/images/hero-abcdefgh.webp", "", "")
+	if !strings.Contains(versionedPicture.Header().Get("Cache-Control"), "immutable") {
+		t.Fatalf("versioned image caching: %v", versionedPicture.Header())
 	}
 	if next := get("GET", "/assets/product.webp", "", picture.Header().Get("Last-Modified")); next.Code != 304 || next.Body.Len() != 0 {
 		t.Fatal("image revalidation failed")

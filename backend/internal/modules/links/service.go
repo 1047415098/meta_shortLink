@@ -26,7 +26,12 @@ func ValidLink(l Link) bool {
 	if l.MetaConnectionID != nil && *l.MetaConnectionID <= 0 {
 		return false
 	}
-	if l.AttributionMode != "" && l.AttributionMode != "bound" && l.AttributionMode != "dynamic" {
+	if l.MetaPixelID != nil && *l.MetaPixelID <= 0 {
+		return false
+	}
+	// Attribution is a required stored decision; empty values can no longer
+	// fall through to the historical fixed-binding behavior.
+	if l.AttributionMode != "bound" && l.AttributionMode != "dynamic" {
 		return false
 	}
 	if l.LandingDelay < 0 || l.LandingDelay > 300 {
@@ -42,4 +47,10 @@ func ValidLink(l Link) bool {
 		return false
 	}
 	return codePattern.MatchString(l.Code) && l.Code != "api" && l.Code != "assets" && l.Code != "healthz" && l.Code != "admin" && l.Code != "admin-assets" && l.Code != "landing-assets" && ValidTarget(l.TargetURL) && len(strings.TrimSpace(l.Name)) > 0 && len(l.Name) <= 120 && len(l.AdID) <= 120 && len(l.CampaignID) <= 120 && len(l.AdsetID) <= 120 && len(l.Channel) <= 60
+}
+
+// HasMetaBinding identifies the complete account/Pixel pair required for new
+// links while legacy rows without a pair remain available for emergency pause.
+func HasMetaBinding(l Link) bool {
+	return l.MetaConnectionID != nil && *l.MetaConnectionID > 0 && l.MetaPixelID != nil && *l.MetaPixelID > 0
 }

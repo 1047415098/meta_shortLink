@@ -24,13 +24,23 @@ type LinkStatsMetrics struct {
 	NoCookie            int64 `json:"no_cookie"`
 }
 
+// LinkStatsLocation keeps GeoIP levels separate so the UI can show one
+// country/region/city path without parsing a presentation string.
+type LinkStatsLocation struct {
+	Country string `json:"country"`
+	Region  string `json:"region"`
+	City    string `json:"city"`
+	Visits  int64  `json:"visits"`
+}
+
 type LinkStatsRow struct {
-	ConnectionID int64  `json:"connection_id"`
-	AccountID    string `json:"account_id"`
-	SourceKind   string `json:"source_kind"`
-	SourceValue  string `json:"source_value"`
-	AdName       string `json:"ad_name"`
-	NameSource   string `json:"name_source"`
+	ConnectionID int64               `json:"connection_id"`
+	AccountID    string              `json:"account_id"`
+	SourceKind   string              `json:"source_kind"`
+	SourceValue  string              `json:"source_value"`
+	AdName       string              `json:"ad_name"`
+	NameSource   string              `json:"name_source"`
+	Locations    []LinkStatsLocation `json:"locations"`
 	LinkStatsMetrics
 }
 
@@ -51,20 +61,16 @@ type LinkStatsResponse struct {
 	Timezone string           `json:"timezone"`
 }
 
-// Resolve one advertising ID for reports: the dedicated ad_id wins, while
-// utm_content supports Meta links that intentionally place {{ad.id}} there.
+// Resolve one advertising ID for reports from the canonical explicit ad_id.
+// utm_content remains descriptive UTM data and never identifies an ad.
 const linkStatsResolvedAdID = `(CASE
  WHEN btrim(COALESCE(e.ad_id,''))<>''
   AND e.ad_id NOT LIKE '%{{%'
   AND e.ad_id NOT LIKE '%}}%' THEN btrim(e.ad_id)
- WHEN jsonb_typeof(e.parameters->'utm_content')='string'
-  AND btrim(e.parameters->>'utm_content')<>''
-  AND e.parameters->>'utm_content' NOT LIKE '%{{%'
-  AND e.parameters->>'utm_content' NOT LIKE '%}}%' THEN btrim(e.parameters->>'utm_content')
  ELSE '' END)`
 
-// A real ad click must be a normal landing-page visit with Meta's click
-// identifier and an advertising ID resolved from ad_id or utm_content.
+// A real ad click may render a landing page or issue a direct handoff; both
+// require Meta's click identifier and an explicit resolved advertising ID.
 const linkStatsRealAdClickPredicate = `(jsonb_typeof(e.parameters->'fbclid')='string'
  AND btrim(e.parameters->>'fbclid')<>''
  AND e.parameters->>'fbclid' NOT LIKE '%{{%'
@@ -78,7 +84,7 @@ const linkStatsSource = `WITH filtered AS (
  -- The public row remains an ad_id row because source_value is the resolved advertising ID.
  'ad_id'::text AS source_kind,` + linkStatsResolvedAdID + ` AS source_value
  FROM click_events e WHERE e.link_id=$3 AND e.occurred_at >= $1 AND e.occurred_at < $2
- AND e.classification='normal' AND e.event_type='landing'
+ AND e.classification='normal' AND e.event_type IN ('landing','redirect')
  AND ` + linkStatsRealAdClickPredicate + `
  AND ($4::text='' OR ` + linkStatsResolvedAdID + `=btrim($4::text))
 ) `
@@ -189,22 +195,42 @@ func (r Repository) LinkStats(ctx context.Context, f Filter, page int, sort, ord
  -- Every row is already grouped by its resolved ID, so its captured ad name is safe as a fallback.
  min(NULLIF(btrim(parameters->>'ad_name'),'')) AS captured_name,
  ` + linkStatsMetricsSQL + ` FROM filtered GROUP BY connection_id,meta_account_id,source_kind,source_value
+ ), location_counts AS (
+ -- Locations share the exact real-click cohort and count visits rather than Cookie-unique people.
+ SELECT connection_id,meta_account_id,source_kind,source_value,
+ btrim(country) AS country,btrim(region) AS region,btrim(city) AS city,count(*) AS visits
+ FROM filtered GROUP BY connection_id,meta_account_id,source_kind,source_value,btrim(country),btrim(region),btrim(city)
+ ), location_groups AS (
+ SELECT connection_id,meta_account_id,source_kind,source_value,
+ jsonb_agg(jsonb_build_object('country',country,'region',region,'city',city,'visits',visits)
+ ORDER BY visits DESC,(country='' AND region='' AND city=''),country,region,city)::text AS locations
+ FROM location_counts GROUP BY connection_id,meta_account_id,source_kind,source_value
  ) SELECT g.connection_id,g.meta_account_id,g.source_kind,g.source_value,
  CASE WHEN g.source_kind='ad_id' THEN COALESCE(NULLIF(e.ad_name,''),g.captured_name,'') ELSE '' END,
  CASE WHEN g.source_kind<>'ad_id' THEN '' WHEN NULLIF(e.ad_name,'') IS NOT NULL THEN 'meta' WHEN g.captured_name IS NOT NULL THEN 'parameter' ELSE '' END,
  -- Keep real-click row metrics in the same order as linkStatsTargets.
- g.visits,g.unique_visitors,g.manual_consultations,g.auto_redirects,g.no_cookie
+ g.visits,g.unique_visitors,g.manual_consultations,g.auto_redirects,g.no_cookie,
+ COALESCE(l.locations,'[]')
  FROM groups g LEFT JOIN meta_connections c ON c.id=g.connection_id AND c.account_id=g.meta_account_id
  LEFT JOIN meta_ad_entities e ON e.connection_id=c.id AND e.ad_id=g.source_value AND g.source_kind='ad_id'
+ LEFT JOIN location_groups l ON l.connection_id=g.connection_id AND l.meta_account_id=g.meta_account_id
+  AND l.source_kind=g.source_kind AND l.source_value=g.source_value
  ORDER BY g.` + sort + ` ` + order + `,g.connection_id,g.meta_account_id,g.source_kind,g.source_value LIMIT 50 OFFSET $5`
 	rows, err := tx.Query(ctx, query, append(args, (page-1)*50)...)
 	if err != nil {
 		return out, err
 	}
 	for rows.Next() {
-		var row LinkStatsRow
+		row := LinkStatsRow{Locations: []LinkStatsLocation{}}
+		var locationsJSON string
 		targets := []any{&row.ConnectionID, &row.AccountID, &row.SourceKind, &row.SourceValue, &row.AdName, &row.NameSource}
-		if err = rows.Scan(append(targets, linkStatsTargets(&row.LinkStatsMetrics)...)...); err != nil {
+		targets = append(targets, linkStatsTargets(&row.LinkStatsMetrics)...)
+		if err = rows.Scan(append(targets, &locationsJSON)...); err != nil {
+			rows.Close()
+			return out, err
+		}
+		// PostgreSQL builds one compact JSON array per ad, avoiding a query for every table row.
+		if err = json.Unmarshal([]byte(locationsJSON), &row.Locations); err != nil {
 			rows.Close()
 			return out, err
 		}

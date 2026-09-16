@@ -9,11 +9,20 @@ import {
   credentialStatus,
   pixelSelectable,
   pixelsForConnection,
-  preferredPixelID,
   connectionIDForPixel,
   pixelUnavailableReason,
   GRAPH_API_VERSION,
+  META_URL_PARAMETERS,
 } from "../src/utils/meta.js";
+
+test("Meta URL parameter template keeps every canonical advertising field", () => {
+  // Operators copy one immutable template so separate ad creators cannot drift
+  // back to ambiguous legacy UTM mappings.
+  assert.equal(
+    META_URL_PARAMETERS,
+    "utm_source={{site_source_name}}&utm_medium=paid_social&utm_campaign={{campaign.name}}&utm_content={{ad.id}}&campaign_id={{campaign.id}}&campaign_name={{campaign.name}}&adset_id={{adset.id}}&adset_name={{adset.name}}&ad_id={{ad.id}}&ad_name={{ad.name}}&placement={{placement}}&site_source_name={{site_source_name}}",
+  );
+});
 
 test("Meta account payload contains only Pixel grouping fields", () => {
   // Removed Insights inputs must not survive in browser state or reach the
@@ -48,6 +57,18 @@ test("Pixel edits omit immutable IDs and blank credentials", () => {
   // Event names are fixed by the backend; the form sends only independent rules.
   assert.equal("manual_event_name" in payload, false);
   assert.equal(payload.auto_enabled, true);
+});
+test("Pixel edit reuses the displayed credential without rewriting it", () => {
+  // The detail endpoint may reveal the existing token to an authenticated
+  // administrator, but an unchanged value must not be encrypted again.
+  const form = pixelForm(
+    { connection_id: 3, pixel_id: "998", name: "Main" },
+    "saved-capi-token",
+  );
+  assert.equal(form.capi_token, "saved-capi-token");
+  assert.equal("capi_token" in pixelPayload(form, true), false);
+  form.capi_token = "replacement-capi-token";
+  assert.equal(pixelPayload(form, true).capi_token, "replacement-capi-token");
 });
 test("a new Pixel starts with qualified PageView and consultation delivery enabled", () => {
   // A saved Pixel is ready for the complete landing funnel without requiring
@@ -89,26 +110,6 @@ test("link Pixel choices stay inside the selected account and reject unusable ta
   assert.equal(pixelUnavailableReason(pixels[4]), "");
 });
 
-test("a single usable Pixel is selected automatically but multiple targets require a choice", () => {
-  // Automatic selection is safe only when the account has one eligible target.
-  const one = [
-    { id: 11, connection_id: 7, enabled: true, has_capi_token: true },
-    { id: 12, connection_id: 7, enabled: false, has_capi_token: true },
-  ];
-  assert.equal(preferredPixelID(one, 7), 11);
-  assert.equal(
-    preferredPixelID(
-      [
-        ...one,
-        { id: 13, connection_id: 7, enabled: true, has_capi_token: true },
-      ],
-      7,
-    ),
-    null,
-  );
-  assert.equal(preferredPixelID(one, 7, 11), 11);
-  assert.equal(preferredPixelID(one, 8, 11), null);
-});
 test("selecting a Pixel derives its owning account for the saved short link", () => {
   // The operator chooses one destination while the persisted link still keeps
   // the account/Pixel pair required by the database relationship.

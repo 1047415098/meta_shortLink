@@ -28,8 +28,7 @@ type Pixel struct {
 }
 type PixelInput struct {
 	Pixel
-	CapiToken      string `json:"capi_token"`
-	ClearCapiToken bool   `json:"clear_capi_token"`
+	CapiToken string `json:"capi_token"`
 }
 
 const pixelColumns = "id,connection_id,name,pixel_id,enabled,pageview_enabled,manual_enabled,auto_enabled,manual_event_name,capi_token_cipher,credential_status,validated_at,last_error,updated_at"
@@ -52,6 +51,18 @@ func credentialStatus(configured bool, status string) string {
 }
 func (s *Service) Pixel(ctx context.Context, id int64) (Pixel, error) {
 	return scanPixel(s.Core.DB.QueryRow(ctx, "SELECT "+pixelColumns+" FROM meta_pixels WHERE id=$1", id))
+}
+func (s *Service) PixelCredential(ctx context.Context, id int64) (string, error) {
+	var cipher, accountID string
+	// Resolve the account at read time because it is part of the authenticated
+	// encryption context and Pixel ownership cannot be changed after creation.
+	e := s.Core.DB.QueryRow(ctx, `SELECT p.capi_token_cipher,c.account_id
+		FROM meta_pixels p JOIN meta_connections c ON c.id=p.connection_id
+		WHERE p.id=$1`, id).Scan(&cipher, &accountID)
+	if e != nil {
+		return "", e
+	}
+	return s.open(cipher, "capi:"+accountID)
 }
 func (s *Service) Pixels(ctx context.Context, id int64) ([]Pixel, error) {
 	rows, e := s.Core.DB.Query(ctx, "SELECT "+pixelColumns+" FROM meta_pixels WHERE ($1::bigint=0 OR connection_id=$1) ORDER BY connection_id,id", id)
@@ -109,12 +120,6 @@ func (s *Service) SavePixel(ctx context.Context, in PixelInput, id int64) (Pixel
 	if len(in.CapiToken) > 8192 || strings.ContainsAny(in.CapiToken, " \r\n\t") {
 		return p, errors.New("回传凭证格式无效")
 	}
-	if in.ClearCapiToken {
-		p.Cipher = ""
-		p.ValidatedAt = nil
-		p.CredentialStatus = "missing"
-		p.LastError = ""
-	}
 	if in.CapiToken != "" {
 		p.Cipher, e = s.seal(in.CapiToken, "capi:"+c.AccountID)
 		if e != nil {
@@ -124,8 +129,10 @@ func (s *Service) SavePixel(ctx context.Context, in PixelInput, id int64) (Pixel
 		p.CredentialStatus = "unverified"
 		p.LastError = ""
 	}
-	if p.Enabled && p.Cipher == "" {
-		return p, errors.New("启用 Pixel 前需要回传凭证")
+	// Every Pixel keeps one delivery credential even while paused. The API only
+	// supports preserving or replacing it, so a Pixel can never be saved empty.
+	if p.Cipher == "" {
+		return p, errors.New("请填写当前 Pixel 的 CAPI Token")
 	}
 	args := []any{p.ConnectionID, p.Name, p.PixelID, p.Enabled, p.PageviewEnabled, p.ManualEnabled, p.AutoEnabled, p.ManualEventName, p.Cipher, p.CredentialStatus, p.ValidatedAt, p.LastError}
 	q := "INSERT INTO meta_pixels(connection_id,name,pixel_id,enabled,pageview_enabled,manual_enabled,auto_enabled,manual_event_name,capi_token_cipher,credential_status,validated_at,last_error) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING " + pixelColumns
@@ -138,9 +145,50 @@ func (s *Service) SavePixel(ctx context.Context, in PixelInput, id int64) (Pixel
 		return p, e
 	}
 	// Pixel credentials stay on this Pixel row; account rows only group Pixels.
-	detail, _ := json.Marshal(map[string]any{"pixel_record_id": p.ID, "pixel_id": p.PixelID, "connection_id": p.ConnectionID, "enabled": p.Enabled, "credential_changed": in.CapiToken != "" || in.ClearCapiToken})
+	detail, _ := json.Marshal(map[string]any{"pixel_record_id": p.ID, "pixel_id": p.PixelID, "connection_id": p.ConnectionID, "enabled": p.Enabled, "credential_changed": in.CapiToken != ""})
 	if _, e = tx.Exec(ctx, "INSERT INTO audit_logs(actor,action,detail)VALUES($1,'meta.pixel.save',$2)", s.Core.Config.AdminUser, detail); e != nil {
 		return p, e
 	}
 	return p, tx.Commit(ctx)
+}
+
+func (s *Service) DeletePixel(ctx context.Context, id int64) error {
+	tx, err := s.Core.DB.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+
+	// Lock the secret-bearing row while checking every business reference so a
+	// delete can never silently rewrite link attribution or historical reports.
+	pixel, err := scanPixel(tx.QueryRow(ctx, "SELECT "+pixelColumns+" FROM meta_pixels WHERE id=$1 FOR UPDATE", id))
+	if err != nil {
+		return err
+	}
+	var links, visits, events int64
+	err = tx.QueryRow(ctx, `SELECT
+		(SELECT count(*) FROM short_links WHERE meta_pixel_id=$1),
+		(SELECT count(*) FROM click_events WHERE meta_pixel_id=$1),
+		(SELECT count(*) FROM meta_events WHERE pixel_record_id=$1)`, id).Scan(&links, &visits, &events)
+	if err != nil {
+		return err
+	}
+	if links > 0 {
+		return &ConfigInUseError{Message: "该 Pixel 仍被短链接使用，请先将相关短链接绑定到其他 Pixel"}
+	}
+	if visits+events > 0 {
+		return &ConfigInUseError{Message: "该 Pixel 已产生历史访问或回传记录，为保留统计记录不能删除；可以将其停用"}
+	}
+	if tag, deleteErr := tx.Exec(ctx, "DELETE FROM meta_pixels WHERE id=$1", id); deleteErr != nil {
+		return deleteErr
+	} else if tag.RowsAffected() != 1 {
+		return pgx.ErrNoRows
+	}
+	// Audit identifiers only; the deleted plaintext/encrypted CAPI token is
+	// deliberately absent from the permanent audit trail.
+	detail, _ := json.Marshal(map[string]any{"pixel_record_id": pixel.ID, "pixel_id": pixel.PixelID, "connection_id": pixel.ConnectionID, "name": pixel.Name})
+	if _, err = tx.Exec(ctx, "INSERT INTO audit_logs(actor,action,detail)VALUES($1,'meta.pixel.delete',$2)", s.Core.Config.AdminUser, detail); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
 }

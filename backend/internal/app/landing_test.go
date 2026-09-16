@@ -11,6 +11,46 @@ import (
 	"time"
 )
 
+func TestDirectModeRecordsVisitAndReturnsMinimalTopLocationScript(t *testing.T) {
+	a := setup(t)
+	admin := login(t, a)
+	// The configured target remains authoritative, including its prefilled text.
+	if w := call(a, "PATCH", "/api/v1/links/1", `{"target_url":"https://wa.me/13365661092?text=hello+world"}`, admin); w.Code != 200 {
+		t.Fatal(w.Body.String())
+	}
+
+	page := call(a, "GET", "/hello?utm_source=facebook&ad_id=direct-ad", "", nil)
+	if page.Code != 200 || page.Header().Get("Location") != "" {
+		t.Fatalf("direct page response: %d %s", page.Code, page.Header().Get("Location"))
+	}
+	if !strings.Contains(page.Body.String(), `top.location = "https://wa.me/13365661092?text=hello+world"`) {
+		t.Fatalf("configured target missing from direct script: %s", page.Body.String())
+	}
+	for _, removed := range []string{`<!doctype html>`, `<body`, `direct-data`, `data-manual-contact`, `sendBeacon`, `whatsapp://`} {
+		if strings.Contains(page.Body.String(), removed) {
+			t.Fatalf("removed direct-page behavior %q is still present", removed)
+		}
+	}
+	var visits, manual, automatic, viewed int
+	var eventID, eventType string
+	if err := a.DB.QueryRow(context.Background(), `SELECT count(*) OVER(),count(whatsapp_clicked_at) OVER(),count(auto_redirected_at) OVER(),count(pageview_reported_at) OVER(),id,event_type FROM click_events LIMIT 1`).Scan(&visits, &manual, &automatic, &viewed, &eventID, &eventType); err != nil {
+		t.Fatal(err)
+	}
+	if visits != 1 || manual != 0 || automatic != 1 || viewed != 1 || eventType != "redirect" {
+		t.Fatalf("direct counters: visits=%d manual=%d auto=%d view=%d type=%s", visits, manual, automatic, viewed, eventType)
+	}
+	// Direct mode records its automatic action on the server and never exposes a
+	// browser ticket that could manufacture a manual consultation.
+	ticket := eventID + "." + a.Sign("contact:hello:"+eventID)
+	r := httptest.NewRequest("POST", "/hello/contact", strings.NewReader(url.Values{"ticket": {ticket}, "trigger": {"manual"}}.Encode()))
+	r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	result := httptest.NewRecorder()
+	a.Router.ServeHTTP(result, r)
+	if result.Code != 410 {
+		t.Fatalf("direct consultation endpoint remained enabled: %d", result.Code)
+	}
+}
+
 func TestLandingVisitAndContact(t *testing.T) {
 	a := setup(t)
 	a.Config.CookieMode = "off"

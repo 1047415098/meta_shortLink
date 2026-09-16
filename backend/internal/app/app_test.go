@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
@@ -78,11 +79,28 @@ func login(t *testing.T, a *App) *http.Cookie {
 	}
 	return w.Result().Cookies()[0]
 }
+
+func testLinkMetaBinding(t *testing.T, a *App) (int64, int64) {
+	t.Helper()
+	// Successful link-creation fixtures follow the production requirement and
+	// bind the concrete Pixel created for their Meta account.
+	connectionID := metaConnection(t, a, "12345", "98765", true)
+	var pixelID int64
+	if err := a.DB.QueryRow(context.Background(), "SELECT id FROM meta_pixels WHERE connection_id=$1 ORDER BY id LIMIT 1", connectionID).Scan(&pixelID); err != nil {
+		t.Fatal(err)
+	}
+	return connectionID, pixelID
+}
 func TestRedirectAndDedup(t *testing.T) {
 	a := setup(t)
 	w := call(a, "GET", "/hello?ad_id=forged", "", nil)
-	if w.Code != 302 || w.Header().Get("Location") != "https://wa.me/13365661092" {
-		t.Fatalf("redirect: %d", w.Code)
+	// Direct-mode visits keep the measured HTTP request, then hand off through
+	// one minimal top.location script without rendering an intermediate page.
+	if w.Code != 200 || w.Header().Get("Location") != "" || !strings.Contains(w.Body.String(), `top.location = "https://wa.me/13365661092"`) {
+		t.Fatalf("direct page: %d %s", w.Code, w.Header().Get("Location"))
+	}
+	if strings.Contains(w.Body.String(), `direct-data`) || strings.Contains(w.Body.String(), `<body`) {
+		t.Fatal("direct mode rendered the removed intermediate page")
 	}
 	if w.Header().Get("Cache-Control") != "no-store" {
 		t.Fatal("cacheable redirect")
@@ -106,12 +124,21 @@ func TestRedirectAndDedup(t *testing.T) {
 	today := time.Now().In(mustLocation("Asia/Shanghai")).Format("2006-01-02")
 	w = call(a, "GET", "/api/v1/analytics?start="+today+"&end="+today, "", admin)
 	var out struct {
-		Summary struct{ Total, Filtered, Unique, Head int }
+		Summary struct {
+			Total         int
+			Filtered      int
+			Unique        int
+			Head          int
+			LandingViews  int `json:"landing_views"`
+			AutoRedirects int `json:"auto_redirects"`
+		}
 	}
 	if e = json.Unmarshal(w.Body.Bytes(), &out); e != nil {
 		t.Fatal(e)
 	}
-	if out.Summary.Total != 3 || out.Summary.Filtered != 2 || out.Summary.Unique != 1 || out.Summary.Head != 1 {
+	// Both normal direct requests are visible as user visits and automatic
+	// handoffs; the HEAD probe remains outside those business metrics.
+	if out.Summary.Total != 3 || out.Summary.Filtered != 2 || out.Summary.Unique != 1 || out.Summary.Head != 1 || out.Summary.LandingViews != 2 || out.Summary.AutoRedirects != 2 {
 		t.Fatalf("summary %s", w.Body.String())
 	}
 }
@@ -139,8 +166,8 @@ func TestBotCookieDisabledAndFailOpen(t *testing.T) {
 	r.Header.Set("User-Agent", "facebookexternalhit/1.1")
 	w := httptest.NewRecorder()
 	a.Router.ServeHTTP(w, r)
-	if w.Code != 302 || len(w.Result().Cookies()) != 0 {
-		t.Fatal("bot redirect/cookie")
+	if w.Code != 200 || len(w.Result().Cookies()) != 0 {
+		t.Fatal("bot page/cookie")
 	}
 	var class string
 	a.DB.QueryRow(context.Background(), "SELECT classification FROM click_events LIMIT 1").Scan(&class)
@@ -152,7 +179,7 @@ func TestBotCookieDisabledAndFailOpen(t *testing.T) {
 		t.Fatal(e)
 	}
 	w = call(a, "GET", "/hello", "", nil)
-	if w.Code != 302 || a.WriteFailures.Load() != 1 {
+	if w.Code != 200 || a.WriteFailures.Load() != 1 {
 		t.Fatal("must fail open and count failure")
 	}
 }
@@ -168,7 +195,10 @@ func TestClassify(t *testing.T) {
 func TestCrossDayUniqueAndAttribution(t *testing.T) {
 	a := setup(t)
 	admin := login(t, a)
-	w := call(a, "POST", "/api/v1/links", `{"code":"paid","name":"Paid","target_url":"https://wa.me/13365661092","enabled":true,"ad_id":"ad-A","channel":"facebook"}`, admin)
+	connectionID, pixelID := testLinkMetaBinding(t, a)
+	// This case deliberately selects fixed attribution to keep verifying that a
+	// forged URL ad ID conflicts with the link's explicitly bound ad ID.
+	w := call(a, "POST", "/api/v1/links", fmt.Sprintf(`{"code":"paid","name":"Paid","target_url":"https://wa.me/13365661092","enabled":true,"ad_id":"ad-A","channel":"facebook","meta_connection_id":%d,"meta_pixel_id":%d,"attribution_mode":"bound"}`, connectionID, pixelID), admin)
 	if w.Code != 200 {
 		t.Fatal(w.Body.String())
 	}
@@ -287,8 +317,9 @@ func TestSpendImportAndExport(t *testing.T) {
 func TestDisabledLink(t *testing.T) {
 	a := setup(t)
 	admin := login(t, a)
+	connectionID, pixelID := testLinkMetaBinding(t, a)
 	// Availability now follows only the explicit enabled switch.
-	w := call(a, "POST", "/api/v1/links", `{"code":"disabled","name":"Disabled","target_url":"https://wa.me/13365661092","enabled":false}`, admin)
+	w := call(a, "POST", "/api/v1/links", fmt.Sprintf(`{"code":"disabled","name":"Disabled","target_url":"https://wa.me/13365661092","enabled":false,"meta_connection_id":%d,"meta_pixel_id":%d}`, connectionID, pixelID), admin)
 	if w.Code != 200 {
 		t.Fatal(w.Body.String())
 	}

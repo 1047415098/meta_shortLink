@@ -4,6 +4,7 @@ import {
   credentialStatus,
   pixelForm,
   pixelPayload,
+  pixelTogglePayload,
   pixelSelectable,
   pixelUnavailableReason,
 } from "../src/utils/meta.js";
@@ -18,14 +19,24 @@ test("Pixel form separates consultation rules and removes token expiry", () => {
   assert.equal(form.auto_enabled, true);
   assert.equal("manual_event_name" in form, false);
   assert.equal("token_expires_at" in form, false);
+  assert.equal("clear_capi_token" in form, false);
 
   form.manual_enabled = false;
   form.auto_enabled = true;
+  // Legacy callers cannot reintroduce credential deletion through the payload.
+  form.clear_capi_token = true;
   const payload = pixelPayload(form, false);
   assert.equal(payload.manual_enabled, false);
   assert.equal(payload.auto_enabled, true);
   assert.equal("manual_event_name" in payload, false);
   assert.equal("token_expires_at" in payload, false);
+  assert.equal("clear_capi_token" in payload, false);
+});
+
+test("Pixel list toggle changes only the master enabled state", () => {
+  // A quick pause must preserve the token and each independent event rule.
+  assert.deepEqual(pixelTogglePayload({ enabled: true }), { enabled: false });
+  assert.deepEqual(pixelTogglePayload({ enabled: false }), { enabled: true });
 });
 
 // Legacy expiry labels cannot disable a permanent CAPI token after the feature is removed.

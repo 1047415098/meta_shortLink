@@ -57,7 +57,7 @@ const router = createRouter({
           path: "meta/connections",
           name: "meta-connections",
           component: () => import("../views/MetaConnectionsView.vue"),
-          meta: { title: "Meta 连接", requiresAuth: true },
+          meta: { title: "Meta 帐号", requiresAuth: true },
         },
         {
           path: "meta/events",

@@ -74,6 +74,8 @@ func New(core *runtime.Core, h Handlers) (*gin.Engine, error) {
 	// Statistics filters are submitted as JSON; POST retains both login and request-header validation.
 	api.POST("/links/:id/stats", h.Analytics.LinkStats)
 	api.POST("/links", h.Links.Create)
+	// Bulk deletion uses POST so proxies reliably forward the validated JSON selection.
+	api.POST("/links/batch-delete", h.Links.DeleteBatch)
 	api.PATCH("/links/:id", h.Links.Update)
 	api.GET("/analytics", h.Analytics.Overview)
 	api.GET("/clicks", h.Analytics.Clicks)

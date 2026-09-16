@@ -57,4 +57,51 @@ func (s *Service) SaveConnection(ctx context.Context, in ConnectionInput, id int
 	return c, tx.Commit(ctx)
 }
 
+func (s *Service) DeleteConnection(ctx context.Context, id int64) error {
+	tx, err := s.Core.DB.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+
+	// Accounts are grouping records for Pixels and all historical Meta data.
+	// Only a completely unused account can be removed without changing reports.
+	connection, err := scanConnection(tx.QueryRow(ctx, "SELECT "+connectionColumns+" FROM meta_connections WHERE id=$1 FOR UPDATE", id))
+	if err != nil {
+		return err
+	}
+	var pixels, links, visits, events, jobs, entities, insights, coverage int64
+	err = tx.QueryRow(ctx, `SELECT
+		(SELECT count(*) FROM meta_pixels WHERE connection_id=$1),
+		(SELECT count(*) FROM short_links WHERE meta_connection_id=$1),
+		(SELECT count(*) FROM click_events WHERE meta_connection_id=$1),
+		(SELECT count(*) FROM meta_events WHERE connection_id=$1),
+		(SELECT count(*) FROM meta_sync_jobs WHERE connection_id=$1),
+		(SELECT count(*) FROM meta_ad_entities WHERE connection_id=$1),
+		(SELECT count(*) FROM meta_insights_daily WHERE connection_id=$1),
+		(SELECT count(*) FROM meta_sync_coverage WHERE connection_id=$1)`, id).Scan(&pixels, &links, &visits, &events, &jobs, &entities, &insights, &coverage)
+	if err != nil {
+		return err
+	}
+	if pixels > 0 {
+		return &ConfigInUseError{Message: "该 Meta 帐号下仍有 Pixel，请先处理这些 Pixel"}
+	}
+	if links > 0 {
+		return &ConfigInUseError{Message: "该 Meta 帐号仍被短链接使用，请先解除绑定"}
+	}
+	if visits+events+jobs+entities+insights+coverage > 0 {
+		return &ConfigInUseError{Message: "该 Meta 帐号已产生历史访问、回传或同步记录，为保留历史数据不能删除"}
+	}
+	if tag, deleteErr := tx.Exec(ctx, "DELETE FROM meta_connections WHERE id=$1", id); deleteErr != nil {
+		return deleteErr
+	} else if tag.RowsAffected() != 1 {
+		return pgx.ErrNoRows
+	}
+	detail, _ := json.Marshal(map[string]any{"connection_id": connection.ID, "account_id": connection.AccountID, "name": connection.Name})
+	if _, err = tx.Exec(ctx, "INSERT INTO audit_logs(actor,action,detail)VALUES($1,'meta.connection.delete',$2)", s.Core.Config.AdminUser, detail); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
+}
+
 func IsNotFound(err error) bool { return errors.Is(err, pgx.ErrNoRows) }

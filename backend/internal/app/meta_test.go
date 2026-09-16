@@ -235,14 +235,14 @@ func metaLanding(t *testing.T, a *App, connection int64) {
 		t.Fatal(err)
 	}
 	// Bind both foreign keys so every visit freezes the concrete Pixel target.
-	w := call(a, "PATCH", "/api/v1/links/1", fmt.Sprintf(`{"mode":"landing","landing_brand":"Research","landing_title":"Products","landing_description":"Product enquiries","landing_delay":3,"meta_connection_id":%d,"meta_pixel_id":%d,"attribution_mode":"dynamic","legacy_campaign_param":true}`, connection, pixelID), login(t, a))
+	w := call(a, "PATCH", "/api/v1/links/1", fmt.Sprintf(`{"mode":"landing","landing_brand":"Research","landing_title":"Products","landing_description":"Product enquiries","landing_delay":3,"meta_connection_id":%d,"meta_pixel_id":%d,"attribution_mode":"dynamic"}`, connection, pixelID), login(t, a))
 	if w.Code != 200 {
 		t.Fatalf("link %d %s", w.Code, w.Body.String())
 	}
 }
 func metaTicket(t *testing.T, a *App) string {
 	t.Helper()
-	w := call(a, "GET", "/hello?token=never-save-this&utm_content=1001&adset_id=2001&ad_id=3001&site_source_name=ig&placement=Instagram_Feed&ad_name=Product&fbclid=real-click-identifier", "", nil)
+	w := call(a, "GET", "/hello?token=never-save-this&utm_content=3001&campaign_id=1001&adset_id=2001&ad_id=3001&site_source_name=ig&placement=Instagram_Feed&ad_name=Product&fbclid=real-click-identifier", "", nil)
 	m := regexp.MustCompile(`"ticket":"([^"]+)"`).FindStringSubmatch(w.Body.String())
 	if len(m) != 2 {
 		t.Fatalf("ticket %s", w.Body.String())
@@ -294,6 +294,36 @@ func TestMetaRealAdClickQueuesDistinctConsultationEvents(t *testing.T) {
 	}
 	if manual != 1 || automatic != 1 || encrypted != 2 {
 		t.Fatalf("wrong event split manual=%d automatic=%d encrypted=%d", manual, automatic, encrypted)
+	}
+}
+
+func TestMetaDirectModeQueuesPageViewAndAutomaticRedirect(t *testing.T) {
+	a := setup(t)
+	connection := metaConnection(t, a, "12345", "98765", true)
+	var pixelID int64
+	if err := a.DB.QueryRow(context.Background(), "SELECT id FROM meta_pixels WHERE connection_id=$1 ORDER BY id LIMIT 1", connection).Scan(&pixelID); err != nil {
+		t.Fatal(err)
+	}
+	// Direct links use the same frozen Pixel rules as landing links, but their
+	// PageView and automatic redirect are produced by the server-side handoff.
+	w := call(a, "PATCH", "/api/v1/links/1", fmt.Sprintf(`{"mode":"redirect","meta_connection_id":%d,"meta_pixel_id":%d,"attribution_mode":"dynamic"}`, connection, pixelID), login(t, a))
+	if w.Code != 200 {
+		t.Fatalf("link %d %s", w.Code, w.Body.String())
+	}
+	w = call(a, "GET", "/hello?fbclid=direct-real-click&ad_id=direct-ad", "", nil)
+	if w.Code != 200 || !strings.Contains(w.Body.String(), "top.location") {
+		t.Fatalf("direct response %d %s", w.Code, w.Body.String())
+	}
+	var names, ids, statuses string
+	if err := a.DB.QueryRow(context.Background(), `SELECT
+		COALESCE(string_agg(event_name,',' ORDER BY event_name),''),
+		COALESCE(string_agg(id,',' ORDER BY id),''),
+		COALESCE(string_agg(status,',' ORDER BY event_name),'')
+		FROM meta_events WHERE is_test=false`).Scan(&names, &ids, &statuses); err != nil {
+		t.Fatal(err)
+	}
+	if names != "PageView,WhatsAppAutoRedirect" || !strings.Contains(ids, "_view") || !strings.Contains(ids, "_auto") || statuses != "pending,pending" {
+		t.Fatalf("direct CAPI events names=%q ids=%q statuses=%q", names, ids, statuses)
 	}
 }
 
@@ -366,6 +396,27 @@ func TestMetaPixelControlsDeliveryAndKeepsVisitBinding(t *testing.T) {
 	var status string
 	if e := a.DB.QueryRow(context.Background(), "SELECT status FROM meta_events LIMIT 1").Scan(&status); e != nil || status != "succeeded" {
 		t.Fatalf("Pixel-owned event status=%s error=%v", status, e)
+	}
+}
+
+func TestNewMetaPixelDefaultsToEnabled(t *testing.T) {
+	a := setup(t)
+	admin := login(t, a)
+	connection := call(a, "POST", "/api/v1/meta/connections", `{"name":"Default target","account_id":"123456789"}`, admin)
+	if connection.Code != 200 {
+		t.Fatal(connection.Body.String())
+	}
+	var account struct {
+		ID int64 `json:"id"`
+	}
+	if err := json.Unmarshal(connection.Body.Bytes(), &account); err != nil {
+		t.Fatal(err)
+	}
+	// The API default matches the simplified UI: a newly saved target starts
+	// active even when the client omits the hidden master switch.
+	w := call(a, "POST", "/api/v1/meta/pixels", fmt.Sprintf(`{"connection_id":%d,"name":"Default Pixel","pixel_id":"987654321","capi_token":"test-token"}`, account.ID), admin)
+	if w.Code != 200 || !strings.Contains(w.Body.String(), `"enabled":true`) {
+		t.Fatalf("new Pixel was not enabled by default: %d %s", w.Code, w.Body.String())
 	}
 }
 

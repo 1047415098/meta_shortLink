@@ -66,6 +66,65 @@ func TestMetaPixelRoutingAndFrozenRules(t *testing.T) {
 		t.Fatalf("cross-account accepted %d", w.Code)
 	}
 }
+
+func TestMetaPixelCredentialReadAndLegacyClearIsIgnored(t *testing.T) {
+	a := setup(t)
+	account := metaConnection(t, a, "12345", "98765", true)
+	cookie := login(t, a)
+	var pixelID int64
+	if err := a.DB.QueryRow(context.Background(), "SELECT id FROM meta_pixels WHERE connection_id=$1 ORDER BY id LIMIT 1", account).Scan(&pixelID); err != nil {
+		t.Fatal(err)
+	}
+	// Credential plaintext is available only from the authenticated detail
+	// endpoint; the collection response must remain free of secrets.
+	path := fmt.Sprintf("/api/v1/meta/pixels/%d/credential", pixelID)
+	if w := call(a, "GET", path, "", nil); w.Code != 401 {
+		t.Fatalf("credential endpoint allowed anonymous access: %d", w.Code)
+	}
+	w := call(a, "GET", path, "", cookie)
+	if w.Code != 200 || !strings.Contains(w.Body.String(), `"capi_token":"fake-capi-token"`) || w.Header().Get("Cache-Control") != "no-store" {
+		t.Fatalf("credential detail %d headers=%v body=%s", w.Code, w.Header(), w.Body.String())
+	}
+	list := call(a, "GET", "/api/v1/meta/pixels", "", cookie)
+	if strings.Contains(list.Body.String(), "fake-capi-token") {
+		t.Fatal("credential leaked through Pixel list")
+	}
+	// Credential deletion is no longer part of the product contract. A legacy
+	// clear flag is ignored so callers can only preserve or replace the token.
+	w = call(a, "PATCH", fmt.Sprintf("/api/v1/meta/pixels/%d", pixelID), `{"clear_capi_token":true}`, cookie)
+	if w.Code != 200 || !strings.Contains(w.Body.String(), `"enabled":true`) || !strings.Contains(w.Body.String(), `"has_capi_token":true`) {
+		t.Fatalf("legacy clear changed credential %d %s", w.Code, w.Body.String())
+	}
+	// A paused target still needs its own credential because pausing controls
+	// delivery only; it is not a second way to create an incomplete Pixel.
+	w = call(a, "POST", "/api/v1/meta/pixels", fmt.Sprintf(`{"connection_id":%d,"name":"Missing token","pixel_id":"87654","enabled":false}`, account), cookie)
+	if w.Code != 400 || !strings.Contains(w.Body.String(), "CAPI Token") {
+		t.Fatalf("missing credential accepted %d %s", w.Code, w.Body.String())
+	}
+}
+
+func TestNewLinkRequiresPixelAndDefaultsToDynamicAttribution(t *testing.T) {
+	a := setup(t)
+	admin := login(t, a)
+	// The public API must reject a new link that cannot route its events to a
+	// concrete Pixel, even if an older browser omits the newly required field.
+	w := call(a, "POST", "/api/v1/links", `{"code":"no-pixel","name":"No Pixel","target_url":"https://wa.me/13365661092"}`, admin)
+	if w.Code != 400 {
+		t.Fatalf("link without Pixel accepted: %d %s", w.Code, w.Body.String())
+	}
+	connectionID := metaConnection(t, a, "12345", "98765", true)
+	var pixelID int64
+	if err := a.DB.QueryRow(context.Background(), "SELECT id FROM meta_pixels WHERE connection_id=$1 ORDER BY id LIMIT 1", connectionID).Scan(&pixelID); err != nil {
+		t.Fatal(err)
+	}
+	// Omitting attribution mode uses the system-wide dynamic default while the
+	// stored link still contains an explicit, non-empty mode.
+	w = call(a, "POST", "/api/v1/links", fmt.Sprintf(`{"code":"dynamic-default","name":"Dynamic","target_url":"https://wa.me/13365661092","meta_connection_id":%d,"meta_pixel_id":%d}`, connectionID, pixelID), admin)
+	if w.Code != 200 || !strings.Contains(w.Body.String(), `"attribution_mode":"dynamic"`) {
+		t.Fatalf("dynamic default missing: %d %s", w.Code, w.Body.String())
+	}
+}
+
 func TestMetaAccountWithoutPixelAndSourceInspection(t *testing.T) {
 	a := setup(t)
 	cookie := login(t, a)
