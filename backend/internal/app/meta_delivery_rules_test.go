@@ -19,7 +19,7 @@ func TestMetaConsultationRulesAreIndependent(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Deprecated fields are ignored, manual clicks are fixed to Contact, and auto is disabled separately.
+	// Deprecated fields are ignored, manual clicks are fixed to AddToCart, and auto is disabled separately.
 	w := call(a, "PATCH", fmt.Sprintf("/api/v1/meta/pixels/%d", pixelID), `{"pageview_enabled":false,"manual_enabled":true,"auto_enabled":false,"manual_event_name":"WhatsAppConsultClick","token_expires_at":"2020-01-01T23:59:59Z"}`, admin)
 	if w.Code != 200 {
 		t.Fatalf("first rule update %d %s", w.Code, w.Body.String())
@@ -28,7 +28,7 @@ func TestMetaConsultationRulesAreIndependent(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &first); err != nil {
 		t.Fatal(err)
 	}
-	if first["manual_event_name"] != "Contact" || first["auto_enabled"] != false {
+	if first["manual_event_name"] != "AddToCart" || first["auto_enabled"] != false {
 		t.Fatalf("unexpected first rule response: %s", w.Body.String())
 	}
 	if _, exists := first["token_expires_at"]; exists {
@@ -43,7 +43,7 @@ func TestMetaConsultationRulesAreIndependent(t *testing.T) {
 	if err := a.DB.QueryRow(ctx, "SELECT COALESCE(string_agg(event_name,',' ORDER BY event_name),'') FROM meta_events").Scan(&names); err != nil {
 		t.Fatal(err)
 	}
-	if names != "Contact" {
+	if names != "AddToCart" {
 		t.Fatalf("manual-only events = %q", names)
 	}
 
@@ -61,7 +61,7 @@ func TestMetaConsultationRulesAreIndependent(t *testing.T) {
 	if err := a.DB.QueryRow(ctx, "SELECT COALESCE(string_agg(event_name,',' ORDER BY event_name),'') FROM meta_events").Scan(&names); err != nil {
 		t.Fatal(err)
 	}
-	if names != "WhatsAppAutoRedirect" {
+	if names != "AddToCart" {
 		t.Fatalf("auto-only events = %q", names)
 	}
 }

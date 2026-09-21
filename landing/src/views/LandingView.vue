@@ -22,6 +22,12 @@
       </div>
     </header>
 
+    <!-- This badge follows the visitor across the complete landing page and pauses in hidden tabs. -->
+    <div class="stay-timer" role="timer" aria-label="Visible time on page">
+      <span aria-hidden="true"></span>
+      Time on page {{ visibleTime }}
+    </div>
+
     <section class="hero">
       <div class="wrap hero-content">
         <div class="eyebrow">The research collection</div>
@@ -132,13 +138,15 @@ import WhatsAppIcon from "./components/WhatsAppIcon.vue";
 import { landingData } from "../bootstrap.js";
 import { createContactCountdown, submitLandingContact } from "../lib/contact.js";
 import { buildMetaAttributionHeaders } from "../lib/attribution.js";
-import { reportLandingView } from "../lib/view.js";
+import { installMetaPixel, reportLandingView, trackMetaConsult } from "../lib/view.js";
+import { createVisibleTimeTracker, formatVisibleTime, reportTimeSpent, trackMetaTimeSpent } from "../lib/timeSpent.js";
 
 const link = landingData.link;
 const ticket = landingData.ticket || "";
 const contactForm = ref(null);
 const contactTrigger = ref(null);
 const remaining = ref(null);
+const visibleTime = ref("00:00");
 
 // Product copy stays local to this landing page because it has no admin-side behavior.
 const products = [
@@ -177,10 +185,16 @@ const products = [
 // The initial URL remains the source of Meta attribution headers for every landing request.
 const attributionHeaders = buildMetaAttributionHeaders();
 let cleanup;
+let cleanupVisibleTimer;
 
 // Fetch records the consultation before navigation; the signed native form is the resilient fallback.
 async function handleContact(trigger) {
   if (contactTrigger.value) contactTrigger.value.value = trigger;
+  if (trigger === "manual") {
+    // Only a deliberate visitor click sends the browser AddToCart event; the
+    // server uses the same ID for CAPI deduplication.
+    trackMetaConsult({ eventId: landingData.meta_manual_event_id });
+  }
   try {
     await submitLandingContact({ code: link.code, ticket, trigger, attributionHeaders });
   } catch {
@@ -189,8 +203,23 @@ async function handleContact(trigger) {
 }
 
 onMounted(() => {
+  // Initialize the Pixel selected by this short link before the matching CAPI
+  // PageView request; both paths use the server-issued event ID for deduplication.
+  installMetaPixel({
+    pixelId: landingData.meta_browser_pixel_id,
+    eventId: landingData.meta_pageview_event_id,
+  });
   // The confirmed page view carries the same Meta attribution mirror as consultation requests.
   reportLandingView({ code: link.code, ticket, attributionHeaders });
+	// TimeSpent is reported once when this code's frozen threshold is reached.
+	cleanupVisibleTimer = createVisibleTimeTracker({
+	  threshold: Number(link.time_spent_threshold || 0),
+	  onTick: (seconds) => { visibleTime.value = formatVisibleTime(seconds); },
+	  onThreshold: () => {
+		trackMetaTimeSpent({ eventId: landingData.meta_time_spent_event_id });
+		void reportTimeSpent({ code: link.code, ticket });
+	  },
+	});
   document.title = `${link.landing_title} | ${link.landing_brand}`;
   for (const [selector, content] of [
     ['meta[name="description"]', link.landing_description],
@@ -212,7 +241,10 @@ onMounted(() => {
   });
 });
 
-onBeforeUnmount(() => cleanup?.());
+onBeforeUnmount(() => {
+  cleanup?.();
+  cleanupVisibleTimer?.();
+});
 </script>
 
 <style scoped>
@@ -221,6 +253,30 @@ onBeforeUnmount(() => cleanup?.());
   padding-bottom: 104px;
   color: #102d4f;
   background: #ffffff;
+}
+.stay-timer {
+  position: fixed;
+  z-index: 8;
+  right: 18px;
+  bottom: 88px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 13px;
+  border: 1px solid rgba(16, 45, 79, 0.12);
+  border-radius: 999px;
+  color: #31546f;
+  background: rgba(255, 255, 255, 0.94);
+  box-shadow: 0 8px 24px rgba(11, 42, 70, 0.12);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  backdrop-filter: blur(8px);
+}
+.stay-timer span {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #20bf55;
 }
 .wrap {
   width: min(100%, 1160px);

@@ -10,6 +10,7 @@ import (
 
 	"whatsapp-analytics/internal/modules/adspend"
 	"whatsapp-analytics/internal/modules/analytics"
+	"whatsapp-analytics/internal/modules/audionovel"
 	"whatsapp-analytics/internal/modules/auth"
 	"whatsapp-analytics/internal/modules/landing"
 	"whatsapp-analytics/internal/modules/links"
@@ -21,14 +22,15 @@ import (
 )
 
 type Handlers struct {
-	Auth      *auth.Handler
-	Links     *links.Handler
-	Analytics *analytics.Handler
-	Spend     *adspend.Handler
-	Logs      *requestlogs.Handler
-	Landing   *landing.Handler
-	Tracking  *tracking.Handler
-	Meta      *meta.Handler
+	Auth       *auth.Handler
+	Links      *links.Handler
+	Analytics  *analytics.Handler
+	Spend      *adspend.Handler
+	Logs       *requestlogs.Handler
+	Landing    *landing.Handler
+	AudioNovel *audionovel.Handler
+	Tracking   *tracking.Handler
+	Meta       *meta.Handler
 }
 
 func New(core *runtime.Core, h Handlers) (*gin.Engine, error) {
@@ -43,7 +45,8 @@ func New(core *runtime.Core, h Handlers) (*gin.Engine, error) {
 		c.Header("Referrer-Policy", "no-referrer")
 		c.Header("X-Frame-Options", "DENY")
 		c.Header("Cache-Control", "no-store")
-		c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 2<<20)
+		// 封面上传最大 5MB，额外空间用于 multipart 边界和字段头。
+		c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 6<<20)
 		c.Next()
 	})
 	r.GET("/healthz", func(c *gin.Context) {
@@ -83,6 +86,15 @@ func New(core *runtime.Core, h Handlers) (*gin.Engine, error) {
 	api.POST("/ad-spend/import", h.Spend.Import)
 	api.GET("/request-logs", h.Logs.List)
 	api.GET("/request-logs/:id", h.Logs.Detail)
+	api.GET("/audio-novels", h.AudioNovel.ListAdmin)
+	api.POST("/audio-novels", h.AudioNovel.CreateAdmin)
+	api.GET("/audio-novels/:id", h.AudioNovel.GetAdmin)
+	api.PATCH("/audio-novels/:id", h.AudioNovel.UpdateAdmin)
+	api.DELETE("/audio-novels/:id", h.AudioNovel.DeleteAdmin)
+	api.PATCH("/audio-novels/:id/status", h.AudioNovel.SetEnabled)
+	api.PATCH("/audio-novels/:id/featured", h.AudioNovel.SetFeatured)
+	api.POST("/audio-novels/preview", h.AudioNovel.Preview)
+	api.POST("/audio-novel-covers", h.AudioNovel.UploadCover)
 	api.GET("/settings", func(c *gin.Context) {
 		c.JSON(200, gin.H{"public_base_url": core.Config.PublicURL, "timezone": core.Config.Timezone, "cookie_mode": core.Config.CookieMode, "retention_days": core.Config.RetentionDays, "geo_enabled": core.Geo != nil})
 	})
@@ -95,12 +107,30 @@ func New(core *runtime.Core, h Handlers) (*gin.Engine, error) {
 	r.HEAD("/admin", adminIndex)
 	r.GET("/admin/*path", adminIndex)
 	r.HEAD("/admin/*path", adminIndex)
-	for prefix, root := range map[string]string{"/admin-assets/": filepath.Join(core.Config.FrontendDir, "admin-assets"), "/landing-assets/": filepath.Join(core.Config.LandingDir, "landing-assets"), "/assets/": filepath.Join(core.Config.FrontendDir, "assets")} {
+	for prefix, root := range map[string]string{"/admin-assets/": filepath.Join(core.Config.FrontendDir, "admin-assets"), "/landing-assets/": filepath.Join(core.Config.LandingDir, "landing-assets"), "/audio-novel-assets/": filepath.Join(core.Config.AudioNovelDir, "audio-novel-assets"), "/assets/": filepath.Join(core.Config.FrontendDir, "assets")} {
 		r.GET(prefix+"*filepath", staticfiles.Handler(root))
 		r.HEAD(prefix+"*filepath", staticfiles.Handler(root))
 	}
+	// Uploaded covers remain independent from frontend build artifacts and use persistent storage.
+	r.GET("/audio-novel-uploads/*filepath", staticfiles.Handler(core.Config.AudioNovelUploadDir))
+	r.HEAD("/audio-novel-uploads/*filepath", staticfiles.Handler(core.Config.AudioNovelUploadDir))
+	r.GET("/audio-novel-api/:code/home", h.AudioNovel.PublicHome)
+	r.GET("/audio-novel-api/:code/stories", h.AudioNovel.PublicList)
+	r.GET("/audio-novel-api/:code/stories/:slug", h.AudioNovel.PublicStory)
+	// Audio novel routes stay before the generic short-code route so the product prefix is never treated as a code.
+	r.GET("/audio-novel/:code", h.Tracking.AudioNovel)
+	r.HEAD("/audio-novel/:code", h.Tracking.AudioNovel)
+	r.GET("/audio-novel/:code/stories", h.Tracking.AudioNovel)
+	r.HEAD("/audio-novel/:code/stories", h.Tracking.AudioNovel)
+	r.GET("/audio-novel/:code/stories/:slug", h.Tracking.AudioNovel)
+	r.HEAD("/audio-novel/:code/stories/:slug", h.Tracking.AudioNovel)
+	r.POST("/audio-novel/:code/contact", h.AudioNovel.Contact)
+	r.POST("/audio-novel/:code/view", h.AudioNovel.View)
+	// TimeSpent reuses the signed visit while remaining scoped to the audio novel surface.
+	r.POST("/audio-novel/:code/time-spent", h.AudioNovel.TimeSpent)
 	r.POST("/:code/contact", h.Landing.Contact)
 	r.POST("/:code/view", h.Landing.View)
+	r.POST("/:code/time-spent", h.Landing.TimeSpent)
 	r.GET("/:code", h.Tracking.Redirect)
 	r.HEAD("/:code", h.Tracking.Redirect)
 	return r, nil

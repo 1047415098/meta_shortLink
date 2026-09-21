@@ -16,9 +16,10 @@ func TestPixelContractSeparatesAutoAndRemovesExpiry(t *testing.T) {
 	}
 }
 
-// Deliberate consultation clicks use Meta's standard Contact event.
-func TestManualConsultationEventIsContact(t *testing.T) {
-	if EventName != "Contact" {
-		t.Fatalf("manual event = %q, want Contact", EventName)
+// Both consultation triggers use Meta's standard AddToCart event while their
+// stable event ID suffixes preserve the trigger in operational logs.
+func TestConsultationEventIsAddToCart(t *testing.T) {
+	if EventName != "AddToCart" || AutoRedirectEventName != EventName {
+		t.Fatalf("consultation events manual=%q auto=%q", EventName, AutoRedirectEventName)
 	}
 }

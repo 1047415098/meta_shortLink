@@ -1,8 +1,7 @@
 #!/bin/sh
 set -eu
 
-# Start both Vue development servers while the single Go API keeps running on
-# port 8080. One Ctrl+C stops both watchers without touching Docker or data.
+# 同时启动三个 Vue 开发服务；Ctrl+C 只停止前端监听进程，不影响数据库。
 project_dir=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 
 if ! curl -fsS http://127.0.0.1:8080/healthz >/dev/null; then
@@ -11,7 +10,7 @@ if ! curl -fsS http://127.0.0.1:8080/healthz >/dev/null; then
 fi
 
 cleanup() {
-  kill "$admin_pid" "$landing_pid" 2>/dev/null || true
+  kill "$admin_pid" "$landing_pid" "$audio_novel_pid" 2>/dev/null || true
 }
 trap cleanup EXIT INT TERM
 
@@ -19,5 +18,7 @@ trap cleanup EXIT INT TERM
 admin_pid=$!
 (cd "$project_dir/landing" && npm run dev) &
 landing_pid=$!
+(cd "$project_dir/audio-novel" && npm run dev) &
+audio_novel_pid=$!
 
-wait "$admin_pid" "$landing_pid"
+wait "$admin_pid" "$landing_pid" "$audio_novel_pid"

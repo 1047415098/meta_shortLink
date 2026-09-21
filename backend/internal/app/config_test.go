@@ -25,3 +25,25 @@ func TestConfiguredAdminPassword(t *testing.T) {
 		})
 	}
 }
+
+func TestAudioNovelDirectoriesUseDedicatedEnvironmentVariables(t *testing.T) {
+	// The audio novel app must not fall back to the retired novel configuration names.
+	t.Setenv("DATABASE_URL", "postgres://test")
+	t.Setenv("APP_SECRET", strings.Repeat("s", 32))
+	t.Setenv("ADMIN_PASSWORD", "test-password")
+	t.Setenv("AUDIO_NOVEL_DIR", "/tmp/audio-novel")
+	t.Setenv("AUDIO_NOVEL_UPLOAD_DIR", "/tmp/audio-novel-uploads")
+	t.Setenv("NOVEL_DIR", "/tmp/retired-novel")
+	t.Setenv("NOVEL_UPLOAD_DIR", "/tmp/retired-novel-uploads")
+
+	c, err := LoadConfig()
+	if err != nil {
+		t.Fatalf("load config: %v", err)
+	}
+	if c.AudioNovelDir != "/tmp/audio-novel" {
+		t.Fatalf("AudioNovelDir = %q", c.AudioNovelDir)
+	}
+	if c.AudioNovelUploadDir != "/tmp/audio-novel-uploads" {
+		t.Fatalf("AudioNovelUploadDir = %q", c.AudioNovelUploadDir)
+	}
+}

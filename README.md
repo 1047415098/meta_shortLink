@@ -1,6 +1,6 @@
 # LinkScope · WhatsApp 投放分析
 
-Vue 3 + JavaScript 管理后台，Go + Gin 采集和跳转服务，PostgreSQL 数据库。后台和落地页分别使用独立 Vue 工程，由同一个 Go 服务提供页面、API、统计与跳转。短链接支持直接跳转与网站落地页两种模式。
+Vue 3 + JavaScript 管理后台，Go + Gin 采集和跳转服务，PostgreSQL 数据库。后台、产品落地页与语音小说站分别使用独立 Vue 工程，由同一个 Go 服务提供页面、API、统计与跳转。短链接支持直接跳转与网站落地页两种模式。
 
 ## 已实现
 
@@ -12,6 +12,7 @@ Vue 3 + JavaScript 管理后台，Go + Gin 采集和跳转服务，PostgreSQL �
 - 广告花费 CSV 导入（事务、重复导入覆盖、不同币种独立展示、日期与时区匹配）。
 - Meta 多账户与多 Pixel 配置、真实广告点击识别、咨询 CAPI 队列、测试事件与失败重试。配置和验收见 [Meta 接入说明](docs/meta-setup.md)。
 - 审计记录、定期清理、UTC 每日加和指标归档、Docker 部署和 HTTPS 代理示例。
+- 语音小说内容后台：内容新增、编辑、启停、唯一首页推荐、软删除、Markdown 安全预览和封面上传。当前仅完成项目命名迁移，尚未增加音频上传或播放。
 
 ## 最快启动
 
@@ -104,6 +105,10 @@ landing/                        用户落地页独立 Vue 3 工程
   src/router/                   短码路由
   src/lib/                      手动提交与倒计时逻辑
   public/landing-assets/images/ 产品图片
+audio-novel/                    独立语音小说 Vue 3 工程
+  src/lib/api.js                从同一 Gin 服务读取全局语音小说内容
+  src/views/                    首页、列表、详情和错误页
+  public/audio-novel-assets/images/ 项目原创奇幻视觉素材
 backend/
   cmd/server/                   唯一服务入口
   internal/bootstrap/           初始化与关闭服务
@@ -123,6 +128,7 @@ backend/
 | `/admin/login` | 登录 |
 | `/admin/overview` | 数据总览 |
 | `/admin/links` | 短链接管理 |
+| `/admin/audio-novels` | 语音小说列表、新增、编辑、启停、推荐和删除 |
 | `/admin/visits` | 访问明细 |
 | `/admin/ads` | 广告分析 |
 | `/admin/logs` | 用户端请求日志 |
@@ -131,17 +137,28 @@ backend/
 | `/admin/meta/events` | 咨询回传记录 |
 | `/:code` | 原短链接入口，记录访问并返回落地页或跳转 |
 | `/:code/contact` | 原咨询提交接口 |
+| `/audio-novel/:code` | 语音小说站首页，并记录 `audio_novel` 入口访问 |
+| `/audio-novel/:code/stories` | 内容列表，每页 6 篇 |
+| `/audio-novel/:code/stories/:slug` | 内容详情与阅读控制 |
+| `/audio-novel/:code/contact` | 语音小说站手动 WhatsApp 咨询 |
+| `/audio-novel/:code/time-spent` | 达到 code 配置阈值后的可见停留上报 |
+| `/audio-novel-api/:code/home` | 公开首页推荐内容，只验证短码、不新增访问事件 |
+| `/audio-novel-api/:code/stories` | 公开分页内容 |
+| `/audio-novel-api/:code/stories/:slug` | 公开详情与相关推荐 |
+| `/audio-novel-uploads/*` | 后台上传并持久化的封面 |
 | `/api/v1/*` | 后台 API |
 | `/admin-assets/*` | 后台构建资源 |
 | `/landing-assets/*` | 落地页构建资源及图片 |
+| `/audio-novel-assets/*` | 语音小说站构建资源及原创图片 |
 
 ## 本地开发与测试
 
-需要 Go 1.27.1、Node 22 与 PostgreSQL。先分别构建两个前端：
+需要 Go 1.27.1、Node 22 与 PostgreSQL。先分别构建三个前端：
 
 ```sh
 (cd frontend && npm ci && npm run build)
 (cd landing && npm ci && npm run build)
+(cd audio-novel && npm ci && npm run build)
 ```
 
 然后在 `backend/` 中设置 `DATABASE_URL`、`ADMIN_PASSWORD`、`APP_SECRET` 后启动：
@@ -150,13 +167,18 @@ backend/
 go run ./cmd/server
 ```
 
-本地默认读取 `../frontend/dist` 和 `../landing/dist`，可通过 `FRONTEND_DIR`、`LANDING_DIR` 覆盖。Docker 已分别构建并复制两端资源，无需启动两个 Node 服务。
+本地默认读取 `../frontend/dist`、`../landing/dist` 和 `../audio-novel/dist`，可通过 `FRONTEND_DIR`、`LANDING_DIR`、`AUDIO_NOVEL_DIR` 覆盖。Docker 会构建并复制三端资源。
 
-本地热更新：保持 Go 服务运行在 8080，然后执行 `./scripts/dev-local.sh`。运营后台使用 `http://localhost:5173/admin/login`；落地页使用 `http://localhost:5174/:code`。落地页开发服务器从 Go 获取真实短链接数据与签名凭证，再由 Vite 提供热更新。正式验收仍需重新执行 `npm run build`，生成配套压缩文件。
+语音小说内容全局共享，不绑定短码；访问 `/audio-novel/:code/*` 时仍复用该短码的 WhatsApp、Meta、TimeSpent 和统计配置。正文以 Markdown 保存，公开 HTML 由后端安全渲染。封面只接受 JPEG、PNG、WebP，最大 5MB，并保存到 `AUDIO_NOVEL_UPLOAD_DIR`；Docker 使用 `audio_novel_uploads` 持久卷。
+
+从旧开发卷迁移时，先停止应用容器但保留数据库，再把 `linkscope_novel_uploads` 只读复制到 `linkscope_audio_novel_uploads`。确认新卷文件完整前不要删除旧卷，具体命令见 `docs/verification.md` 的 2026-09-21 记录。
+
+本地热更新：保持 Go 服务运行在 8080，然后执行 `./scripts/dev-local.sh`。运营后台使用 `http://localhost:5173/admin/login`；产品落地页使用 `http://localhost:5174/:code`；语音小说站使用 `http://localhost:5175/audio-novel/:code`。生产入口由 Gin 在 8080 端口注入真实短链接数据与签名凭证。
 
 ```sh
 (cd frontend && npm test && npm run build)
 (cd landing && npm test && npm run build)
+(cd audio-novel && npm test && npm run build)
 (cd backend && go test ./... && go vet ./...)
 ```
 

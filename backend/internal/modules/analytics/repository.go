@@ -11,7 +11,7 @@ import (
 type Repository struct{ DB *pgxpool.Pool }
 
 func (a Repository) Events(ctx context.Context, f Filter, limit, offset int) ([]Event, error) {
-	rows, e := a.DB.Query(ctx, "SELECT "+eventCols+" FROM click_events e JOIN short_links l ON l.id=e.link_id"+eventWhere+" ORDER BY e.occurred_at DESC,e.id LIMIT $5 OFFSET $6", append(f.args(), limit, offset)...)
+	rows, e := a.DB.Query(ctx, "SELECT "+eventCols+" FROM click_events e JOIN short_links l ON l.id=e.link_id"+eventWhere+" ORDER BY e.occurred_at DESC,e.id LIMIT $6 OFFSET $7", append(f.args(), limit, offset)...)
 	out := []Event{}
 	if e != nil {
 		return out, e
@@ -19,7 +19,7 @@ func (a Repository) Events(ctx context.Context, f Filter, limit, offset int) ([]
 	defer rows.Close()
 	for rows.Next() {
 		var v Event
-		if e = rows.Scan(&v.ID, &v.OccurredAt, &v.LinkID, &v.Code, &v.VisitorID, &v.CookieStatus, &v.Method, &v.Device, &v.OS, &v.Browser, &v.Country, &v.Region, &v.City, &v.Source, &v.AdID, &v.Classification, &v.Reason, &v.Referrer, &v.AttributionConflict, &v.EventType, &v.WhatsAppClickedAt, &v.AutoRedirectedAt); e != nil {
+		if e = rows.Scan(&v.ID, &v.OccurredAt, &v.LinkID, &v.Code, &v.VisitorID, &v.CookieStatus, &v.Method, &v.Device, &v.OS, &v.Browser, &v.Country, &v.Region, &v.City, &v.Source, &v.AdID, &v.Classification, &v.Reason, &v.Referrer, &v.AttributionConflict, &v.EventType, &v.Surface, &v.WhatsAppClickedAt, &v.AutoRedirectedAt); e != nil {
 			return out, e
 		}
 		out = append(out, v)
@@ -41,7 +41,7 @@ func (r Repository) Overview(ctx context.Context, f Filter) (OverviewData, error
 	// shown in link management.
 	// User-facing visits include both rendered landing pages and direct handoffs;
 	// manual consultations remain landing-only while automatic actions include both modes.
-	e := r.DB.QueryRow(ctx, `SELECT (SELECT count(*) FROM short_links WHERE enabled),count(*),count(*) FILTER(WHERE classification='normal'),count(DISTINCT visitor_id) FILTER(WHERE classification='normal'),count(*) FILTER(WHERE classification='bot'),count(*) FILTER(WHERE classification='suspicious'),count(*) FILTER(WHERE classification='unclassified'),count(*) FILTER(WHERE visitor_id IS NULL),count(*) FILTER(WHERE classification='head'),count(*) FILTER(WHERE classification='prefetch'),count(*) FILTER(WHERE event_type IN ('landing','redirect') AND classification='normal'),count(*) FILTER(WHERE event_type='landing' AND classification='normal' AND whatsapp_clicked_at IS NOT NULL),count(*) FILTER(WHERE event_type IN ('landing','redirect') AND classification='normal' AND auto_redirected_at IS NOT NULL) FROM click_events e`+eventWhere, args...).Scan(&s.AvailableLinks, &s.Total, &s.Filtered, &s.Unique, &s.Bot, &s.Suspicious, &s.Unclassified, &s.NoCookie, &s.Head, &s.Prefetch, &s.LandingViews, &s.WhatsAppClicks, &s.AutoRedirects)
+	e := r.DB.QueryRow(ctx, `SELECT (SELECT count(*) FROM short_links WHERE enabled),count(*),count(*) FILTER(WHERE classification='normal'),count(DISTINCT visitor_id) FILTER(WHERE classification='normal'),count(*) FILTER(WHERE classification='bot'),count(*) FILTER(WHERE classification='suspicious'),count(*) FILTER(WHERE classification='unclassified'),count(*) FILTER(WHERE visitor_id IS NULL),count(*) FILTER(WHERE classification='head'),count(*) FILTER(WHERE classification='prefetch'),count(*) FILTER(WHERE event_type IN ('landing','redirect') AND classification='normal'),count(*) FILTER(WHERE event_type='landing' AND classification='normal' AND whatsapp_clicked_at IS NOT NULL),count(*) FILTER(WHERE event_type IN ('landing','redirect') AND classification='normal' AND auto_redirected_at IS NOT NULL),count(*) FILTER(WHERE classification='normal' AND surface='short_link'),count(*) FILTER(WHERE classification='normal' AND surface='audio_novel'),count(*) FILTER(WHERE classification='normal' AND surface='short_link' AND whatsapp_clicked_at IS NOT NULL),count(*) FILTER(WHERE classification='normal' AND surface='audio_novel' AND whatsapp_clicked_at IS NOT NULL) FROM click_events e`+eventWhere, args...).Scan(&s.AvailableLinks, &s.Total, &s.Filtered, &s.Unique, &s.Bot, &s.Suspicious, &s.Unclassified, &s.NoCookie, &s.Head, &s.Prefetch, &s.LandingViews, &s.WhatsAppClicks, &s.AutoRedirects, &s.ShortLinkViews, &s.AudioNovelViews, &s.ShortLinkWhatsAppClicks, &s.AudioNovelWhatsAppClicks)
 	if e != nil {
 		return OverviewData{}, e
 	}
@@ -50,7 +50,7 @@ func (r Repository) Overview(ctx context.Context, f Filter) (OverviewData, error
 	if f.End.Sub(f.Start) <= 25*time.Hour {
 		format = "YYYY-MM-DD HH24:00"
 	}
-	rows, e := r.DB.Query(ctx, `SELECT to_char(occurred_at AT TIME ZONE $5,$6),count(*),count(*) FILTER(WHERE classification='normal'),count(DISTINCT visitor_id) FILTER(WHERE classification='normal'),count(*) FILTER(WHERE event_type IN ('landing','redirect') AND classification='normal'),count(*) FILTER(WHERE event_type='landing' AND classification='normal' AND whatsapp_clicked_at IS NOT NULL),count(*) FILTER(WHERE event_type IN ('landing','redirect') AND classification='normal' AND auto_redirected_at IS NOT NULL) FROM click_events e`+eventWhere+` GROUP BY 1 ORDER BY 1`, append(args, f.TZ, format)...)
+	rows, e := r.DB.Query(ctx, `SELECT to_char(occurred_at AT TIME ZONE $6,$7),count(*),count(*) FILTER(WHERE classification='normal'),count(DISTINCT visitor_id) FILTER(WHERE classification='normal'),count(*) FILTER(WHERE event_type IN ('landing','redirect') AND classification='normal'),count(*) FILTER(WHERE event_type='landing' AND classification='normal' AND whatsapp_clicked_at IS NOT NULL),count(*) FILTER(WHERE event_type IN ('landing','redirect') AND classification='normal' AND auto_redirected_at IS NOT NULL) FROM click_events e`+eventWhere+` GROUP BY 1 ORDER BY 1`, append(args, f.TZ, format)...)
 	if e != nil {
 		return OverviewData{}, e
 	}
@@ -96,7 +96,7 @@ func (r Repository) Overview(ctx context.Context, f Filter) (OverviewData, error
 		return OverviewData{}, e
 	}
 	// Spend is only comparable for its configured reporting timezone; currencies remain separate.
-	query := `WITH clicks AS (SELECT ad_id,count(*) AS total,count(*) FILTER(WHERE classification='normal') AS filtered,count(DISTINCT visitor_id) FILTER(WHERE classification='normal') AS uv FROM click_events e` + eventWhere + ` GROUP BY ad_id), spend AS (SELECT ad_id,currency,CASE WHEN count(DISTINCT date)=(($2 AT TIME ZONE $5)::date-($1 AT TIME ZONE $5)::date) THEN sum(amount)::float8 ELSE NULL END cost FROM ad_spend_daily WHERE date>=($1 AT TIME ZONE $5)::date AND date<($2 AT TIME ZONE $5)::date AND time_zone=$5 AND ($4::text='' OR ad_id=$4) GROUP BY ad_id,currency) SELECT coalesce(c.ad_id,s.ad_id),coalesce(c.total,0),coalesce(c.filtered,0),coalesce(c.uv,0),CASE WHEN $3::bigint=0 THEN s.cost ELSE NULL END,coalesce(s.currency,'') FROM clicks c FULL OUTER JOIN spend s ON c.ad_id=s.ad_id WHERE $3::bigint=0 OR c.ad_id IS NOT NULL ORDER BY coalesce(c.total,0) DESC LIMIT 500`
+	query := `WITH clicks AS (SELECT ad_id,count(*) AS total,count(*) FILTER(WHERE classification='normal') AS filtered,count(DISTINCT visitor_id) FILTER(WHERE classification='normal') AS uv FROM click_events e` + eventWhere + ` GROUP BY ad_id), spend AS (SELECT ad_id,currency,CASE WHEN count(DISTINCT date)=(($2 AT TIME ZONE $6)::date-($1 AT TIME ZONE $6)::date) THEN sum(amount)::float8 ELSE NULL END cost FROM ad_spend_daily WHERE date>=($1 AT TIME ZONE $6)::date AND date<($2 AT TIME ZONE $6)::date AND time_zone=$6 AND ($4::text='' OR ad_id=$4) GROUP BY ad_id,currency) SELECT coalesce(c.ad_id,s.ad_id),coalesce(c.total,0),coalesce(c.filtered,0),coalesce(c.uv,0),CASE WHEN $3::bigint=0 THEN s.cost ELSE NULL END,coalesce(s.currency,'') FROM clicks c FULL OUTER JOIN spend s ON c.ad_id=s.ad_id WHERE $3::bigint=0 OR c.ad_id IS NOT NULL ORDER BY coalesce(c.total,0) DESC LIMIT 500`
 	rows, e = r.DB.Query(ctx, query, append(args, f.TZ)...)
 	if e != nil {
 		return OverviewData{}, e

@@ -31,6 +31,32 @@ const router = createRouter({
           meta: { title: "短链接管理", requiresAuth: true },
         },
         {
+          path: "audio-novels",
+          name: "audio-novels",
+          component: () => import("../views/AudioNovelListView.vue"),
+          meta: { title: "语音小说管理", requiresAuth: true },
+        },
+        {
+          path: "audio-novels/new",
+          name: "audio-novel-create",
+          component: () => import("../views/AudioNovelFormView.vue"),
+          meta: {
+            title: "新增语音小说",
+            requiresAuth: true,
+            activeMenu: "audio-novels",
+          },
+        },
+        {
+          path: "audio-novels/:id/edit",
+          name: "audio-novel-edit",
+          component: () => import("../views/AudioNovelFormView.vue"),
+          meta: {
+            title: "编辑语音小说",
+            requiresAuth: true,
+            activeMenu: "audio-novels",
+          },
+        },
+        {
           // Keep a dedicated, refreshable page for each short link's ad statistics.
           path: "links/:id/stats",
           name: "link-stats",

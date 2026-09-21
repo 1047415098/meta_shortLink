@@ -44,8 +44,12 @@ services:
       # 安装时填写实测 Docker 网关地址；不接受任意公网来源的伪造 IP。
       TRUSTED_PROXIES: ${TRUSTED_PROXIES:?Set the exact Docker gateway address}
       GEOIP_DB_PATH: /app/geoip/dbip-city-lite-2026-09.mmdb
+      AUDIO_NOVEL_DIR: /app/audio-novel
+      AUDIO_NOVEL_UPLOAD_DIR: /app/data/audio-novel-uploads
     volumes:
       - ../geoip:/app/geoip:ro
+      # 语音小说封面独立持久化，更新应用容器不会丢失。
+      - audio_novel_uploads:/app/data/audio-novel-uploads
   nginx:
     # 使用容器内的现代 TLS 库，避免依赖 CentOS 7 的旧版 OpenSSL。
     image: nginx:stable-alpine@sha256:dc5069ad14f19660b141b21236140b91656bf89bbc3e2417c70ae650cd66104c
@@ -68,3 +72,4 @@ services:
 volumes:
   # 删除或重建应用容器不会清空此卷；不要执行 down -v。
   postgres_data:
+  audio_novel_uploads:

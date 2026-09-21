@@ -84,7 +84,7 @@ func (a *Handler) Export(c *gin.Context) {
 	c.Header("Content-Disposition", `attachment; filename="clicks.csv"`)
 	c.Writer.Write([]byte{0xef, 0xbb, 0xbf})
 	w := csv.NewWriter(c.Writer)
-	w.Write([]string{"event_id", "time", "code", "visitor_id", "cookie_status", "method", "device", "os", "browser", "country", "region", "city", "source", "ad_id", "classification", "reason", "referrer", "attribution_conflict", "event_type", "whatsapp_clicked_at", "auto_redirected_at"})
+	w.Write([]string{"event_id", "time", "code", "visitor_id", "cookie_status", "method", "device", "os", "browser", "country", "region", "city", "source", "ad_id", "classification", "reason", "referrer", "attribution_conflict", "event_type", "surface", "whatsapp_clicked_at", "auto_redirected_at"})
 	for _, v := range items {
 		automatic := ""
 		if v.AutoRedirectedAt != nil {
@@ -94,7 +94,7 @@ func (a *Handler) Export(c *gin.Context) {
 		if v.WhatsAppClickedAt != nil {
 			clicked = v.WhatsAppClickedAt.In(config.Location(f.TZ)).Format(time.RFC3339)
 		}
-		r := []string{v.ID, v.OccurredAt.In(config.Location(f.TZ)).Format(time.RFC3339), v.Code, v.VisitorID, v.CookieStatus, v.Method, v.Device, v.OS, v.Browser, v.Country, v.Region, v.City, v.Source, v.AdID, v.Classification, v.Reason, v.Referrer, fmt.Sprint(v.AttributionConflict), v.EventType, clicked, automatic}
+		r := []string{v.ID, v.OccurredAt.In(config.Location(f.TZ)).Format(time.RFC3339), v.Code, v.VisitorID, v.CookieStatus, v.Method, v.Device, v.OS, v.Browser, v.Country, v.Region, v.City, v.Source, v.AdID, v.Classification, v.Reason, v.Referrer, fmt.Sprint(v.AttributionConflict), v.EventType, v.Surface, clicked, automatic}
 		for i := range r {
 			r[i] = CSVSafe(r[i])
 		}

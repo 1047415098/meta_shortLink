@@ -69,6 +69,11 @@ func (s *Service) EnqueuePageView(ctx context.Context, tx pgx.Tx, visit string, 
 	return s.enqueueVisit(ctx, tx, visit, input, "view")
 }
 
+// EnqueueTimeSpent shares one visit-scoped ID with the browser custom event.
+func (s *Service) EnqueueTimeSpent(ctx context.Context, tx pgx.Tx, visit string, input ContactContext) error {
+	return s.enqueueVisit(ctx, tx, visit, input, "time_spent")
+}
+
 // isResolvedAdAttribution mirrors the strict advertising report contract: both
 // Meta's click identifier and a resolved ad ID must be present.
 func isResolvedAdAttribution(fbclid, adID string) bool {
@@ -84,13 +89,13 @@ func isResolvedAdAttribution(fbclid, adID string) bool {
 func (s *Service) enqueueVisit(ctx context.Context, tx pgx.Tx, visit string, input ContactContext, trigger string) error {
 	var connectionID, pixelID *int64
 	var at time.Time
-	var clicked, automatic, viewed *time.Time
-	var code, class, eventName, adID string
+	var clicked, automatic, viewed, timeSpent *time.Time
+	var code, class, eventName, adID, surface string
 	var conflict, measurement, manualEnabled, autoEnabled, pageEnabled bool
 	var params map[string]string
 	// Read the frozen visit configuration and both consultation timestamps in the
 	// same transaction that marked the browser action.
-	e := tx.QueryRow(ctx, `SELECT e.meta_connection_id,e.meta_pixel_id,e.occurred_at,e.whatsapp_clicked_at,e.auto_redirected_at,e.pageview_reported_at,l.code,e.classification,e.attribution_conflict,e.parameters,e.ad_id,e.meta_measurement,e.meta_manual_enabled,e.meta_auto_enabled,e.meta_pageview_enabled,e.meta_manual_event_name FROM click_events e JOIN short_links l ON l.id=e.link_id WHERE e.id=$1`, visit).Scan(&connectionID, &pixelID, &at, &clicked, &automatic, &viewed, &code, &class, &conflict, &params, &adID, &measurement, &manualEnabled, &autoEnabled, &pageEnabled, &eventName)
+	e := tx.QueryRow(ctx, `SELECT e.meta_connection_id,e.meta_pixel_id,e.occurred_at,e.whatsapp_clicked_at,e.auto_redirected_at,e.pageview_reported_at,e.time_spent_reported_at,l.code,e.classification,e.attribution_conflict,e.parameters,e.ad_id,e.meta_measurement,e.meta_manual_enabled,e.meta_auto_enabled,e.meta_pageview_enabled,e.meta_manual_event_name,e.surface FROM click_events e JOIN short_links l ON l.id=e.link_id WHERE e.id=$1`, visit).Scan(&connectionID, &pixelID, &at, &clicked, &automatic, &viewed, &timeSpent, &code, &class, &conflict, &params, &adID, &measurement, &manualEnabled, &autoEnabled, &pageEnabled, &eventName, &surface)
 	if e != nil {
 		return e
 	}
@@ -114,10 +119,17 @@ func (s *Service) enqueueVisit(ctx context.Context, tx pgx.Tx, visit string, inp
 		eventName = AutoRedirectEventName
 		eventAt = automatic
 		suffix = "auto"
+	case "time_spent":
+		eventName = TimeSpentEventName
+		eventAt = timeSpent
+		suffix = "time_spent"
 	default:
 		if !manualEnabled {
 			return nil
 		}
+		// Existing visit rows may contain a frozen legacy event name. New manual
+		// actions always follow the current AddToCart contract after deployment.
+		eventName = EventName
 	}
 	if eventAt == nil {
 		return errors.New("事件时间缺失")
@@ -135,7 +147,11 @@ func (s *Service) enqueueVisit(ctx context.Context, tx pgx.Tx, visit string, inp
 		// attribution to the worker's delivery queue.
 		status, reason = "skipped", "缺少有效 fbclid 或广告 ID，不属于真实广告点击"
 	}
-	payload := eventPayload{Data: []ServerEvent{{Name: eventName, Time: eventAt.Unix(), ID: id, Source: "website", URL: strings.TrimRight(s.Core.Config.PublicURL, "/") + "/" + code, UserData: matchingData(input, params["fbclid"], at)}}}
+	path := "/" + code
+	if surface == "audio_novel" {
+		path = "/audio-novel/" + code
+	}
+	payload := eventPayload{Data: []ServerEvent{{Name: eventName, Time: eventAt.Unix(), ID: id, Source: "website", URL: strings.TrimRight(s.Core.Config.PublicURL, "/") + path, UserData: matchingData(input, params["fbclid"], at)}}}
 	b, e := json.Marshal(payload)
 	if e != nil {
 		return e
@@ -174,7 +190,9 @@ func (s *Service) QueuePixelTest(ctx context.Context, p Pixel, code, name string
 	if len(code) < 3 || len(code) > 120 || strings.ContainsAny(code, " \r\n\t") {
 		return EventRecord{}, errors.New("请填写事件管理工具中的测试代码")
 	}
-	if name != "PageView" && name != EventName && name != LegacyManualEventName && name != AutoRedirectEventName {
+	// Keep legacy diagnostic names accepted while the administration UI sends
+	// only the current PageView and AddToCart contract.
+	if name != "PageView" && name != EventName && name != LegacyManualEventName && name != LegacyAutoRedirectEventName {
 		return EventRecord{}, errors.New("不支持的测试事件")
 	}
 	if p.Cipher == "" {

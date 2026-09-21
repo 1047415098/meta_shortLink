@@ -19,7 +19,7 @@
 - 所属账户。
 - Pixel 名称和 Pixel ID。
 - CAPI Token。
-- PageView、手动咨询 `Contact` 和自动跳转 `WhatsAppAutoRedirect` 的独立开关。
+- PageView、手动咨询 `AddToCart` 和自动跳转 `AddToCart` 的独立开关。
 
 短链接只需要选择具体 Pixel，系统自动保存该 Pixel 所属账户。多个短链接可以共用一个 Pixel，同一短链接也可以通过每次访问携带的广告参数区分不同广告。
 
@@ -67,11 +67,13 @@ Meta 在真实广告点击时通常追加 `fbclid`。系统将同时满足以下
 | 站内行为 | 站内统计 | CAPI 事件 |
 | --- | --- | --- |
 | 真实广告落地页访问 | 计入真实广告访问与 Cookie 去重访客 | Pixel 开启 PageView 时回传 `PageView` |
-| 用户手动点击咨询 | 同一次访问最多计一次 | Pixel 开启手动咨询时回传标准事件 `Contact` |
-| 倒计时自动跳转 | 同一次访问最多计一次并单列 | Pixel 开启自动跳转时回传 `WhatsAppAutoRedirect` |
+| 用户手动点击咨询 | 同一次访问最多计一次 | Pixel 开启手动咨询时回传标准事件 `AddToCart` |
+| 倒计时或直接跳转 | 同一次访问最多计一次并单列 | Pixel 开启自动跳转时回传标准事件 `AddToCart`；直接跳转不回传 `PageView` |
 | 非真实广告流量 | 仍可进入普通站内统计 | 记录为跳过，不发送到 Meta |
 
 CAPI 事件异步发送，不阻塞用户跳转。相同访问和动作使用稳定事件 ID，浏览器重复提交不会重复创建业务事件；网络失败自动重试并保持原事件时间和事件 ID。
+
+手动咨询使用 `_manual` 事件 ID，自动或直接跳转使用 `_auto` 事件 ID，因此两类动作虽然都发送 `AddToCart`，仍可在站内统计和回传日志中分别识别。升级前已经发送的 `Contact`、`WhatsAppConsultClick` 和 `WhatsAppAutoRedirect` 记录保持不变。
 
 系统只读取本站收到的 `_fbc`、`_fbp`、`fbclid`、IP 和 User-Agent，用于 Meta 匹配。系统无法读取 Facebook 或 WhatsApp 域名的登录 Cookie，也不会读取聊天内容。
 

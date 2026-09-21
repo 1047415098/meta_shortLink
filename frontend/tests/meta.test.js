@@ -13,7 +13,28 @@ import {
   pixelUnavailableReason,
   GRAPH_API_VERSION,
   META_URL_PARAMETERS,
+  META_CONSULT_EVENT,
+  metaEventLabel,
 } from "../src/utils/meta.js";
+
+test("Meta event labels keep manual and automatic AddToCart actions distinct", () => {
+  // Meta receives one standard name while the stable event ID preserves the
+  // trigger needed by operators reviewing the delivery log.
+  assert.equal(META_CONSULT_EVENT, "AddToCart");
+  assert.equal(metaEventLabel({ event_name: "PageView" }), "浏览事件");
+  assert.equal(
+    metaEventLabel({ event_name: "AddToCart", id: "wa_visit_manual" }),
+    "手动咨询 · AddToCart",
+  );
+  assert.equal(
+    metaEventLabel({ event_name: "AddToCart", id: "wa_visit_auto" }),
+    "自动跳转 · AddToCart",
+  );
+  assert.equal(
+    metaEventLabel({ event_name: "WhatsAppAutoRedirect" }),
+    "自动跳转（历史）",
+  );
+});
 
 test("Meta URL parameter template keeps every canonical advertising field", () => {
   // Operators copy one immutable template so separate ad creators cannot drift

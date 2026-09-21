@@ -11,7 +11,7 @@ import (
 )
 
 func Scan(row pgx.Row) (l Link, e error) {
-	e = row.Scan(&l.ID, &l.Code, &l.Name, &l.TargetURL, &l.Enabled, &l.CampaignID, &l.AdsetID, &l.AdID, &l.Channel, &l.CreatedAt, &l.Mode, &l.LandingBrand, &l.LandingTitle, &l.LandingDescription, &l.LandingDetails, &l.LandingDelay, &l.MetaConnectionID, &l.AttributionMode, &l.MetaPixelID)
+	e = row.Scan(&l.ID, &l.Code, &l.Name, &l.TargetURL, &l.Enabled, &l.CampaignID, &l.AdsetID, &l.AdID, &l.Channel, &l.CreatedAt, &l.Mode, &l.LandingBrand, &l.LandingTitle, &l.LandingDescription, &l.LandingDetails, &l.LandingDelay, &l.MetaConnectionID, &l.AttributionMode, &l.MetaPixelID, &l.TimeSpentThreshold)
 	return
 }
 
@@ -55,13 +55,13 @@ func (r Repository) Save(ctx context.Context, l Link, update bool, actor string)
 	}
 	// Link availability is persisted only as enabled/disabled; scheduled expiry
 	// no longer participates in the repository contract.
-	args := []any{l.Code, l.Name, l.TargetURL, l.Enabled, l.CampaignID, l.AdsetID, l.AdID, l.Channel, l.Mode, l.LandingBrand, l.LandingTitle, l.LandingDescription, l.LandingDetails, l.LandingDelay, l.MetaConnectionID, l.AttributionMode, l.MetaPixelID}
-	query := "INSERT INTO short_links(code,name,target_url,enabled,campaign_id,adset_id,ad_id,channel,mode,landing_brand,landing_title,landing_description,landing_details,landing_delay,meta_connection_id,attribution_mode,meta_pixel_id) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17) RETURNING " + Columns
+	args := []any{l.Code, l.Name, l.TargetURL, l.Enabled, l.CampaignID, l.AdsetID, l.AdID, l.Channel, l.Mode, l.LandingBrand, l.LandingTitle, l.LandingDescription, l.LandingDetails, l.LandingDelay, l.MetaConnectionID, l.AttributionMode, l.MetaPixelID, l.TimeSpentThreshold}
+	query := "INSERT INTO short_links(code,name,target_url,enabled,campaign_id,adset_id,ad_id,channel,mode,landing_brand,landing_title,landing_description,landing_details,landing_delay,meta_connection_id,attribution_mode,meta_pixel_id,time_spent_threshold) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18) RETURNING " + Columns
 	action := "link.create"
 	if update {
 		action = "link.update"
 		args = append(args, l.ID)
-		query = "UPDATE short_links SET code=$1,name=$2,target_url=$3,enabled=$4,campaign_id=$5,adset_id=$6,ad_id=$7,channel=$8,mode=$9,landing_brand=$10,landing_title=$11,landing_description=$12,landing_details=$13,landing_delay=$14,meta_connection_id=$15,attribution_mode=$16,meta_pixel_id=$17 WHERE id=$18 RETURNING " + Columns
+		query = "UPDATE short_links SET code=$1,name=$2,target_url=$3,enabled=$4,campaign_id=$5,adset_id=$6,ad_id=$7,channel=$8,mode=$9,landing_brand=$10,landing_title=$11,landing_description=$12,landing_details=$13,landing_delay=$14,meta_connection_id=$15,attribution_mode=$16,meta_pixel_id=$17,time_spent_threshold=$18 WHERE id=$19 RETURNING " + Columns
 	}
 
 	saved, e := Scan(tx.QueryRow(ctx, query, args...))
@@ -98,7 +98,8 @@ func (r Repository) DeleteBatch(ctx context.Context, ids []int64, actor string) 
 		Name string `json:"name"`
 	}
 	deleted := make([]deletedLink, 0, len(orderedIDs))
-	paths := make([]string, 0, len(orderedIDs)*3)
+	paths := make([]string, 0, len(orderedIDs)*7)
+	codes := make([]string, 0, len(orderedIDs))
 	for rows.Next() {
 		var link deletedLink
 		if err = rows.Scan(&link.ID, &link.Code, &link.Name); err != nil {
@@ -106,8 +107,9 @@ func (r Repository) DeleteBatch(ctx context.Context, ids []int64, actor string) 
 			return 0, err
 		}
 		deleted = append(deleted, link)
-		// Visitor logs have no link foreign key, so their three public paths are removed explicitly.
-		paths = append(paths, "/"+link.Code, "/"+link.Code+"/contact", "/"+link.Code+"/view")
+		codes = append(codes, link.Code)
+		// Visitor logs have no link foreign key, so every exact action path is removed explicitly.
+		paths = append(paths, "/"+link.Code, "/"+link.Code+"/contact", "/"+link.Code+"/view", "/"+link.Code+"/time-spent", "/audio-novel/"+link.Code, "/audio-novel/"+link.Code+"/contact", "/audio-novel/"+link.Code+"/view", "/audio-novel/"+link.Code+"/time-spent")
 	}
 	err = rows.Err()
 	rows.Close()
@@ -125,7 +127,9 @@ func (r Repository) DeleteBatch(ctx context.Context, ids []int64, actor string) 
 	if _, err = tx.Exec(ctx, "DELETE FROM click_events WHERE link_id=ANY($1::bigint[])", orderedIDs); err != nil {
 		return 0, err
 	}
-	if _, err = tx.Exec(ctx, "DELETE FROM request_logs WHERE path=ANY($1::text[])", paths); err != nil {
+	// Story list/detail paths share the audio novel prefix and are removed with their owning code.
+	if _, err = tx.Exec(ctx, `DELETE FROM request_logs WHERE path=ANY($1::text[])
+		OR EXISTS(SELECT 1 FROM unnest($2::text[]) code WHERE path LIKE '/audio-novel/'||code||'/%')`, paths, codes); err != nil {
 		return 0, err
 	}
 	result, err := tx.Exec(ctx, "DELETE FROM short_links WHERE id=ANY($1::bigint[])", orderedIDs)

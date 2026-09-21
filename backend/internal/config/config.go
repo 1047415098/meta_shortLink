@@ -13,12 +13,12 @@ import (
 )
 
 type Config struct {
-	MetaEncryptionKeys                                                                                                     map[string]string
-	MetaEncryptionKeyID                                                                                                    string
-	DatabaseURL, PublicURL, AdminUser, AdminPassword, Secret, CookieMode, Timezone, GeoDB, Listen, FrontendDir, LandingDir string
-	SecureCookies                                                                                                          bool
-	RetentionDays                                                                                                          int
-	TrustedProxies                                                                                                         []string
+	MetaEncryptionKeys                                                                                                                                         map[string]string
+	MetaEncryptionKeyID                                                                                                                                        string
+	DatabaseURL, PublicURL, AdminUser, AdminPassword, Secret, CookieMode, Timezone, GeoDB, Listen, FrontendDir, LandingDir, AudioNovelDir, AudioNovelUploadDir string
+	SecureCookies                                                                                                                                              bool
+	RetentionDays                                                                                                                                              int
+	TrustedProxies                                                                                                                                             []string
 }
 
 func env(k, d string) string {
@@ -32,7 +32,8 @@ func LoadConfig() (Config, error) {
 	if e != nil || days < 1 || days > 365 {
 		return Config{}, errors.New("RETENTION_DAYS must be 1..365")
 	}
-	c := Config{DatabaseURL: os.Getenv("DATABASE_URL"), PublicURL: env("PUBLIC_BASE_URL", "http://localhost:8080"), AdminUser: env("ADMIN_USER", "admin"), AdminPassword: os.Getenv("ADMIN_PASSWORD"), Secret: os.Getenv("APP_SECRET"), CookieMode: env("COOKIE_MODE", "off"), Timezone: env("REPORT_TIMEZONE", "Asia/Shanghai"), GeoDB: os.Getenv("GEOIP_DB_PATH"), Listen: env("LISTEN_ADDR", "127.0.0.1:8080"), FrontendDir: env("FRONTEND_DIR", "../frontend/dist"), LandingDir: env("LANDING_DIR", "../landing/dist"), RetentionDays: days}
+	// The audio novel frontend and uploaded covers use their own explicit runtime roots.
+	c := Config{DatabaseURL: os.Getenv("DATABASE_URL"), PublicURL: env("PUBLIC_BASE_URL", "http://localhost:8080"), AdminUser: env("ADMIN_USER", "admin"), AdminPassword: os.Getenv("ADMIN_PASSWORD"), Secret: os.Getenv("APP_SECRET"), CookieMode: env("COOKIE_MODE", "off"), Timezone: env("REPORT_TIMEZONE", "Asia/Shanghai"), GeoDB: os.Getenv("GEOIP_DB_PATH"), Listen: env("LISTEN_ADDR", "127.0.0.1:8080"), FrontendDir: env("FRONTEND_DIR", "../frontend/dist"), LandingDir: env("LANDING_DIR", "../landing/dist"), AudioNovelDir: env("AUDIO_NOVEL_DIR", "../audio-novel/dist"), AudioNovelUploadDir: env("AUDIO_NOVEL_UPLOAD_DIR", "../data/audio-novel-uploads"), RetentionDays: days}
 	c.MetaEncryptionKeyID = os.Getenv("META_ENCRYPTION_KEY_ID")
 	if raw := os.Getenv("META_ENCRYPTION_KEYS"); raw != "" {
 		if json.Unmarshal([]byte(raw), &c.MetaEncryptionKeys) != nil {

@@ -54,6 +54,15 @@
               ></small
             ></template
           ></el-table-column
+        ><el-table-column label="入口" width="90"
+          ><template #default="{ row }"
+            ><el-tag
+              :type="row.surface === 'audio_novel' ? 'warning' : 'info'"
+              effect="plain"
+            >
+              {{ row.surface === "audio_novel" ? "语音小说站" : "短链接" }}
+            </el-tag></template
+          ></el-table-column
         ><el-table-column label="设备" min-width="135"
           ><template #default="{ row }"
             >{{ deviceLabel[row.device] || row.device || "未知" }}

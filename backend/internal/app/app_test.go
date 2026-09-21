@@ -51,6 +51,11 @@ func setup(t *testing.T) *App {
 	if e := os.WriteFile(filepath.Join(c.LandingDir, "index.html"), []byte(`<!doctype html><html><head><!--LANDING_BOOTSTRAP--><script type="module" src="/landing-assets/app-test1234.js"></script></head><body><div id="app"></div></body></html>`), 0600); e != nil {
 		t.Fatal(e)
 	}
+	// Integration requests render the independent audio novel shell from its own directory.
+	c.AudioNovelDir = t.TempDir()
+	if e := os.WriteFile(filepath.Join(c.AudioNovelDir, "index.html"), []byte(`<!doctype html><html><head><title>Audio Novel</title><meta name="description" content="test" /><!--AUDIO_NOVEL_BOOTSTRAP--><script type="module" src="/audio-novel-assets/app-test1234.js"></script></head><body><div id="app"></div></body></html>`), 0600); e != nil {
+		t.Fatal(e)
+	}
 	a, e := New(c, p)
 	if e != nil {
 		t.Fatal(e)

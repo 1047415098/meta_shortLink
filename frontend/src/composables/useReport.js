@@ -19,6 +19,7 @@ export function useReport(fetcher) {
       tz: settings.value.timezone || "Asia/Shanghai",
       link_id: "",
       ad_id: "",
+      surface: "",
     };
   };
   const fromQuery = () => {

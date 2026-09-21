@@ -22,15 +22,29 @@ import (
 
 type Handler struct {
 	*runtime.Core
-	Landing *landing.Handler
+	Landing        *landing.Handler
+	AudioNovelPage interface {
+		Render(*gin.Context, links.Link, string, bool)
+		Unavailable(*gin.Context, int, string)
+	}
 }
 
 func (a *Handler) Redirect(c *gin.Context) {
+	a.track(c, "short_link")
+}
+
+// AudioNovel records a standalone literature visit while reusing the same link,
+// attribution and visitor-classification contract as the original short link.
+func (a *Handler) AudioNovel(c *gin.Context) {
+	a.track(c, "audio_novel")
+}
+
+func (a *Handler) track(c *gin.Context, surface string) {
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 1500*time.Millisecond)
 	defer cancel()
 	l, e := (links.Repository{DB: a.DB}).ByCode(ctx, c.Param("code"))
 	if e == pgx.ErrNoRows {
-		a.Landing.Unavailable(c, 404, "links.Link not found.")
+		a.unavailable(c, surface, 404, "This link was not found.")
 		return
 	}
 	if e != nil {
@@ -39,7 +53,7 @@ func (a *Handler) Redirect(c *gin.Context) {
 	}
 	// Operators explicitly control availability through the enabled flag.
 	if !l.Enabled {
-		a.Landing.Unavailable(c, 410, "This link is disabled.")
+		a.unavailable(c, surface, 410, "This link is disabled.")
 		return
 	}
 	ip := net.ParseIP(c.ClientIP())
@@ -138,22 +152,26 @@ func (a *Handler) Redirect(c *gin.Context) {
 	// Direct mode returns a measured handoff page, so the stored status matches
 	// the 200 response while the event type continues to identify the link mode.
 	eventType, status := "redirect", 200
-	if l.Mode == "landing" {
+	if l.Mode == "landing" || surface == "audio_novel" {
 		eventType, status = "landing", 200
 	}
 	// Store before emitting the Redirect. No raw IP, full URL query or raw User-Agent is persisted.
-	e = (Repository{DB: a.DB}).Record(ctx, Event{ID: eventID, LinkID: l.ID, VisitorID: vid, CookieStatus: cookieStatus, Method: c.Request.Method, TargetURL: l.TargetURL, Device: device, OS: osName, Browser: browser, Country: country, Region: region, City: city, Source: source, CampaignID: campaign, AdsetID: adset, AdID: ad, Referrer: ref, Parameters: b, AttributionConflict: conflict, Classification: class, Reason: reason, Type: eventType, Status: status, MetaConnectionID: l.MetaConnectionID, MetaPixelID: l.MetaPixelID})
+	e = (Repository{DB: a.DB}).Record(ctx, Event{ID: eventID, LinkID: l.ID, VisitorID: vid, CookieStatus: cookieStatus, Method: c.Request.Method, TargetURL: l.TargetURL, Device: device, OS: osName, Browser: browser, Country: country, Region: region, City: city, Source: source, CampaignID: campaign, AdsetID: adset, AdID: ad, Referrer: ref, Parameters: b, AttributionConflict: conflict, Classification: class, Reason: reason, Type: eventType, Surface: surface, Status: status, MetaConnectionID: l.MetaConnectionID, MetaPixelID: l.MetaPixelID, TimeSpentThreshold: l.TimeSpentThreshold})
 	if e != nil {
 		a.WriteFailures.Add(1)
 		slog.Error("CLICK_WRITE_FAILED: redirect continues; analytics gap", "link_id", l.ID, "error", e)
+	}
+	if surface == "audio_novel" {
+		a.AudioNovelPage.Render(c, l, eventID, e == nil)
+		return
 	}
 	if l.Mode == "landing" {
 		a.Landing.Render(c, l, eventID, e == nil)
 		return
 	}
 	if e == nil && c.Request.Method == "GET" {
-		// Direct mode has no second browser callback, so record the PageView and
-		// automatic handoff on the server before returning the navigation script.
+		// Direct mode has no rendered landing page or second browser callback, so
+		// record only the automatic AddToCart handoff before navigation.
 		fbc, _ := c.Cookie("_fbc")
 		fbp, _ := c.Cookie("_fbp")
 		actionCtx, actionCancel := context.WithTimeout(c.Request.Context(), 2*time.Second)
@@ -167,6 +185,14 @@ func (a *Handler) Redirect(c *gin.Context) {
 	// Direct mode has already persisted the visit above; its response only
 	// contains the configured top.location handoff.
 	a.Landing.RenderDirect(c, l)
+}
+
+func (a *Handler) unavailable(c *gin.Context, surface string, status int, message string) {
+	if surface == "audio_novel" && a.AudioNovelPage != nil {
+		a.AudioNovelPage.Unavailable(c, status, message)
+		return
+	}
+	a.Landing.Unavailable(c, status, message)
 }
 
 func platformSource(s string) string {

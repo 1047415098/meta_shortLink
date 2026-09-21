@@ -36,6 +36,13 @@
             :key="link.id"
             :label="link.name"
             :value="String(link.id)" /></el-select></el-form-item
+      ><el-form-item label="入口类型"
+        ><el-select v-model="filters.surface" aria-label="入口类型"
+          ><el-option label="全部入口" value="" /><el-option
+            label="短链接"
+            value="short_link" /><el-option
+            label="语音小说站"
+            value="audio_novel" /></el-select></el-form-item
       ><el-form-item label="广告 ID"
         ><el-input
           v-model="filters.ad_id"

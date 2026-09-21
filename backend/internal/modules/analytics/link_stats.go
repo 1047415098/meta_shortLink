@@ -17,11 +17,15 @@ import (
 // Link statistics use one strict real-ad-click cohort; both consultation types
 // belong to the qualifying entry date and count at most once each for that visit.
 type LinkStatsMetrics struct {
-	Visits              int64 `json:"visits"`
-	UniqueVisitors      int64 `json:"unique_visitors"`
-	ManualConsultations int64 `json:"manual_consultations"`
-	AutoRedirects       int64 `json:"auto_redirects"`
-	NoCookie            int64 `json:"no_cookie"`
+	Visits                   int64 `json:"visits"`
+	UniqueVisitors           int64 `json:"unique_visitors"`
+	ManualConsultations      int64 `json:"manual_consultations"`
+	AutoRedirects            int64 `json:"auto_redirects"`
+	NoCookie                 int64 `json:"no_cookie"`
+	ShortLinkViews           int64 `json:"short_link_views"`
+	AudioNovelViews          int64 `json:"audio_novel_views"`
+	ShortLinkWhatsAppClicks  int64 `json:"short_link_whatsapp_clicks"`
+	AudioNovelWhatsAppClicks int64 `json:"audio_novel_whatsapp_clicks"`
 }
 
 // LinkStatsLocation keeps GeoIP levels separate so the UI can show one
@@ -87,27 +91,33 @@ const linkStatsSource = `WITH filtered AS (
  AND e.classification='normal' AND e.event_type IN ('landing','redirect')
  AND ` + linkStatsRealAdClickPredicate + `
  AND ($4::text='' OR ` + linkStatsResolvedAdID + `=btrim($4::text))
+ AND ($5::text='' OR e.surface=$5)
 ) `
 
 const linkStatsMetricsSQL = `count(*) AS visits,count(DISTINCT NULLIF(visitor_id,'')) AS unique_visitors,
  count(*) FILTER(WHERE whatsapp_clicked_at IS NOT NULL) AS manual_consultations,
  count(*) FILTER(WHERE auto_redirected_at IS NOT NULL) AS auto_redirects,
- count(*) FILTER(WHERE NULLIF(visitor_id,'') IS NULL) AS no_cookie`
+ count(*) FILTER(WHERE NULLIF(visitor_id,'') IS NULL) AS no_cookie,
+ count(*) FILTER(WHERE surface='short_link') AS short_link_views,
+ count(*) FILTER(WHERE surface='audio_novel') AS audio_novel_views,
+ count(*) FILTER(WHERE surface='short_link' AND whatsapp_clicked_at IS NOT NULL) AS short_link_whatsapp_clicks,
+ count(*) FILTER(WHERE surface='audio_novel' AND whatsapp_clicked_at IS NOT NULL) AS audio_novel_whatsapp_clicks`
 
 func linkStatsTargets(m *LinkStatsMetrics) []any {
-	return []any{&m.Visits, &m.UniqueVisitors, &m.ManualConsultations, &m.AutoRedirects, &m.NoCookie}
+	return []any{&m.Visits, &m.UniqueVisitors, &m.ManualConsultations, &m.AutoRedirects, &m.NoCookie, &m.ShortLinkViews, &m.AudioNovelViews, &m.ShortLinkWhatsAppClicks, &m.AudioNovelWhatsAppClicks}
 }
 
 // Optional date fields retain report defaults; explicit invalid values are still
 // validated. Link scope always comes from the URL path, never from JSON or query parameters.
 type linkStatsRequest struct {
-	Start *string `json:"start"`
-	End   *string `json:"end"`
-	TZ    *string `json:"tz"`
-	AdID  string  `json:"ad_id"`
-	Page  int     `json:"page"`
-	Sort  string  `json:"sort"`
-	Order string  `json:"order"`
+	Start   *string `json:"start"`
+	End     *string `json:"end"`
+	TZ      *string `json:"tz"`
+	AdID    string  `json:"ad_id"`
+	Surface string  `json:"surface"`
+	Page    int     `json:"page"`
+	Sort    string  `json:"sort"`
+	Order   string  `json:"order"`
 }
 
 // LinkStats does not depend on Meta credentials or account timezone validation;
@@ -130,7 +140,7 @@ func (a *Handler) LinkStats(c *gin.Context) {
 		runtime.Bad(c, "请使用 JSON 请求体提交统计条件")
 		return
 	}
-	values := url.Values{"ad_id": {in.AdID}}
+	values := url.Values{"ad_id": {in.AdID}, "surface": {in.Surface}}
 	for key, value := range map[string]*string{"start": in.Start, "end": in.End, "tz": in.TZ} {
 		if value != nil {
 			values.Set(key, *value)
@@ -210,12 +220,13 @@ func (r Repository) LinkStats(ctx context.Context, f Filter, page int, sort, ord
  CASE WHEN g.source_kind<>'ad_id' THEN '' WHEN NULLIF(e.ad_name,'') IS NOT NULL THEN 'meta' WHEN g.captured_name IS NOT NULL THEN 'parameter' ELSE '' END,
  -- Keep real-click row metrics in the same order as linkStatsTargets.
  g.visits,g.unique_visitors,g.manual_consultations,g.auto_redirects,g.no_cookie,
+ g.short_link_views,g.audio_novel_views,g.short_link_whatsapp_clicks,g.audio_novel_whatsapp_clicks,
  COALESCE(l.locations,'[]')
  FROM groups g LEFT JOIN meta_connections c ON c.id=g.connection_id AND c.account_id=g.meta_account_id
  LEFT JOIN meta_ad_entities e ON e.connection_id=c.id AND e.ad_id=g.source_value AND g.source_kind='ad_id'
  LEFT JOIN location_groups l ON l.connection_id=g.connection_id AND l.meta_account_id=g.meta_account_id
   AND l.source_kind=g.source_kind AND l.source_value=g.source_value
- ORDER BY g.` + sort + ` ` + order + `,g.connection_id,g.meta_account_id,g.source_kind,g.source_value LIMIT 50 OFFSET $5`
+	ORDER BY g.` + sort + ` ` + order + `,g.connection_id,g.meta_account_id,g.source_kind,g.source_value LIMIT 50 OFFSET $6`
 	rows, err := tx.Query(ctx, query, append(args, (page-1)*50)...)
 	if err != nil {
 		return out, err

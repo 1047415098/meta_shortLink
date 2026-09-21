@@ -272,7 +272,7 @@ func TestMetaRealAdClickQueuesDistinctConsultationEvents(t *testing.T) {
 	var n int
 	var campaign, params string
 	var conn int64
-	// A qualifying ad visit may produce one manual event and one automatic event,
+	// A qualifying ad visit may produce one manual and one automatic AddToCart,
 	// while retries of either browser action remain idempotent.
 	if e := a.DB.QueryRow(context.Background(), "SELECT count(*) FROM meta_events WHERE is_test=false").Scan(&n); e != nil || n != 2 {
 		t.Fatalf("wanted two consultation events got %d %v", n, e)
@@ -285,9 +285,9 @@ func TestMetaRealAdClickQueuesDistinctConsultationEvents(t *testing.T) {
 	}
 	var manual, automatic, encrypted int
 	if e := a.DB.QueryRow(context.Background(), `SELECT
-		-- Deliberate clicks are reported with Meta's standard Contact event.
-		count(*) FILTER(WHERE id LIKE '%_manual' AND event_name='Contact'),
-		count(*) FILTER(WHERE id LIKE '%_auto' AND event_name='WhatsAppAutoRedirect'),
+		-- The event IDs preserve the trigger even though Meta receives one standard event name.
+		count(*) FILTER(WHERE id LIKE '%_manual' AND event_name='AddToCart'),
+		count(*) FILTER(WHERE id LIKE '%_auto' AND event_name='AddToCart'),
 		count(*) FILTER(WHERE payload_cipher<>'' AND payload_cipher NOT LIKE '%192.0.2.7%')
 		FROM meta_events WHERE is_test=false`).Scan(&manual, &automatic, &encrypted); e != nil {
 		t.Fatal(e)
@@ -297,15 +297,15 @@ func TestMetaRealAdClickQueuesDistinctConsultationEvents(t *testing.T) {
 	}
 }
 
-func TestMetaDirectModeQueuesPageViewAndAutomaticRedirect(t *testing.T) {
+func TestMetaDirectModeQueuesOnlyAutomaticAddToCart(t *testing.T) {
 	a := setup(t)
 	connection := metaConnection(t, a, "12345", "98765", true)
 	var pixelID int64
 	if err := a.DB.QueryRow(context.Background(), "SELECT id FROM meta_pixels WHERE connection_id=$1 ORDER BY id LIMIT 1", connection).Scan(&pixelID); err != nil {
 		t.Fatal(err)
 	}
-	// Direct links use the same frozen Pixel rules as landing links, but their
-	// PageView and automatic redirect are produced by the server-side handoff.
+	// Direct links do not render the landing page, so the server-side handoff
+	// produces only the automatic AddToCart event and no PageView.
 	w := call(a, "PATCH", "/api/v1/links/1", fmt.Sprintf(`{"mode":"redirect","meta_connection_id":%d,"meta_pixel_id":%d,"attribution_mode":"dynamic"}`, connection, pixelID), login(t, a))
 	if w.Code != 200 {
 		t.Fatalf("link %d %s", w.Code, w.Body.String())
@@ -322,7 +322,7 @@ func TestMetaDirectModeQueuesPageViewAndAutomaticRedirect(t *testing.T) {
 		FROM meta_events WHERE is_test=false`).Scan(&names, &ids, &statuses); err != nil {
 		t.Fatal(err)
 	}
-	if names != "PageView,WhatsAppAutoRedirect" || !strings.Contains(ids, "_view") || !strings.Contains(ids, "_auto") || statuses != "pending,pending" {
+	if names != "AddToCart" || strings.Contains(ids, "_view") || !strings.Contains(ids, "_auto") || statuses != "pending" {
 		t.Fatalf("direct CAPI events names=%q ids=%q statuses=%q", names, ids, statuses)
 	}
 }
@@ -462,7 +462,8 @@ func TestMetaTestEventIsSeparateAndCanRunWithLiveDisabled(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Tests target one explicit Pixel, matching the administration workflow.
-	w := call(a, "POST", fmt.Sprintf("/api/v1/meta/pixels/%d/test-event", pixelID), `{"test_event_code":"TEST95428","event_name":"WhatsAppConsultClick"}`, admin)
+	// Pixel diagnostics use the same standard event names as live delivery.
+	w := call(a, "POST", fmt.Sprintf("/api/v1/meta/pixels/%d/test-event", pixelID), `{"test_event_code":"TEST95428","event_name":"AddToCart"}`, admin)
 	if w.Code != 200 {
 		t.Fatalf("test enqueue %d %s", w.Code, w.Body.String())
 	}

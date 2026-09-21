@@ -42,7 +42,8 @@ func (h *Handler) listEvents(c *gin.Context) {
 	}
 	name := c.Query("event_name")
 	// Automatic redirects are a separate custom event in both tests and event logs.
-	if name != "" && name != "PageView" && name != EventName && name != LegacyManualEventName && name != AutoRedirectEventName {
+	// Current standard events and immutable historical names are both valid log filters.
+	if name != "" && name != "PageView" && name != EventName && name != LegacyManualEventName && name != LegacyAutoRedirectEventName {
 		runtime.Bad(c, "事件名称无效")
 		return
 	}

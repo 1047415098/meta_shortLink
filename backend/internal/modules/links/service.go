@@ -37,6 +37,10 @@ func ValidLink(l Link) bool {
 	if l.LandingDelay < 0 || l.LandingDelay > 300 {
 		return false
 	}
+	// Zero is the explicit off state; enabled timers use a practical bounded range.
+	if l.TimeSpentThreshold != 0 && (l.TimeSpentThreshold < 5 || l.TimeSpentThreshold > 3600) {
+		return false
+	}
 	if l.Mode != "" && l.Mode != "redirect" && l.Mode != "landing" {
 		return false
 	}

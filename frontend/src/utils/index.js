@@ -28,6 +28,14 @@ export function locationVisitTotal(locations = []) {
   );
 }
 export function validateLink(link) {
+  // Zero disables TimeSpent; enabled values match the backend's safe whole-second range.
+  if (
+    link.time_spent_threshold !== undefined &&
+    (!Number.isInteger(link.time_spent_threshold) ||
+      (link.time_spent_threshold !== 0 &&
+        (link.time_spent_threshold < 5 || link.time_spent_threshold > 3600)))
+  )
+    return "TimeSpent 阈值请输入 0，或 5–3600 的整数秒数";
   if (
     link.landing_delay !== undefined &&
     (!Number.isInteger(link.landing_delay) ||

@@ -3,6 +3,7 @@ package landing
 import (
 	"context"
 	"crypto/hmac"
+	"errors"
 	"log/slog"
 	"net/url"
 	"strings"
@@ -32,6 +33,65 @@ func (a *Handler) RecordDirect(ctx context.Context, eventID string, linkID int64
 // to the landing request; retries update the same row, even without cookies.
 func (a *Handler) View(c *gin.Context)    { a.contact(c, true) }
 func (a *Handler) Contact(c *gin.Context) { a.contact(c, false) }
+
+// TimeSpent accepts the one-shot visible-stay event for the short-link surface.
+func (a *Handler) TimeSpent(c *gin.Context) {
+	a.timeSpent(c, "short_link", "contact:short_link:")
+}
+
+// TimeSpentForSurface lets the separately routed audio novel app reuse the exact
+// same verification and persistence rules without coupling its content APIs.
+func (a *Handler) TimeSpentForSurface(c *gin.Context, surface, signaturePrefix string) {
+	a.timeSpent(c, surface, signaturePrefix)
+}
+
+// timeSpent keeps the signed ticket and same-origin checks identical on both public apps.
+func (a *Handler) timeSpent(c *gin.Context, surface, signaturePrefix string) {
+	if origin := c.GetHeader("Origin"); origin != "" && origin != "null" {
+		u, err := url.Parse(origin)
+		if err != nil || u.Host != c.Request.Host {
+			c.Status(403)
+			return
+		}
+	}
+	parts := strings.Split(c.PostForm("ticket"), ".")
+	if len(parts) != 2 || !runtime.VisitorPattern.MatchString(parts[0]) || !hmac.Equal([]byte(parts[1]), []byte(a.Sign(signaturePrefix+c.Param("code")+":"+parts[0]))) {
+		c.Status(400)
+		return
+	}
+	ctx, cancel := context.WithTimeout(c.Request.Context(), 3*time.Second)
+	defer cancel()
+	link, err := (links.Repository{DB: a.DB}).ByCode(ctx, c.Param("code"))
+	if err == pgx.ErrNoRows {
+		c.Status(404)
+		return
+	}
+	if err != nil {
+		landingError(c, err)
+		return
+	}
+	if !link.Enabled {
+		c.Status(410)
+		return
+	}
+	fbc, _ := c.Cookie("_fbc")
+	fbp, _ := c.Cookie("_fbp")
+	err = (Repository{DB: a.DB, Meta: a.Meta}).MarkTimeSpent(ctx, parts[0], link.ID, surface, meta.ContactContext{IP: c.ClientIP(), UserAgent: c.GetHeader("User-Agent"), FBC: fbc, FBP: fbp})
+	if errors.Is(err, ErrTimeSpentTooEarly) {
+		c.Status(409)
+		return
+	}
+	if err == pgx.ErrNoRows {
+		c.Status(400)
+		return
+	}
+	if err != nil {
+		a.WriteFailures.Add(1)
+		landingError(c, err)
+		return
+	}
+	c.Status(204)
+}
 func (a *Handler) contact(c *gin.Context, view bool) {
 	if origin := c.GetHeader("Origin"); origin != "" && origin != "null" {
 		u, err := url.Parse(origin)
@@ -41,7 +101,7 @@ func (a *Handler) contact(c *gin.Context, view bool) {
 		}
 	}
 	parts := strings.Split(c.PostForm("ticket"), ".")
-	if len(parts) != 2 || !runtime.VisitorPattern.MatchString(parts[0]) || !hmac.Equal([]byte(parts[1]), []byte(a.Sign("contact:"+c.Param("code")+":"+parts[0]))) {
+	if len(parts) != 2 || !runtime.VisitorPattern.MatchString(parts[0]) || !hmac.Equal([]byte(parts[1]), []byte(a.Sign("contact:short_link:"+c.Param("code")+":"+parts[0]))) {
 		c.String(400, "This enquiry link is invalid. Refresh the original page and try again.")
 		return
 	}
@@ -77,7 +137,7 @@ func (a *Handler) contact(c *gin.Context, view bool) {
 	fbc, _ := c.Cookie("_fbc")
 	fbp, _ := c.Cookie("_fbp")
 	if view {
-		err = (Repository{DB: a.DB, Meta: a.Meta}).MarkView(ctx, parts[0], l.ID, meta.ContactContext{IP: c.ClientIP(), UserAgent: c.GetHeader("User-Agent"), FBC: fbc, FBP: fbp})
+		err = (Repository{DB: a.DB, Meta: a.Meta}).MarkView(ctx, parts[0], l.ID, "short_link", meta.ContactContext{IP: c.ClientIP(), UserAgent: c.GetHeader("User-Agent"), FBC: fbc, FBP: fbp})
 		if err != nil {
 			if err == pgx.ErrNoRows {
 				c.Status(400)
@@ -89,7 +149,7 @@ func (a *Handler) contact(c *gin.Context, view bool) {
 		c.Status(204)
 		return
 	}
-	target, err = (Repository{DB: a.DB, Meta: a.Meta}).MarkContact(ctx, parts[0], l.ID, trigger == "auto", meta.ContactContext{IP: c.ClientIP(), UserAgent: c.GetHeader("User-Agent"), FBC: fbc, FBP: fbp})
+	target, err = (Repository{DB: a.DB, Meta: a.Meta}).MarkContact(ctx, parts[0], l.ID, "short_link", trigger == "auto", meta.ContactContext{IP: c.ClientIP(), UserAgent: c.GetHeader("User-Agent"), FBC: fbc, FBP: fbp})
 	if err == pgx.ErrNoRows {
 		c.String(400, "This page has expired. Refresh the original page and try again.")
 		return

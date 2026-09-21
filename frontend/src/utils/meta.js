@@ -5,6 +5,9 @@ const defaults = {
 // Graph requests use the backend-owned version below; operators cannot change
 // protocol compatibility from an account form.
 export const GRAPH_API_VERSION = "v26.0";
+// Both consultation triggers use Meta's standard event; event ID suffixes keep
+// their operational meaning distinct in the delivery log.
+export const META_CONSULT_EVENT = "AddToCart";
 // Keep one canonical template for every Meta ad so attribution fields never
 // drift between operators or fall back to ambiguous legacy UTM meanings.
 export const META_URL_PARAMETERS =
@@ -147,6 +150,22 @@ export const statusLabels = {
   expired: "已过期",
   skipped: "已跳过",
 };
+export function metaEventLabel(event = {}) {
+  // Historical names remain readable after the live funnel switches to the
+  // standard AddToCart event.
+  if (event.event_name === "PageView") return "浏览事件";
+  if (event.event_name === "WhatsAppAutoRedirect") return "自动跳转（历史）";
+  if (
+    event.event_name === "WhatsAppConsultClick" ||
+    event.event_name === "Contact"
+  )
+    return "手动咨询（历史）";
+  if (event.event_name === META_CONSULT_EVENT)
+    return event.id?.endsWith("_auto")
+      ? "自动跳转 · AddToCart"
+      : "手动咨询 · AddToCart";
+  return "其他事件";
+}
 export function statusType(status) {
   if (status === "succeeded") return "success";
   if (status === "failed") return "danger";

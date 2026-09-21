@@ -12,14 +12,22 @@ import (
 	"whatsapp-analytics/internal/platform/runtime"
 )
 
-// EventName is fixed to Meta's standard Contact event for deliberate user enquiries.
-const EventName = "Contact"
+// EventName is the standard Meta conversion used for both deliberate and
+// automatic WhatsApp handoffs under the approved advertising funnel.
+const EventName = "AddToCart"
 
 // LegacyManualEventName remains readable in historical event logs and test filters.
 const LegacyManualEventName = "WhatsAppConsultClick"
 
-// AutoRedirectEventName keeps timer-driven consultations separate from deliberate clicks in Meta.
-const AutoRedirectEventName = "WhatsAppAutoRedirect"
+// LegacyAutoRedirectEventName keeps pre-migration delivery logs filterable.
+const LegacyAutoRedirectEventName = "WhatsAppAutoRedirect"
+
+// AutoRedirectEventName shares Meta's standard name while the `_auto` event ID
+// suffix keeps automatic actions distinguishable from `_manual` actions.
+const AutoRedirectEventName = EventName
+
+// TimeSpentEventName is a custom Meta event emitted after the configured visible-stay threshold.
+const TimeSpentEventName = "TimeSpent"
 
 // GraphAPIVersion is application-owned so operators cannot move individual
 // accounts onto an untested Graph contract.

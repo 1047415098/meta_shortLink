@@ -44,6 +44,23 @@
               ><strong>{{ fmt(summary.auto_redirects) }}</strong>
             </div>
           </div>
+          <div
+            v-if="card[0] === '用户端网站访问'"
+            class="consultation-breakdown"
+          >
+            <div>
+              <span>短链接</span
+              ><strong>{{ fmt(summary.short_link_views) }}</strong>
+            </div>
+            <div>
+              <span>语音小说站</span
+              ><strong>{{ fmt(summary.audio_novel_views) }}</strong>
+            </div>
+          </div>
+          <div v-if="card[0] === '咨询点击总数'" class="surface-breakdown">
+            短链接 {{ fmt(summary.short_link_whatsapp_clicks) }} · 语音小说站
+            {{ fmt(summary.audio_novel_whatsapp_clicks) }}
+          </div>
           <div class="metric-caption">
             <span class="metric-dot"></span>{{ card[2] }}
           </div></el-card

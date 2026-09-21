@@ -18,11 +18,15 @@ import (
 // Bootstrap is the only data contract between the visitor HTTP request and Vue.
 // encoding/json escapes HTML-sensitive characters, including closing script tags.
 type Bootstrap struct {
-	Link            *links.Link `json:"link"`
-	Ticket          string      `json:"ticket"`
-	CookieEnabled   bool        `json:"cookie_enabled"`
-	MetaMeasurement bool        `json:"meta_measurement"`
-	Error           *PageError  `json:"error,omitempty"`
+	Link                 *links.Link `json:"link"`
+	Ticket               string      `json:"ticket"`
+	CookieEnabled        bool        `json:"cookie_enabled"`
+	MetaMeasurement      bool        `json:"meta_measurement"`
+	MetaBrowserPixelID   string      `json:"meta_browser_pixel_id,omitempty"`
+	MetaPageViewEventID  string      `json:"meta_pageview_event_id,omitempty"`
+	MetaManualEventID    string      `json:"meta_manual_event_id,omitempty"`
+	MetaTimeSpentEventID string      `json:"meta_time_spent_event_id,omitempty"`
+	Error                *PageError  `json:"error,omitempty"`
 }
 type PageError struct {
 	Status  int    `json:"status"`
@@ -32,13 +36,36 @@ type PageError struct {
 func (a *Handler) Render(c *gin.Context, l links.Link, eventID string, recorded bool) {
 	ticket := ""
 	if recorded {
-		ticket = eventID + "." + a.Sign("contact:"+l.Code+":"+eventID)
+		ticket = eventID + "." + a.Sign("contact:short_link:"+l.Code+":"+eventID)
 	}
 	measurement := false
+	browserPixelID := ""
+	pageViewEnabled, manualEnabled, timeSpentEnabled := false, false, false
 	if recorded && l.MetaConnectionID != nil {
-		_ = a.DB.QueryRow(c.Request.Context(), "SELECT meta_measurement FROM click_events WHERE id=$1", eventID).Scan(&measurement)
+		// Resolve the public Pixel number from the frozen visit target. Internal
+		// record IDs never reach the browser. Manual-only targets still need the
+		// client library even when PageView delivery is disabled.
+		_ = a.DB.QueryRow(c.Request.Context(), `SELECT e.meta_measurement,
+			COALESCE(CASE WHEN e.meta_measurement AND p.enabled AND (e.meta_pageview_enabled OR e.meta_manual_enabled OR e.time_spent_threshold>0) THEN p.pixel_id ELSE '' END,''),
+			e.meta_pageview_enabled,e.meta_manual_enabled,e.time_spent_threshold>0
+			FROM click_events e LEFT JOIN meta_pixels p ON p.id=e.meta_pixel_id WHERE e.id=$1`, eventID).Scan(&measurement, &browserPixelID, &pageViewEnabled, &manualEnabled, &timeSpentEnabled)
 	}
-	if err := a.render(c, 200, Bootstrap{Link: &l, Ticket: ticket, CookieEnabled: a.Config.CookieMode == "all", MetaMeasurement: measurement}); err != nil {
+	pageViewEventID, manualEventID := "", ""
+	if browserPixelID != "" && pageViewEnabled {
+		// This exactly matches the server event identifier built by Meta CAPI so
+		// Events Manager can deduplicate browser and server PageView delivery.
+		pageViewEventID = "wa_" + eventID + "_view"
+	}
+	if browserPixelID != "" && manualEnabled {
+		// Manual AddToCart uses the same event identifier in browser Pixel and CAPI.
+		manualEventID = "wa_" + eventID + "_manual"
+	}
+	timeSpentEventID := ""
+	if browserPixelID != "" && timeSpentEnabled {
+		// Browser Pixel and CAPI share this ID for custom-event deduplication.
+		timeSpentEventID = "wa_" + eventID + "_time_spent"
+	}
+	if err := a.render(c, 200, Bootstrap{Link: &l, Ticket: ticket, CookieEnabled: a.Config.CookieMode == "all", MetaMeasurement: measurement, MetaBrowserPixelID: browserPixelID, MetaPageViewEventID: pageViewEventID, MetaManualEventID: manualEventID, MetaTimeSpentEventID: timeSpentEventID}); err != nil {
 		landingError(c, err)
 	}
 }
@@ -67,7 +94,16 @@ func (a *Handler) render(c *gin.Context, status int, data Bootstrap) error {
 	if data.Link != nil {
 		page = pageMetadata(page, data.Link.LandingTitle, data.Link.LandingDescription)
 	}
-	c.Header("Content-Security-Policy", "default-src 'none'; script-src 'self' 'nonce-"+nonce+"'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; form-action 'self' https://wa.me https://*.whatsapp.com whatsapp:; base-uri 'none'; frame-ancestors 'none'")
+	if data.MetaBrowserPixelID != "" && data.MetaPageViewEventID != "" {
+		// The fallback covers browsers with JavaScript disabled. Vue cannot mount
+		// in that case, so no CAPI PageView is generated and no duplicate exists.
+		pixel := html.EscapeString(data.MetaBrowserPixelID)
+		fallback := []byte(`<noscript><img height="1" width="1" style="display:none" alt="" src="https://www.facebook.com/tr?id=` + pixel + `&amp;ev=PageView&amp;noscript=1" /></noscript>`)
+		page = bytes.Replace(page, []byte("</body>"), append(fallback, []byte("</body>")...), 1)
+	}
+	// Permit only Meta's official loader and collection host for the optional
+	// browser Pixel while retaining the landing page's deny-by-default policy.
+	c.Header("Content-Security-Policy", "default-src 'none'; script-src 'self' 'nonce-"+nonce+"' https://connect.facebook.net; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://www.facebook.com; font-src 'self'; connect-src 'self' https://www.facebook.com; form-action 'self' https://wa.me https://*.whatsapp.com whatsapp:; base-uri 'none'; frame-ancestors 'none'")
 	c.Header("Referrer-Policy", "same-origin")
 	c.Header("Content-Type", "text/html; charset=utf-8")
 	if c.Request.Method == "HEAD" {

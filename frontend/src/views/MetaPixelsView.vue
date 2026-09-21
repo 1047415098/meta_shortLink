@@ -53,11 +53,11 @@
               >PageView {{ row.pageview_enabled ? "开" : "关" }}</el-tag
             >
             <div class="muted">
-              手动：{{ row.manual_enabled ? "Contact" : "关闭" }}
+              手动：{{ row.manual_enabled ? META_CONSULT_EVENT : "关闭" }}
             </div>
-            <!-- 自动跳转使用独立开关和事件名，避免与主动咨询混算。 -->
+            <!-- 两类动作共享标准事件名，但仍由独立开关控制。 -->
             <div class="muted">
-              自动：{{ row.auto_enabled ? "WhatsAppAutoRedirect" : "关闭" }}
+              自动：{{ row.auto_enabled ? META_CONSULT_EVENT : "关闭" }}
             </div></template
           ></el-table-column
         ><el-table-column label="凭证" min-width="170"
@@ -137,10 +137,10 @@
             active-text="回传 PageView" /><el-switch
             v-model="form.manual_enabled"
             aria-label="回传手动咨询"
-            active-text="回传手动咨询 Contact" /><el-switch
+            active-text="回传手动咨询 AddToCart" /><el-switch
             v-model="form.auto_enabled"
             aria-label="回传自动跳转"
-            active-text="回传自动跳转" /></el-form-item></el-form
+            active-text="回传自动跳转 AddToCart" /></el-form-item></el-form
       ><template #footer
         ><el-button @click="dialog = false">取消</el-button
         ><el-button type="primary" :loading="saving" @click="save"
@@ -186,6 +186,7 @@ import {
   pixelPayload,
   pixelTogglePayload,
   credentialStatus,
+  META_CONSULT_EVENT,
 } from "../utils/meta";
 const connections = ref([]),
   pixels = ref([]),
@@ -204,10 +205,10 @@ const connections = ref([]),
 const form = reactive(pixelForm()),
   testForm = reactive({
     test_event_code: "",
-    event_name: "Contact",
+    event_name: META_CONSULT_EVENT,
   }),
   // 测试事件列表与后端允许的真实事件名称保持一致。
-  eventNames = ["PageView", "Contact", "WhatsAppAutoRedirect"];
+  eventNames = ["PageView", META_CONSULT_EVENT];
 async function load() {
   busy.value = true;
   error.value = "";

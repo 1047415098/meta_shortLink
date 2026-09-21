@@ -95,6 +95,7 @@ import {
   User,
   SwitchButton,
   Connection,
+  Reading,
 } from "@element-plus/icons-vue";
 import { ref, onMounted } from "vue";
 import { useRoute, useRouter } from "vue-router";
@@ -107,6 +108,7 @@ const route = useRoute(),
 const nav = [
   ["overview", DataAnalysis, "数据总览"],
   ["links", Link, "短链接管理"],
+  ["audio-novels", Reading, "语音小说管理"],
   ["visits", Document, "访问明细"],
   ["ads", TrendCharts, "导入统计"],
   ["meta-connections", Connection, "Meta 帐号"],

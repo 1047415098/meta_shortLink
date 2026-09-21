@@ -58,6 +58,24 @@ test("short links require a Pixel and an explicit attribution mode", () => {
     "请选择广告归因方式",
   );
 });
+test("TimeSpent accepts off or a bounded whole-second threshold", () => {
+  const valid = {
+    name: "Test",
+    target_url: "https://wa.me/13365661092",
+    meta_pixel_id: 7,
+    attribution_mode: "dynamic",
+  };
+  assert.equal(validateLink({ ...valid, time_spent_threshold: 0 }), "");
+  assert.equal(validateLink({ ...valid, time_spent_threshold: 30 }), "");
+  assert.match(
+    validateLink({ ...valid, time_spent_threshold: 4 }),
+    /TimeSpent/,
+  );
+  assert.match(
+    validateLink({ ...valid, time_spent_threshold: 3601 }),
+    /TimeSpent/,
+  );
+});
 import { fillTrend } from "../src/utils.js";
 test("trend fills empty calendar days without altering observed values", () =>
   assert.deepEqual(

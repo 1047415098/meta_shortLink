@@ -34,7 +34,12 @@ services:
       RETENTION_DAYS: ${RETENTION_DAYS:-90}
       TRUSTED_PROXIES: ${TRUSTED_PROXIES:-}
       GEOIP_DB_PATH: ${GEOIP_DB_PATH:-}
+      AUDIO_NOVEL_DIR: /app/audio-novel
+      AUDIO_NOVEL_UPLOAD_DIR: /app/data/audio-novel-uploads
     volumes:
       - ./geoip:/app/geoip:ro
+      - audio_novel_uploads:/app/data/audio-novel-uploads
 volumes:
   postgres_data:
+  # Audio novel covers remain available when the application container is replaced.
+  audio_novel_uploads:

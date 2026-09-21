@@ -84,7 +84,8 @@ func (s *Service) SavePixel(ctx context.Context, in PixelInput, id int64) (Pixel
 	p := in.Pixel
 	p.ID = id
 	p.Name = strings.TrimSpace(p.Name)
-	// Manual consultations always use Meta's standard Contact event.
+	// Manual consultations always use the one standard conversion selected for
+	// the WhatsApp funnel; client-supplied legacy names are ignored.
 	p.ManualEventName = EventName
 	tx, e := s.Core.DB.Begin(ctx)
 	if e != nil {

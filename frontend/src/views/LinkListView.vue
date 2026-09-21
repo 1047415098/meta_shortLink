@@ -79,7 +79,15 @@
           prop="channel"
           label="渠道"
           width="110"
-        /><el-table-column
+        /><el-table-column label="TimeSpent" width="120"
+          ><template #default="{ row }"
+            ><span>{{
+              row.time_spent_threshold
+                ? `${row.time_spent_threshold} 秒`
+                : "仅计时"
+            }}</span></template
+          ></el-table-column
+        ><el-table-column
           prop="ad_id"
           label="广告 ID"
           min-width="140"
@@ -187,6 +195,19 @@
             ></el-form-item
           >
         </template>
+        <!-- The same code-level threshold is used by both the short-link and audio novel frontends. -->
+        <el-form-item label="TimeSpent 阈值（秒）">
+          <el-input
+            v-model.number="form.time_spent_threshold"
+            type="number"
+            min="0"
+            max="3600"
+            step="1"
+          />
+          <small class="muted"
+            >0 表示只显示停留计时、不回传事件；启用时请输入 5–3600 秒。</small
+          >
+        </el-form-item>
         <el-form-item v-if="!editing" label="自定义短码（留空自动生成）"
           ><el-input
             v-model="form.code"
@@ -355,6 +376,8 @@ const form = reactive({
   target_url: "https://wa.me/13365661092",
   mode: "landing",
   landing_delay: 3,
+  // The visitor timer is always visible; this value controls only the event threshold.
+  time_spent_threshold: 0,
   landing_brand: "PEPLYRA Research",
   landing_title: "Research materials. Clearer possibilities.",
   landing_description:
@@ -463,6 +486,7 @@ function openLink(row) {
       target_url: "https://wa.me/13365661092",
       mode: "landing",
       landing_delay: 3,
+      time_spent_threshold: 0,
       landing_brand: "PEPLYRA Research",
       landing_title: "Research materials. Clearer possibilities.",
       landing_description:

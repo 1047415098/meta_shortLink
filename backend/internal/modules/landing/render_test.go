@@ -56,6 +56,12 @@ func TestVueBootstrapEscapingAndMetadata(t *testing.T) {
 	if strings.Contains(body, "<!--LANDING_BOOTSTRAP-->") || !strings.Contains(w.Header().Get("Content-Security-Policy"), "script-src 'self' 'nonce-") {
 		t.Fatal("bootstrap marker or CSP invalid")
 	}
+	// Browser Pixel delivery requires only Meta's script and collection hosts;
+	// no broader third-party origin should be admitted by the landing CSP.
+	csp := w.Header().Get("Content-Security-Policy")
+	if !strings.Contains(csp, "https://connect.facebook.net") || !strings.Contains(csp, "https://www.facebook.com") {
+		t.Fatalf("Meta Pixel hosts missing from CSP: %s", csp)
+	}
 }
 func TestVueUnavailableAndHead(t *testing.T) {
 	h := renderer(t)
@@ -74,5 +80,21 @@ func TestVueUnavailableAndHead(t *testing.T) {
 		if method == "GET" && !strings.Contains(w.Body.String(), `"error":{"status":410,"message":"Expired"}`) {
 			t.Fatal("error bootstrap missing")
 		}
+	}
+}
+
+func TestManualOnlyBrowserPixelDoesNotEmitPageViewFallback(t *testing.T) {
+	h := renderer(t)
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest("GET", "/manual-only", nil)
+
+	// Loading fbevents.js for manual consultation must not manufacture a
+	// no-script PageView when the operator disabled PageView delivery.
+	if err := h.render(c, 200, Bootstrap{MetaBrowserPixelID: "1066571352827370"}); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(w.Body.String(), "facebook.com/tr?id=") {
+		t.Fatalf("manual-only Pixel emitted a PageView fallback: %s", w.Body.String())
 	}
 }

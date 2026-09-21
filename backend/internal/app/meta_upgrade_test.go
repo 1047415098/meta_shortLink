@@ -55,9 +55,9 @@ func TestMetaPixelRoutingAndFrozenRules(t *testing.T) {
 	if e := a.DB.QueryRow(ctx, `SELECT count(*),string_agg(event_name,',' ORDER BY event_name),string_agg(DISTINCT pixel_id,',') FROM meta_events`).Scan(&count, &names, &pixels); e != nil {
 		t.Fatal(e)
 	}
-	// The visit keeps its original PageView/manual rule snapshot, while the timer
-	// action is emitted under the dedicated automatic event name.
-	if count != 3 || names != "Contact,PageView,WhatsAppAutoRedirect" || pixels != "87654" {
+	// The landing view remains PageView while manual and timer actions share
+	// Meta's standard AddToCart name and keep separate event IDs for deduplication.
+	if count != 3 || names != "AddToCart,AddToCart,PageView" || pixels != "87654" {
 		t.Fatalf("routing/dedupe: %d %s %s", count, names, pixels)
 	}
 	other := metaConnection(t, a, "22222", "33333", false)

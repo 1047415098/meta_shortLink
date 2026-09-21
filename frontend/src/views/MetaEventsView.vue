@@ -141,13 +141,7 @@
             ><b>{{ row.event_name }}</b>
             <div class="subline">
               <el-tag size="small" :type="row.is_test ? 'warning' : 'info'">{{
-                row.is_test
-                  ? "测试事件"
-                  : row.event_name === "PageView"
-                    ? "浏览事件"
-                    : row.event_name === "WhatsAppAutoRedirect"
-                      ? "自动跳转"
-                      : "手动咨询"
+                row.is_test ? "测试事件" : metaEventLabel(row)
               }}</el-tag>
             </div></template
           ></el-table-column
@@ -211,7 +205,13 @@ import {
   listMetaEvents,
   retryMetaEvent,
 } from "../api/meta";
-import { statusLabels, statusType, timestamp } from "../utils/meta";
+import {
+  META_CONSULT_EVENT,
+  metaEventLabel,
+  statusLabels,
+  statusType,
+  timestamp,
+} from "../utils/meta";
 const route = useRoute(),
   router = useRouter();
 const eventStatuses = [
@@ -226,6 +226,8 @@ const eventStatuses = [
 // 查询选项与后端真实、测试事件白名单保持一致。
 const eventNames = [
   "PageView",
+  META_CONSULT_EVENT,
+  // Legacy names stay filterable for immutable historical event records.
   "WhatsAppConsultClick",
   "WhatsAppAutoRedirect",
   "Contact",

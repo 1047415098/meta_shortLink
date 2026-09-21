@@ -36,12 +36,14 @@ func TestDirectModeRecordsVisitAndReturnsMinimalTopLocationScript(t *testing.T) 
 	if err := a.DB.QueryRow(context.Background(), `SELECT count(*) OVER(),count(whatsapp_clicked_at) OVER(),count(auto_redirected_at) OVER(),count(pageview_reported_at) OVER(),id,event_type FROM click_events LIMIT 1`).Scan(&visits, &manual, &automatic, &viewed, &eventID, &eventType); err != nil {
 		t.Fatal(err)
 	}
-	if visits != 1 || manual != 0 || automatic != 1 || viewed != 1 || eventType != "redirect" {
+	// Direct handoffs never render the landing page, so they record an automatic
+	// AddToCart action without manufacturing a PageView timestamp.
+	if visits != 1 || manual != 0 || automatic != 1 || viewed != 0 || eventType != "redirect" {
 		t.Fatalf("direct counters: visits=%d manual=%d auto=%d view=%d type=%s", visits, manual, automatic, viewed, eventType)
 	}
 	// Direct mode records its automatic action on the server and never exposes a
 	// browser ticket that could manufacture a manual consultation.
-	ticket := eventID + "." + a.Sign("contact:hello:"+eventID)
+	ticket := eventID + "." + a.Sign("contact:short_link:hello:"+eventID)
 	r := httptest.NewRequest("POST", "/hello/contact", strings.NewReader(url.Values{"ticket": {ticket}, "trigger": {"manual"}}.Encode()))
 	r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	result := httptest.NewRecorder()
@@ -131,6 +133,63 @@ func TestLandingContactJSONResponse(t *testing.T) {
 	}
 	if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil || w.Code != 200 || response.TargetURL != "https://wa.me/13365661092" || w.Header().Get("Location") != "" {
 		t.Fatalf("JSON consultation response: %d %s %v", w.Code, w.Body.String(), err)
+	}
+}
+
+func TestLandingBrowserPixelUsesBoundPixelAndSharedPageViewID(t *testing.T) {
+	a := setup(t)
+	connectionID := metaConnection(t, a, "12345", "1066571352827370", true)
+	metaLanding(t, a, connectionID)
+
+	page := call(a, "GET", "/hello?fbclid=browser-pixel-click&ad_id=3303", "", nil)
+	ticketMatch := regexp.MustCompile(`"ticket":"([^"]+)"`).FindStringSubmatch(page.Body.String())
+	if len(ticketMatch) != 2 {
+		t.Fatalf("browser Pixel page has no visit ticket: %s", page.Body.String())
+	}
+	visitID := strings.SplitN(ticketMatch[1], ".", 2)[0]
+	body := page.Body.String()
+	// The browser contract exposes the public Meta Pixel ID, never the internal
+	// database record ID, and shares the CAPI event ID for Meta deduplication.
+	if !strings.Contains(body, `"meta_browser_pixel_id":"1066571352827370"`) {
+		t.Fatalf("bound browser Pixel missing: %s", body)
+	}
+	if !strings.Contains(body, `"meta_pageview_event_id":"wa_`+visitID+`_view"`) {
+		t.Fatalf("shared browser PageView event ID missing: %s", body)
+	}
+	if !strings.Contains(body, `"meta_manual_event_id":"wa_`+visitID+`_manual"`) {
+		t.Fatalf("shared browser manual event ID missing: %s", body)
+	}
+	if !strings.Contains(body, `https://www.facebook.com/tr?id=1066571352827370&amp;ev=PageView&amp;noscript=1`) {
+		t.Fatalf("dynamic Meta noscript fallback missing: %s", body)
+	}
+
+	// A disabled Pixel remains bound for administration but must not execute in
+	// a new visitor document.
+	if _, err := a.DB.Exec(context.Background(), "UPDATE meta_pixels SET enabled=false WHERE connection_id=$1", connectionID); err != nil {
+		t.Fatal(err)
+	}
+	disabled := call(a, "GET", "/hello?fbclid=disabled-pixel&ad_id=3303", "", nil)
+	if strings.Contains(disabled.Body.String(), `"meta_browser_pixel_id"`) || strings.Contains(disabled.Body.String(), `facebook.com/tr?id=`) {
+		t.Fatalf("disabled Pixel leaked into landing page: %s", disabled.Body.String())
+	}
+
+	// A manual-only configuration must initialize the browser Pixel without
+	// emitting a PageView or its no-script fallback.
+	if _, err := a.DB.Exec(context.Background(), "UPDATE meta_pixels SET enabled=true,pageview_enabled=false,manual_enabled=true WHERE connection_id=$1", connectionID); err != nil {
+		t.Fatal(err)
+	}
+	manualOnly := call(a, "GET", "/hello?fbclid=manual-only-click&ad_id=3303", "", nil)
+	manualTicket := regexp.MustCompile(`"ticket":"([^"]+)"`).FindStringSubmatch(manualOnly.Body.String())
+	if len(manualTicket) != 2 {
+		t.Fatalf("manual-only browser Pixel page has no visit ticket: %s", manualOnly.Body.String())
+	}
+	manualVisitID := strings.SplitN(manualTicket[1], ".", 2)[0]
+	manualBody := manualOnly.Body.String()
+	if !strings.Contains(manualBody, `"meta_browser_pixel_id":"1066571352827370"`) || !strings.Contains(manualBody, `"meta_manual_event_id":"wa_`+manualVisitID+`_manual"`) {
+		t.Fatalf("manual-only browser Pixel contract missing: %s", manualBody)
+	}
+	if strings.Contains(manualBody, `"meta_pageview_event_id"`) || strings.Contains(manualBody, `facebook.com/tr?id=`) {
+		t.Fatalf("manual-only browser Pixel emitted PageView data: %s", manualBody)
 	}
 }
 

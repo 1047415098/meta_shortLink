@@ -13,6 +13,7 @@ import (
 	"whatsapp-analytics/internal/jobs"
 	"whatsapp-analytics/internal/modules/adspend"
 	"whatsapp-analytics/internal/modules/analytics"
+	"whatsapp-analytics/internal/modules/audionovel"
 	"whatsapp-analytics/internal/modules/auth"
 	"whatsapp-analytics/internal/modules/landing"
 	"whatsapp-analytics/internal/modules/links"
@@ -50,15 +51,19 @@ func New(c config.Config, db *pgxpool.Pool) (*App, error) {
 	landingHandler := &landing.Handler{Core: core}
 	metaService := meta.New(core)
 	landingHandler.Meta = metaService
+	// The standalone audio novel app reuses the shared link, tracking and Meta services.
+	audioNovelHandler := &audionovel.Handler{Core: core, Meta: metaService}
+	trackingHandler := &tracking.Handler{Core: core, Landing: landingHandler, AudioNovelPage: audioNovelHandler}
 	router, err := httptransport.New(core, httptransport.Handlers{
-		Auth:      &auth.Handler{Core: core, Password: hash},
-		Links:     &links.Handler{Core: core},
-		Analytics: &analytics.Handler{Core: core},
-		Spend:     &adspend.Handler{Core: core},
-		Logs:      &requestlogs.Handler{Core: core},
-		Landing:   landingHandler,
-		Tracking:  &tracking.Handler{Core: core, Landing: landingHandler},
-		Meta:      &meta.Handler{Service: metaService},
+		Auth:       &auth.Handler{Core: core, Password: hash},
+		Links:      &links.Handler{Core: core},
+		Analytics:  &analytics.Handler{Core: core},
+		Spend:      &adspend.Handler{Core: core},
+		Logs:       &requestlogs.Handler{Core: core},
+		Landing:    landingHandler,
+		AudioNovel: audioNovelHandler,
+		Tracking:   trackingHandler,
+		Meta:       &meta.Handler{Service: metaService},
 	})
 	if err != nil {
 		if core.Geo != nil {
