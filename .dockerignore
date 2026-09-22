@@ -1,7 +1,6 @@
 .env
 .git
 frontend/node_modules
-frontend/dist
 geoip
 backups
 *.log
@@ -12,4 +11,6 @@ ACCESS-PRIVATE.md
 .work
 
 landing/node_modules
-landing/dist
+# 生产镜像直接复制四个前端的已验证 dist，因此不能从构建上下文排除 dist。
+audio-novel/node_modules
+novel-h5/node_modules

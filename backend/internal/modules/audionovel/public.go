@@ -69,6 +69,40 @@ func (a *Handler) PublicStory(c *gin.Context) {
 	c.JSON(200, gin.H{"story": item, "related": related})
 }
 
+func (a *Handler) PublicAudioList(c *gin.Context) {
+	if !a.validPublicCode(c) {
+		return
+	}
+	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
+	pageSize, _ := strconv.Atoi(c.DefaultQuery("page_size", "6"))
+	ctx, cancel := context.WithTimeout(c.Request.Context(), 5*time.Second)
+	defer cancel()
+	result, err := (Repository{DB: a.DB}).PublicAudioList(ctx, page, pageSize)
+	if err != nil {
+		runtime.ServerError(c, err)
+		return
+	}
+	c.JSON(200, result)
+}
+
+func (a *Handler) PublicAudioStory(c *gin.Context) {
+	if !a.validPublicCode(c) {
+		return
+	}
+	ctx, cancel := context.WithTimeout(c.Request.Context(), 5*time.Second)
+	defer cancel()
+	item, err := (Repository{DB: a.DB}).PublicAudioBySlug(ctx, c.Param("slug"))
+	if errors.Is(err, pgx.ErrNoRows) {
+		c.Status(404)
+		return
+	}
+	if err != nil {
+		runtime.ServerError(c, err)
+		return
+	}
+	c.JSON(200, gin.H{"audio": item})
+}
+
 // 公开内容沿用同一条短链接配置，但读取语音小说时不新增访问事件。
 func (a *Handler) validPublicCode(c *gin.Context) bool {
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 3*time.Second)

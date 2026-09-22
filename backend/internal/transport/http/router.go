@@ -15,6 +15,7 @@ import (
 	"whatsapp-analytics/internal/modules/landing"
 	"whatsapp-analytics/internal/modules/links"
 	"whatsapp-analytics/internal/modules/meta"
+	"whatsapp-analytics/internal/modules/novel"
 	"whatsapp-analytics/internal/modules/requestlogs"
 	"whatsapp-analytics/internal/modules/tracking"
 	"whatsapp-analytics/internal/platform/runtime"
@@ -29,6 +30,7 @@ type Handlers struct {
 	Logs       *requestlogs.Handler
 	Landing    *landing.Handler
 	AudioNovel *audionovel.Handler
+	Novel      *novel.Handler
 	Tracking   *tracking.Handler
 	Meta       *meta.Handler
 }
@@ -45,8 +47,12 @@ func New(core *runtime.Core, h Handlers) (*gin.Engine, error) {
 		c.Header("Referrer-Policy", "no-referrer")
 		c.Header("X-Frame-Options", "DENY")
 		c.Header("Cache-Control", "no-store")
-		// 封面上传最大 5MB，额外空间用于 multipart 边界和字段头。
-		c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 6<<20)
+		requestLimit := int64(6 << 20)
+		if c.Request.URL.Path == "/api/v1/audio-novel-audio" {
+			// MP3 本体上限 100 MiB，额外 1 MiB 留给 multipart 边界和字段头。
+			requestLimit = 101 << 20
+		}
+		c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, requestLimit)
 		c.Next()
 	})
 	r.GET("/healthz", func(c *gin.Context) {
@@ -91,10 +97,31 @@ func New(core *runtime.Core, h Handlers) (*gin.Engine, error) {
 	api.GET("/audio-novels/:id", h.AudioNovel.GetAdmin)
 	api.PATCH("/audio-novels/:id", h.AudioNovel.UpdateAdmin)
 	api.DELETE("/audio-novels/:id", h.AudioNovel.DeleteAdmin)
+	api.DELETE("/audio-novels/:id/audio", h.AudioNovel.RemoveAudio)
 	api.PATCH("/audio-novels/:id/status", h.AudioNovel.SetEnabled)
 	api.PATCH("/audio-novels/:id/featured", h.AudioNovel.SetFeatured)
 	api.POST("/audio-novels/preview", h.AudioNovel.Preview)
 	api.POST("/audio-novel-covers", h.AudioNovel.UploadCover)
+	api.POST("/audio-novel-audio", h.AudioNovel.UploadAudio)
+	api.GET("/novels", h.Novel.ListAdmin)
+	api.POST("/novels", h.Novel.CreateAdmin)
+	api.GET("/novels/:id", h.Novel.GetAdmin)
+	api.PATCH("/novels/:id", h.Novel.UpdateAdmin)
+	api.DELETE("/novels/:id", h.Novel.DeleteAdmin)
+	api.PATCH("/novels/:id/status", h.Novel.SetEnabled)
+	api.PATCH("/novels/:id/featured", h.Novel.SetFeatured)
+	api.GET("/novels/:id/chapters", h.Novel.ListChaptersAdmin)
+	api.POST("/novels/:id/chapters", h.Novel.CreateChapterAdmin)
+	api.PATCH("/novels/:id/chapters/:chapterId", h.Novel.UpdateChapterAdmin)
+	api.DELETE("/novels/:id/chapters/:chapterId", h.Novel.DeleteChapterAdmin)
+	api.POST("/novels/preview", h.Novel.Preview)
+	api.POST("/novel-covers", h.Novel.UploadCover)
+	// 小说投放链接使用独立接口，避免普通短链接列表混入其他前端项目的数据。
+	api.GET("/novel-links", h.Novel.ListDistributionLinks)
+	api.POST("/novel-links", h.Novel.CreateDistributionLink)
+	api.PATCH("/novel-links/:id", h.Novel.UpdateDistributionLink)
+	api.DELETE("/novel-links/:id", h.Novel.DeleteDistributionLink)
+	api.POST("/novel-links/:id/stats", h.Novel.DistributionStats)
 	api.GET("/settings", func(c *gin.Context) {
 		c.JSON(200, gin.H{"public_base_url": core.Config.PublicURL, "timezone": core.Config.Timezone, "cookie_mode": core.Config.CookieMode, "retention_days": core.Config.RetentionDays, "geo_enabled": core.Geo != nil})
 	})
@@ -107,19 +134,42 @@ func New(core *runtime.Core, h Handlers) (*gin.Engine, error) {
 	r.HEAD("/admin", adminIndex)
 	r.GET("/admin/*path", adminIndex)
 	r.HEAD("/admin/*path", adminIndex)
-	for prefix, root := range map[string]string{"/admin-assets/": filepath.Join(core.Config.FrontendDir, "admin-assets"), "/landing-assets/": filepath.Join(core.Config.LandingDir, "landing-assets"), "/audio-novel-assets/": filepath.Join(core.Config.AudioNovelDir, "audio-novel-assets"), "/assets/": filepath.Join(core.Config.FrontendDir, "assets")} {
+	for prefix, root := range map[string]string{"/admin-assets/": filepath.Join(core.Config.FrontendDir, "admin-assets"), "/landing-assets/": filepath.Join(core.Config.LandingDir, "landing-assets"), "/audio-novel-assets/": filepath.Join(core.Config.AudioNovelDir, "audio-novel-assets"), "/novel-assets/": filepath.Join(core.Config.NovelDir, "novel-assets"), "/assets/": filepath.Join(core.Config.FrontendDir, "assets")} {
 		r.GET(prefix+"*filepath", staticfiles.Handler(root))
 		r.HEAD(prefix+"*filepath", staticfiles.Handler(root))
 	}
 	// Uploaded covers remain independent from frontend build artifacts and use persistent storage.
 	r.GET("/audio-novel-uploads/*filepath", staticfiles.Handler(core.Config.AudioNovelUploadDir))
 	r.HEAD("/audio-novel-uploads/*filepath", staticfiles.Handler(core.Config.AudioNovelUploadDir))
+	// MP3 使用独立持久目录，http.ServeContent 原生处理播放器需要的 Range 请求。
+	r.GET("/audio-novel-audio/*filepath", staticfiles.Handler(core.Config.AudioNovelAudioDir))
+	r.HEAD("/audio-novel-audio/*filepath", staticfiles.Handler(core.Config.AudioNovelAudioDir))
 	r.GET("/audio-novel-api/:code/home", h.AudioNovel.PublicHome)
 	r.GET("/audio-novel-api/:code/stories", h.AudioNovel.PublicList)
 	r.GET("/audio-novel-api/:code/stories/:slug", h.AudioNovel.PublicStory)
+	r.GET("/audio-novel-api/:code/audio", h.AudioNovel.PublicAudioList)
+	r.GET("/audio-novel-api/:code/audio/:slug", h.AudioNovel.PublicAudioStory)
+	r.GET("/novel-uploads/*filepath", staticfiles.Handler(core.Config.NovelUploadDir))
+	r.HEAD("/novel-uploads/*filepath", staticfiles.Handler(core.Config.NovelUploadDir))
+	r.GET("/novel-api/:code/home", h.Novel.PublicHome)
+	r.GET("/novel-api/:code/stories", h.Novel.PublicList)
+	r.GET("/novel-api/:code/stories/:slug", h.Novel.PublicStory)
+	r.GET("/novel-api/:code/stories/:slug/chapters/:number", h.Novel.PublicChapter)
+	// 免费小说路由必须位于通用短码之前，避免 novel 被误识别为一个广告短码。
+	for _, path := range []string{"/novel/:code", "/novel/:code/search", "/novel/:code/stories", "/novel/:code/stories/:slug"} {
+		r.GET(path, h.Tracking.Novel)
+		r.HEAD(path, h.Tracking.Novel)
+	}
+	r.POST("/novel/:code/view", h.Novel.View)
+	r.POST("/novel/:code/time-spent", h.Novel.TimeSpent)
+	r.POST("/novel/:code/reading-time", h.Novel.ReadingTime)
 	// Audio novel routes stay before the generic short-code route so the product prefix is never treated as a code.
 	r.GET("/audio-novel/:code", h.Tracking.AudioNovel)
 	r.HEAD("/audio-novel/:code", h.Tracking.AudioNovel)
+	r.GET("/audio-novel/:code/audio", h.Tracking.AudioNovel)
+	r.HEAD("/audio-novel/:code/audio", h.Tracking.AudioNovel)
+	r.GET("/audio-novel/:code/audio/:slug", h.Tracking.AudioNovel)
+	r.HEAD("/audio-novel/:code/audio/:slug", h.Tracking.AudioNovel)
 	r.GET("/audio-novel/:code/stories", h.Tracking.AudioNovel)
 	r.HEAD("/audio-novel/:code/stories", h.Tracking.AudioNovel)
 	r.GET("/audio-novel/:code/stories/:slug", h.Tracking.AudioNovel)

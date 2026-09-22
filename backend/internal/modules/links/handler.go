@@ -30,7 +30,7 @@ func (a *Handler) List(c *gin.Context) {
 
 func (a *Handler) Create(c *gin.Context) {
 	// Dynamic attribution is the required default for every newly created link.
-	l := Link{AttributionMode: "dynamic"}
+	l := Link{AttributionMode: "dynamic", ProductType: "short_link"}
 	if c.ShouldBindJSON(&l) != nil {
 		runtime.Bad(c, "无效数据")
 		return
@@ -60,6 +60,10 @@ func (a *Handler) Update(c *gin.Context) {
 	}
 	if e != nil {
 		runtime.ServerError(c, e)
+		return
+	}
+	if l.ProductType == "novel" {
+		c.Status(404)
 		return
 	}
 	// Decode over the existing record so PATCH supports enabling without replacing metadata.

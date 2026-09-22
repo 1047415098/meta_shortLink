@@ -98,7 +98,7 @@ func (a *Handler) render(c *gin.Context, status int, data Bootstrap) error {
 	page = bytes.Replace(page, marker, script, 1)
 	page = audioNovelMetadata(page)
 	// 语音小说站只加载自身资源、Meta Pixel 与 WhatsApp；正文不允许注入任意 HTML。
-	c.Header("Content-Security-Policy", "default-src 'none'; script-src 'self' 'nonce-"+nonce+"' https://connect.facebook.net; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://www.facebook.com; font-src 'self'; connect-src 'self' https://www.facebook.com; form-action 'self' https://wa.me https://*.whatsapp.com whatsapp:; base-uri 'none'; frame-ancestors 'none'")
+	c.Header("Content-Security-Policy", "default-src 'none'; script-src 'self' 'nonce-"+nonce+"' https://connect.facebook.net; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://www.facebook.com; media-src 'self'; font-src 'self'; connect-src 'self' https://www.facebook.com; form-action 'self' https://wa.me https://*.whatsapp.com whatsapp:; base-uri 'none'; frame-ancestors 'none'")
 	c.Header("Referrer-Policy", "same-origin")
 	c.Header("Content-Type", "text/html; charset=utf-8")
 	if c.Request.Method == "HEAD" {

@@ -50,7 +50,8 @@ func ValidLink(l Link) bool {
 	if l.Mode == "landing" && (strings.TrimSpace(l.LandingBrand) == "" || strings.TrimSpace(l.LandingTitle) == "" || strings.TrimSpace(l.LandingDescription) == "") {
 		return false
 	}
-	return codePattern.MatchString(l.Code) && l.Code != "api" && l.Code != "assets" && l.Code != "healthz" && l.Code != "admin" && l.Code != "admin-assets" && l.Code != "landing-assets" && ValidTarget(l.TargetURL) && len(strings.TrimSpace(l.Name)) > 0 && len(l.Name) <= 120 && len(l.AdID) <= 120 && len(l.CampaignID) <= 120 && len(l.AdsetID) <= 120 && len(l.Channel) <= 60
+	// Empty product types come from older internal callers and are persisted as short_link.
+	return ValidCode(l.Code) && ValidTarget(l.TargetURL) && len(strings.TrimSpace(l.Name)) > 0 && len(l.Name) <= 120 && len(l.AdID) <= 120 && len(l.CampaignID) <= 120 && len(l.AdsetID) <= 120 && len(l.Channel) <= 60 && (l.ProductType == "" || l.ProductType == "legacy" || l.ProductType == "short_link") && l.NovelID == nil
 }
 
 // HasMetaBinding identifies the complete account/Pixel pair required for new

@@ -19,6 +19,13 @@ RUN npm ci
 COPY audio-novel/ ./
 RUN npm run build
 
+FROM node:22-alpine AS novel-h5
+WORKDIR /novel-h5
+COPY novel-h5/package*.json ./
+RUN npm ci
+COPY novel-h5/ ./
+RUN npm run build
+
 FROM golang:1.27.1-alpine AS backend
 WORKDIR /src
 COPY backend/go.mod backend/go.sum ./
@@ -28,13 +35,16 @@ RUN CGO_ENABLED=0 go build -trimpath -o /server ./cmd/server
 
 FROM alpine:3.22
 RUN apk add --no-cache ca-certificates tzdata && addgroup -S app && adduser -S app -G app \
-    && mkdir -p /app/data/audio-novel-uploads && chown -R app:app /app/data
+    # 初始化上传目录，确保新建的数据卷也能由非 root 服务进程写入。
+    && mkdir -p /app/data/audio-novel-uploads /app/data/audio-novel-audio /app/data/novel-uploads \
+    && chown -R app:app /app/data
 WORKDIR /app
 COPY --from=backend /server /app/server
 COPY --from=frontend /web/dist /app/admin
 COPY --from=landing /landing/dist /app/landing
 COPY --from=audio-novel /audio-novel/dist /app/audio-novel
+COPY --from=novel-h5 /novel-h5/dist /app/novel-h5
 USER app
-ENV LISTEN_ADDR=0.0.0.0:8080 FRONTEND_DIR=/app/admin LANDING_DIR=/app/landing AUDIO_NOVEL_DIR=/app/audio-novel AUDIO_NOVEL_UPLOAD_DIR=/app/data/audio-novel-uploads
+ENV LISTEN_ADDR=0.0.0.0:8080 FRONTEND_DIR=/app/admin LANDING_DIR=/app/landing AUDIO_NOVEL_DIR=/app/audio-novel AUDIO_NOVEL_UPLOAD_DIR=/app/data/audio-novel-uploads AUDIO_NOVEL_AUDIO_DIR=/app/data/audio-novel-audio NOVEL_DIR=/app/novel-h5 NOVEL_UPLOAD_DIR=/app/data/novel-uploads
 EXPOSE 8080
 CMD ["/app/server"]

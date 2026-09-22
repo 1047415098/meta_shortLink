@@ -42,7 +42,9 @@
             label="短链接"
             value="short_link" /><el-option
             label="语音小说站"
-            value="audio_novel" /></el-select></el-form-item
+            value="audio_novel" /><el-option
+            label="免费小说站"
+            value="novel" /></el-select></el-form-item
       ><el-form-item label="广告 ID"
         ><el-input
           v-model="filters.ad_id"

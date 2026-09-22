@@ -1,19 +1,20 @@
-# 发布包包含已验证的 Linux 可执行文件及三个 Vue 应用的生产资源。
+# 发布包包含已验证的 Linux 可执行文件及四个 Vue 应用的生产资源。
 # BuildKit 根据服务器架构选择对应文件，避免在小型服务器上编译前端。
 FROM alpine:3.22
 ARG TARGETARCH
 RUN apk add --no-cache ca-certificates tzdata \
     && addgroup -S app \
     && adduser -S app -G app \
-    && mkdir -p /app/data/audio-novel-uploads \
+    && mkdir -p /app/data/audio-novel-uploads /app/data/audio-novel-audio /app/data/novel-uploads \
     && chown -R app:app /app/data
 WORKDIR /app
 COPY .release/server-linux-${TARGETARCH} /app/server
 COPY frontend/dist/ /app/admin/
 COPY landing/dist/ /app/landing/
 COPY audio-novel/dist/ /app/audio-novel/
+COPY novel-h5/dist/ /app/novel-h5/
 # 应用以非 root 身份运行；数据库和宿主机的证书私钥不放入此镜像。
 USER app
-ENV LISTEN_ADDR=0.0.0.0:8080 FRONTEND_DIR=/app/admin LANDING_DIR=/app/landing AUDIO_NOVEL_DIR=/app/audio-novel AUDIO_NOVEL_UPLOAD_DIR=/app/data/audio-novel-uploads
+ENV LISTEN_ADDR=0.0.0.0:8080 FRONTEND_DIR=/app/admin LANDING_DIR=/app/landing AUDIO_NOVEL_DIR=/app/audio-novel AUDIO_NOVEL_UPLOAD_DIR=/app/data/audio-novel-uploads AUDIO_NOVEL_AUDIO_DIR=/app/data/audio-novel-audio NOVEL_DIR=/app/novel-h5 NOVEL_UPLOAD_DIR=/app/data/novel-uploads
 EXPOSE 8080
 CMD ["/app/server"]

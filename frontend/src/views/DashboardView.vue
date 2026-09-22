@@ -56,6 +56,10 @@
               <span>语音小说站</span
               ><strong>{{ fmt(summary.audio_novel_views) }}</strong>
             </div>
+            <div>
+              <span>免费小说站</span
+              ><strong>{{ fmt(summary.novel_views) }}</strong>
+            </div>
           </div>
           <div v-if="card[0] === '咨询点击总数'" class="surface-breakdown">
             短链接 {{ fmt(summary.short_link_whatsapp_clicks) }} · 语音小说站

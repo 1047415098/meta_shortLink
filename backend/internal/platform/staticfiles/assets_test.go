@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"compress/gzip"
 	"io"
+	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
@@ -12,6 +13,27 @@ import (
 
 	"github.com/gin-gonic/gin"
 )
+
+func TestAudioRangeDeliveryReturnsOnlyRequestedBytes(t *testing.T) {
+	dir := t.TempDir()
+	content := []byte(strings.Repeat("0123456789abcdef", 4))
+	if err := os.WriteFile(filepath.Join(dir, "sample.mp3"), content, 0600); err != nil {
+		t.Fatalf("write audio fixture: %v", err)
+	}
+	router := gin.New()
+	router.GET("/audio-novel-audio/*filepath", Handler(dir))
+
+	request := httptest.NewRequest(http.MethodGet, "/audio-novel-audio/sample.mp3", nil)
+	request.Header.Set("Range", "bytes=0-15")
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, request)
+	if response.Code != http.StatusPartialContent || response.Body.Len() != 16 {
+		t.Fatalf("range response = %d/%d", response.Code, response.Body.Len())
+	}
+	if response.Body.String() != "0123456789abcdef" {
+		t.Fatalf("range payload = %q", response.Body.String())
+	}
+}
 
 func TestAssetDelivery(t *testing.T) {
 	dir := t.TempDir()

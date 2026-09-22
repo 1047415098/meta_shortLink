@@ -28,6 +28,8 @@ import { createApp } from "vue";
 import { ElAlert } from "element-plus/es/components/alert/index";
 import { ElButton } from "element-plus/es/components/button/index";
 import { ElInput } from "element-plus/es/components/input/index";
+// 停留阈值使用数字输入组件；本项目显式注册组件，避免生产环境渲染为空。
+import { ElInputNumber } from "element-plus/es/components/input-number/index";
 import { ElSelect } from "element-plus/es/components/select/index";
 import { ElOption } from "element-plus/es/components/select/index";
 import { ElEmpty } from "element-plus/es/components/empty/index";
@@ -74,6 +76,7 @@ for (const component of [
   ElAlert,
   ElButton,
   ElInput,
+  ElInputNumber,
   ElSelect,
   ElOption,
   ElEmpty,

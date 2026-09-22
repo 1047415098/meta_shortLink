@@ -40,7 +40,8 @@
         </div>
 
         <template v-if="ticket">
-          <form id="contact-form" ref="contactForm" method="post" :action="`/${encodeURIComponent(link.code)}/contact`">
+          <!-- AnyTrack receives one explicit event after the signed endpoint succeeds. -->
+          <form id="contact-form" ref="contactForm" class="at-do-not-track" method="post" :action="`/${encodeURIComponent(link.code)}/contact`">
             <input id="contact-trigger" ref="contactTrigger" type="hidden" name="trigger" value="manual" />
             <input type="hidden" name="ticket" :value="ticket" />
             <button class="primary-contact" type="submit">

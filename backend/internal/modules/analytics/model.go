@@ -23,6 +23,7 @@ type Summary struct {
 	WhatsAppClicks           int64 `json:"whatsapp_clicks"`
 	ShortLinkViews           int64 `json:"short_link_views"`
 	AudioNovelViews          int64 `json:"audio_novel_views"`
+	NovelViews               int64 `json:"novel_views"`
 	ShortLinkWhatsAppClicks  int64 `json:"short_link_whatsapp_clicks"`
 	AudioNovelWhatsAppClicks int64 `json:"audio_novel_whatsapp_clicks"`
 	Total                    int64 `json:"total"`

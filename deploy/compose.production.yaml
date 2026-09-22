@@ -46,10 +46,17 @@ services:
       GEOIP_DB_PATH: /app/geoip/dbip-city-lite-2026-09.mmdb
       AUDIO_NOVEL_DIR: /app/audio-novel
       AUDIO_NOVEL_UPLOAD_DIR: /app/data/audio-novel-uploads
+      AUDIO_NOVEL_AUDIO_DIR: /app/data/audio-novel-audio
+      NOVEL_DIR: /app/novel-h5
+      NOVEL_UPLOAD_DIR: /app/data/novel-uploads
     volumes:
       - ../geoip:/app/geoip:ro
       # 语音小说封面独立持久化，更新应用容器不会丢失。
       - audio_novel_uploads:/app/data/audio-novel-uploads
+      # Podcast MP3 独立持久化，不与封面文件混用。
+      - audio_novel_audio:/app/data/audio-novel-audio
+      # 免费小说封面独立持久化，和语音小说封面互不影响。
+      - novel_uploads:/app/data/novel-uploads
   nginx:
     # 使用容器内的现代 TLS 库，避免依赖 CentOS 7 的旧版 OpenSSL。
     image: nginx:stable-alpine@sha256:dc5069ad14f19660b141b21236140b91656bf89bbc3e2417c70ae650cd66104c
@@ -73,3 +80,5 @@ volumes:
   # 删除或重建应用容器不会清空此卷；不要执行 down -v。
   postgres_data:
   audio_novel_uploads:
+  audio_novel_audio:
+  novel_uploads:

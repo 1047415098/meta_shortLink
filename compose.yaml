@@ -29,17 +29,27 @@ services:
       APP_SECRET: ${APP_SECRET:?Set APP_SECRET in .env}
       META_ENCRYPTION_KEYS: ${META_ENCRYPTION_KEYS:-}
       META_ENCRYPTION_KEY_ID: ${META_ENCRYPTION_KEY_ID:-}
-      COOKIE_MODE: ${COOKIE_MODE:-off}
+      # 小说投放统计使用匿名访客 Cookie 计算独立访客，不承载登录身份。
+      COOKIE_MODE: ${COOKIE_MODE:-all}
       REPORT_TIMEZONE: ${REPORT_TIMEZONE:-Asia/Shanghai}
       RETENTION_DAYS: ${RETENTION_DAYS:-90}
       TRUSTED_PROXIES: ${TRUSTED_PROXIES:-}
       GEOIP_DB_PATH: ${GEOIP_DB_PATH:-}
       AUDIO_NOVEL_DIR: /app/audio-novel
       AUDIO_NOVEL_UPLOAD_DIR: /app/data/audio-novel-uploads
+      AUDIO_NOVEL_AUDIO_DIR: /app/data/audio-novel-audio
+      NOVEL_DIR: /app/novel-h5
+      NOVEL_UPLOAD_DIR: /app/data/novel-uploads
     volumes:
       - ./geoip:/app/geoip:ro
       - audio_novel_uploads:/app/data/audio-novel-uploads
+      - audio_novel_audio:/app/data/audio-novel-audio
+      - novel_uploads:/app/data/novel-uploads
 volumes:
   postgres_data:
   # Audio novel covers remain available when the application container is replaced.
   audio_novel_uploads:
+  # Podcast MP3 使用独立持久卷，更新容器不会丢失。
+  audio_novel_audio:
+  # 免费小说封面使用独立持久卷，不与语音小说内容混用。
+  novel_uploads:

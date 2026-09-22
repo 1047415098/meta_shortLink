@@ -1,3 +1,5 @@
+import { trackAnyTrackManualContact } from "./anytrack.js";
+
 // Submit through Fetch so the consultation request and mirrored Meta headers are visible before navigation.
 export async function submitLandingContact({
   code,
@@ -5,6 +7,7 @@ export async function submitLandingContact({
   trigger,
   attributionHeaders = {},
   request = fetch,
+  anyTrack = globalThis.AnyTrack,
   navigate = (target) => window.location.assign(target),
 }) {
   const response = await request(`/${encodeURIComponent(code)}/contact`, {
@@ -21,6 +24,8 @@ export async function submitLandingContact({
     throw new Error(`Consultation request failed: ${response.status}`);
   const payload = await response.json();
   if (!payload?.target_url) throw new Error("Consultation target is missing");
+  // Report only after the first-party endpoint confirms the manual action.
+  trackAnyTrackManualContact(trigger, anyTrack);
   navigate(payload.target_url);
   return payload.target_url;
 }

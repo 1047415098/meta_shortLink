@@ -11,17 +11,33 @@
       </div>
       <!-- Detail routes keep their parent navigation item selected. -->
       <el-menu
-        :default-active="route.meta.activeMenu || route.name"
+        :default-active="activeMenu"
+        :default-openeds="openGroups"
         :collapse="collapsed"
         :collapse-transition="false"
         @select="navigate"
         class="main-menu"
         aria-label="主导航"
       >
-        <el-menu-item v-for="item in nav" :index="item[0]" :key="item[0]"
-          ><el-icon><component :is="item[1]" /></el-icon
-          ><template #title>{{ item[2] }}</template></el-menu-item
-        >
+        <!-- 按前端项目和后台职能分组，避免运营人员混淆内容归属。 -->
+        <template v-for="item in nav" :key="item.name">
+          <el-sub-menu v-if="item.children" :index="item.name">
+            <template #title
+              ><el-icon><component :is="item.icon" /></el-icon
+              ><span>{{ item.label }}</span></template
+            >
+            <el-menu-item
+              v-for="child in item.children"
+              :key="child.name"
+              :index="child.name"
+              >{{ child.label }}</el-menu-item
+            >
+          </el-sub-menu>
+          <el-menu-item v-else :index="item.name"
+            ><el-icon><component :is="item.icon" /></el-icon
+            ><template #title>{{ item.label }}</template></el-menu-item
+          >
+        </template>
       </el-menu>
       <div class="sidebar-bottom" v-if="!collapsed">
         <div class="sidebar-app-icon">
@@ -97,28 +113,68 @@ import {
   Connection,
   Reading,
 } from "@element-plus/icons-vue";
-import { ref, onMounted } from "vue";
+import { computed, ref, onMounted } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { user, logout as signOut } from "../stores/auth";
 import { settings, loadSettings } from "../stores/settings";
 import { ElMessage } from "element-plus/es/components/message/index";
 const route = useRoute(),
   router = useRouter(),
-  collapsed = ref(false);
+  // 手机端默认收起菜单，二级分组通过 Element Plus 浮层展示。
+  collapsed = ref(window.matchMedia("(max-width: 800px)").matches);
 const nav = [
-  ["overview", DataAnalysis, "数据总览"],
-  ["links", Link, "短链接管理"],
-  ["audio-novels", Reading, "语音小说管理"],
-  ["visits", Document, "访问明细"],
-  ["ads", TrendCharts, "导入统计"],
-  ["meta-connections", Connection, "Meta 帐号"],
-  ["meta-pixels", Connection, "Meta Pixel"],
-  ["meta-credentials", Document, "Meta 凭证"],
-  ["meta-source", TrendCharts, "来源诊断"],
-  ["meta-events", Document, "Meta 事件记录"],
-  ["logs", Document, "日志管理"],
-  ["settings", Setting, "系统设置"],
+  { name: "overview", icon: DataAnalysis, label: "数据总览" },
+  {
+    name: "short-link-project",
+    icon: Link,
+    label: "短链接项目",
+    children: [{ name: "links", label: "短链接管理" }],
+  },
+  {
+    name: "audio-novel-project",
+    icon: Reading,
+    label: "语音小说项目",
+    children: [{ name: "audio-novels", label: "语音小说管理" }],
+  },
+  {
+    name: "novel-project",
+    icon: Reading,
+    label: "免费小说项目",
+    children: [{ name: "novels", label: "小说管理" }],
+  },
+  { name: "visits", icon: Document, label: "访问明细" },
+  { name: "ads", icon: TrendCharts, label: "导入统计" },
+  {
+    name: "meta-management",
+    icon: Connection,
+    label: "Meta 管理",
+    children: [
+      { name: "meta-connections", label: "Meta 帐号" },
+      { name: "meta-pixels", label: "Meta Pixel" },
+      { name: "meta-credentials", label: "Meta 凭证" },
+      { name: "meta-source", label: "来源诊断" },
+      { name: "meta-events", label: "Meta 事件记录" },
+    ],
+  },
+  {
+    name: "system-management",
+    icon: Setting,
+    label: "系统",
+    children: [
+      { name: "logs", label: "日志管理" },
+      { name: "settings", label: "系统设置" },
+    ],
+  },
 ];
+const activeMenu = computed(() => route.meta.activeMenu || route.name);
+// 详情页沿用所属列表菜单，并自动展开对应项目分组。
+const openGroups = computed(() =>
+  nav
+    .filter((item) =>
+      item.children?.some((child) => child.name === activeMenu.value),
+    )
+    .map((item) => item.name),
+);
 function navigate(name) {
   router.push({ name });
 }
@@ -216,11 +272,31 @@ onMounted(() => loadSettings().catch((e) => ElMessage.error(e.message)));
   font-size: 14px;
   padding-left: 16px !important;
 }
+.main-menu :deep(.el-sub-menu__title) {
+  margin-bottom: 7px;
+  border-radius: 7px;
+  color: #606266;
+  font-size: 14px;
+  padding-left: 16px !important;
+}
+.main-menu :deep(.el-sub-menu .el-menu) {
+  background: transparent;
+}
+.main-menu :deep(.el-sub-menu .el-menu-item) {
+  min-width: 0;
+  padding-left: 47px !important;
+  color: #73777f;
+}
 .main-menu :deep(.el-menu-item .el-icon) {
   font-size: 18px;
   margin-right: 13px;
 }
-.main-menu :deep(.el-menu-item:hover) {
+.main-menu :deep(.el-sub-menu__title .el-icon) {
+  font-size: 18px;
+  margin-right: 13px;
+}
+.main-menu :deep(.el-menu-item:hover),
+.main-menu :deep(.el-sub-menu__title:hover) {
   background: #f5f7fa;
 }
 .main-menu :deep(.el-menu-item.is-active) {
@@ -228,10 +304,17 @@ onMounted(() => loadSettings().catch((e) => ElMessage.error(e.message)));
   background: #ecf5ff;
   font-weight: 600;
 }
+.main-menu :deep(.el-sub-menu.is-active > .el-sub-menu__title) {
+  color: #409eff;
+  font-weight: 600;
+}
 .main-menu.el-menu--collapse {
   width: 76px;
 }
 .main-menu.el-menu--collapse :deep(.el-menu-item) {
+  padding-left: 15px !important;
+}
+.main-menu.el-menu--collapse :deep(.el-sub-menu__title) {
   padding-left: 15px !important;
 }
 .sidebar-bottom {

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"log/slog"
 	"strconv"
 	"strings"
 	"time"
@@ -72,7 +73,17 @@ func (a *Handler) UpdateAdmin(c *gin.Context) {
 	}
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 5*time.Second)
 	defer cancel()
+	previous, err := (Repository{DB: a.DB}).ByID(ctx, id)
+	if err != nil {
+		writeAudioNovel(c, AudioNovel{}, err)
+		return
+	}
 	item, err := (Repository{DB: a.DB}).Update(ctx, id, input, a.Config.AdminUser)
+	if err == nil && previous.AudioPath != input.AudioPath {
+		if removeErr := removeAudioFile(a.Config.AudioNovelAudioDir, previous.AudioPath); removeErr != nil {
+			slog.Error("remove replaced audio failed", "path", previous.AudioPath, "error", removeErr)
+		}
+	}
 	writeAudioNovel(c, item, err)
 }
 
@@ -83,7 +94,7 @@ func (a *Handler) DeleteAdmin(c *gin.Context) {
 	}
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 5*time.Second)
 	defer cancel()
-	err := (Repository{DB: a.DB}).SoftDelete(ctx, id, a.Config.AdminUser)
+	previousPath, err := (Repository{DB: a.DB}).SoftDelete(ctx, id, a.Config.AdminUser)
 	if errors.Is(err, pgx.ErrNoRows) {
 		c.Status(404)
 		return
@@ -91,6 +102,31 @@ func (a *Handler) DeleteAdmin(c *gin.Context) {
 	if err != nil {
 		runtime.ServerError(c, err)
 		return
+	}
+	if removeErr := removeAudioFile(a.Config.AudioNovelAudioDir, previousPath); removeErr != nil {
+		slog.Error("remove deleted story audio failed", "path", previousPath, "error", removeErr)
+	}
+	c.Status(204)
+}
+
+func (a *Handler) RemoveAudio(c *gin.Context) {
+	id, ok := audioNovelID(c)
+	if !ok {
+		return
+	}
+	ctx, cancel := context.WithTimeout(c.Request.Context(), 5*time.Second)
+	defer cancel()
+	previousPath, err := (Repository{DB: a.DB}).ClearAudio(ctx, id, a.Config.AdminUser)
+	if errors.Is(err, pgx.ErrNoRows) {
+		c.Status(404)
+		return
+	}
+	if err != nil {
+		runtime.ServerError(c, err)
+		return
+	}
+	if removeErr := removeAudioFile(a.Config.AudioNovelAudioDir, previousPath); removeErr != nil {
+		slog.Error("remove audio failed", "path", previousPath, "error", removeErr)
 	}
 	c.Status(204)
 }

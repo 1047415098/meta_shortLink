@@ -10,14 +10,14 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-const audioNovelColumns = "id,title,slug,category,excerpt,body_markdown,cover_path,to_char(published_at,'YYYY-MM-DD'),enabled,featured,created_at,updated_at,deleted_at"
-const audioNovelSummaryColumns = "id,title,slug,category,excerpt,'' AS body_markdown,cover_path,to_char(published_at,'YYYY-MM-DD'),enabled,featured,created_at,updated_at,deleted_at"
+const audioNovelColumns = "id,title,slug,category,excerpt,body_markdown,cover_path,audio_path,audio_duration,audio_size_bytes,to_char(published_at,'YYYY-MM-DD'),enabled,featured,created_at,updated_at,deleted_at"
+const audioNovelSummaryColumns = "id,title,slug,category,excerpt,'' AS body_markdown,cover_path,audio_path,audio_duration,audio_size_bytes,to_char(published_at,'YYYY-MM-DD'),enabled,featured,created_at,updated_at,deleted_at"
 
 type Repository struct{ DB *pgxpool.Pool }
 
 func scanAudioNovel(row pgx.Row) (AudioNovel, error) {
 	var item AudioNovel
-	err := row.Scan(&item.ID, &item.Title, &item.Slug, &item.Category, &item.Excerpt, &item.BodyMarkdown, &item.CoverPath, &item.PublishedAt, &item.Enabled, &item.Featured, &item.CreatedAt, &item.UpdatedAt, &item.DeletedAt)
+	err := row.Scan(&item.ID, &item.Title, &item.Slug, &item.Category, &item.Excerpt, &item.BodyMarkdown, &item.CoverPath, &item.AudioPath, &item.AudioDuration, &item.AudioSizeBytes, &item.PublishedAt, &item.Enabled, &item.Featured, &item.CreatedAt, &item.UpdatedAt, &item.DeletedAt)
 	return item, err
 }
 
@@ -80,7 +80,7 @@ func (r Repository) Create(ctx context.Context, input AudioNovelInput, actor str
 			return AudioNovel{}, err
 		}
 	}
-	item, err := scanAudioNovel(tx.QueryRow(ctx, "INSERT INTO audio_novels(title,slug,category,excerpt,body_markdown,cover_path,published_at,enabled,featured) VALUES($1,$2,$3,$4,$5,$6,$7::date,$8,$9) RETURNING "+audioNovelColumns, input.Title, input.Slug, input.Category, input.Excerpt, input.BodyMarkdown, input.CoverPath, input.PublishedAt, input.Enabled, input.Featured && input.Enabled))
+	item, err := scanAudioNovel(tx.QueryRow(ctx, "INSERT INTO audio_novels(title,slug,category,excerpt,body_markdown,cover_path,audio_path,audio_duration,audio_size_bytes,published_at,enabled,featured) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10::date,$11,$12) RETURNING "+audioNovelColumns, input.Title, input.Slug, input.Category, input.Excerpt, input.BodyMarkdown, input.CoverPath, input.AudioPath, input.AudioDuration, input.AudioSizeBytes, input.PublishedAt, input.Enabled, input.Featured && input.Enabled))
 	if err != nil {
 		return AudioNovel{}, err
 	}
@@ -101,7 +101,7 @@ func (r Repository) Update(ctx context.Context, id int64, input AudioNovelInput,
 			return AudioNovel{}, err
 		}
 	}
-	item, err := scanAudioNovel(tx.QueryRow(ctx, "UPDATE audio_novels SET title=$2,slug=$3,category=$4,excerpt=$5,body_markdown=$6,cover_path=$7,published_at=$8::date,enabled=$9,featured=$10,updated_at=now() WHERE id=$1 AND deleted_at IS NULL RETURNING "+audioNovelColumns, id, input.Title, input.Slug, input.Category, input.Excerpt, input.BodyMarkdown, input.CoverPath, input.PublishedAt, input.Enabled, input.Featured && input.Enabled))
+	item, err := scanAudioNovel(tx.QueryRow(ctx, "UPDATE audio_novels SET title=$2,slug=$3,category=$4,excerpt=$5,body_markdown=$6,cover_path=$7,audio_path=$8,audio_duration=$9,audio_size_bytes=$10,published_at=$11::date,enabled=$12,featured=$13,updated_at=now() WHERE id=$1 AND deleted_at IS NULL RETURNING "+audioNovelColumns, id, input.Title, input.Slug, input.Category, input.Excerpt, input.BodyMarkdown, input.CoverPath, input.AudioPath, input.AudioDuration, input.AudioSizeBytes, input.PublishedAt, input.Enabled, input.Featured && input.Enabled))
 	if err != nil {
 		return AudioNovel{}, err
 	}
@@ -152,20 +152,40 @@ func (r Repository) SetFeatured(ctx context.Context, id int64, featured bool, ac
 	return item, tx.Commit(ctx)
 }
 
-func (r Repository) SoftDelete(ctx context.Context, id int64, actor string) error {
+func (r Repository) ClearAudio(ctx context.Context, id int64, actor string) (string, error) {
 	tx, err := r.DB.Begin(ctx)
 	if err != nil {
-		return err
+		return "", err
+	}
+	defer tx.Rollback(ctx)
+	var previousPath string
+	if err = tx.QueryRow(ctx, "SELECT audio_path FROM audio_novels WHERE id=$1 AND deleted_at IS NULL FOR UPDATE", id).Scan(&previousPath); err != nil {
+		return "", err
+	}
+	item, err := scanAudioNovel(tx.QueryRow(ctx, "UPDATE audio_novels SET audio_path='',audio_duration='',audio_size_bytes=0,updated_at=now() WHERE id=$1 RETURNING "+audioNovelColumns, id))
+	if err != nil {
+		return "", err
+	}
+	if err = auditAudioNovel(ctx, tx, actor, "audio_novel.audio_remove", item); err != nil {
+		return "", err
+	}
+	return previousPath, tx.Commit(ctx)
+}
+
+func (r Repository) SoftDelete(ctx context.Context, id int64, actor string) (string, error) {
+	tx, err := r.DB.Begin(ctx)
+	if err != nil {
+		return "", err
 	}
 	defer tx.Rollback(ctx)
 	item, err := scanAudioNovel(tx.QueryRow(ctx, "UPDATE audio_novels SET deleted_at=now(),featured=false,updated_at=now() WHERE id=$1 AND deleted_at IS NULL RETURNING "+audioNovelColumns, id))
 	if err != nil {
-		return err
+		return "", err
 	}
 	if err = auditAudioNovel(ctx, tx, actor, "audio_novel.delete", item); err != nil {
-		return err
+		return "", err
 	}
-	return tx.Commit(ctx)
+	return item.AudioPath, tx.Commit(ctx)
 }
 
 func (r Repository) PublicHome(ctx context.Context) (AudioNovel, error) {
@@ -210,6 +230,42 @@ func (r Repository) PublicBySlug(ctx context.Context, slug string) (AudioNovel, 
 		item.BodyMarkdown = ""
 	}
 	return item, err
+}
+
+func (r Repository) PublicAudioList(ctx context.Context, page, pageSize int) (AudioNovelList, error) {
+	if page < 1 {
+		page = 1
+	}
+	if pageSize < 1 || pageSize > 24 {
+		pageSize = 6
+	}
+	where := "enabled AND deleted_at IS NULL AND audio_path <> ''"
+	var total int64
+	if err := r.DB.QueryRow(ctx, "SELECT count(*) FROM audio_novels WHERE "+where).Scan(&total); err != nil {
+		return AudioNovelList{}, err
+	}
+	rows, err := r.DB.Query(ctx, "SELECT "+audioNovelSummaryColumns+" FROM audio_novels WHERE "+where+" ORDER BY published_at DESC,id DESC LIMIT $1 OFFSET $2", pageSize, (page-1)*pageSize)
+	if err != nil {
+		return AudioNovelList{}, err
+	}
+	defer rows.Close()
+	items := []AudioNovel{}
+	for rows.Next() {
+		item, scanErr := scanAudioNovel(rows)
+		if scanErr != nil {
+			return AudioNovelList{}, scanErr
+		}
+		items = append(items, item)
+	}
+	if err = rows.Err(); err != nil {
+		return AudioNovelList{}, err
+	}
+	return AudioNovelList{Items: items, Page: page, PageSize: pageSize, Total: total, Pages: int((total + int64(pageSize) - 1) / int64(pageSize))}, nil
+}
+
+func (r Repository) PublicAudioBySlug(ctx context.Context, slug string) (AudioNovel, error) {
+	// Podcast 详情只返回展示与播放元数据，不读取或渲染正文。
+	return scanAudioNovel(r.DB.QueryRow(ctx, "SELECT "+audioNovelSummaryColumns+" FROM audio_novels WHERE slug=$1 AND enabled AND deleted_at IS NULL AND audio_path <> ''", slug))
 }
 
 func (r Repository) Related(ctx context.Context, item AudioNovel, limit int) ([]AudioNovel, error) {

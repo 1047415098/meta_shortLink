@@ -27,6 +27,10 @@ type Handler struct {
 		Render(*gin.Context, links.Link, string, bool)
 		Unavailable(*gin.Context, int, string)
 	}
+	NovelPage interface {
+		Render(*gin.Context, links.Link, string, bool)
+		Unavailable(*gin.Context, int, string)
+	}
 }
 
 func (a *Handler) Redirect(c *gin.Context) {
@@ -38,6 +42,8 @@ func (a *Handler) Redirect(c *gin.Context) {
 func (a *Handler) AudioNovel(c *gin.Context) {
 	a.track(c, "audio_novel")
 }
+
+func (a *Handler) Novel(c *gin.Context) { a.track(c, "novel") }
 
 func (a *Handler) track(c *gin.Context, surface string) {
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 1500*time.Millisecond)
@@ -55,6 +61,41 @@ func (a *Handler) track(c *gin.Context, surface string) {
 	if !l.Enabled {
 		a.unavailable(c, surface, 410, "This link is disabled.")
 		return
+	}
+	// Project-specific links may only enter their own frontend; legacy links remain compatible.
+	if l.ProductType == "novel" && surface != "novel" {
+		a.unavailable(c, surface, 404, "This link was not found.")
+		return
+	}
+	if surface == "novel" && l.ProductType == "novel" {
+		// Freeze the binding before reading the final link snapshot so a concurrent
+		// pre-visit edit cannot attribute the visit to a stale novel or Meta setup.
+		if freezeErr := (Repository{DB: a.DB}).FreezeNovelLink(ctx, l.ID); freezeErr != nil {
+			if freezeErr == pgx.ErrNoRows {
+				a.unavailable(c, surface, 410, "This story is unavailable.")
+				return
+			}
+			c.String(503, "This link is temporarily unavailable. Please try again later.")
+			return
+		}
+		l, e = (links.Repository{DB: a.DB}).ByCode(ctx, c.Param("code"))
+		if e != nil {
+			c.String(503, "This link is temporarily unavailable. Please try again later.")
+			return
+		}
+		if !l.Enabled || l.NovelID == nil {
+			a.unavailable(c, surface, 410, "This story is unavailable.")
+			return
+		}
+		var available bool
+		if a.DB.QueryRow(ctx, "SELECT EXISTS(SELECT 1 FROM novels WHERE id=$1 AND enabled AND deleted_at IS NULL)", l.NovelID).Scan(&available) != nil {
+			c.String(503, "This link is temporarily unavailable. Please try again later.")
+			return
+		}
+		if !available {
+			a.unavailable(c, surface, 410, "This story is unavailable.")
+			return
+		}
 	}
 	ip := net.ParseIP(c.ClientIP())
 	ua := runtime.Bounded(c.GetHeader("User-Agent"), 1024)
@@ -152,17 +193,21 @@ func (a *Handler) track(c *gin.Context, surface string) {
 	// Direct mode returns a measured handoff page, so the stored status matches
 	// the 200 response while the event type continues to identify the link mode.
 	eventType, status := "redirect", 200
-	if l.Mode == "landing" || surface == "audio_novel" {
+	if l.Mode == "landing" || surface == "audio_novel" || surface == "novel" {
 		eventType, status = "landing", 200
 	}
 	// Store before emitting the Redirect. No raw IP, full URL query or raw User-Agent is persisted.
-	e = (Repository{DB: a.DB}).Record(ctx, Event{ID: eventID, LinkID: l.ID, VisitorID: vid, CookieStatus: cookieStatus, Method: c.Request.Method, TargetURL: l.TargetURL, Device: device, OS: osName, Browser: browser, Country: country, Region: region, City: city, Source: source, CampaignID: campaign, AdsetID: adset, AdID: ad, Referrer: ref, Parameters: b, AttributionConflict: conflict, Classification: class, Reason: reason, Type: eventType, Surface: surface, Status: status, MetaConnectionID: l.MetaConnectionID, MetaPixelID: l.MetaPixelID, TimeSpentThreshold: l.TimeSpentThreshold})
+	e = (Repository{DB: a.DB}).Record(ctx, Event{ID: eventID, LinkID: l.ID, NovelID: l.NovelID, VisitorID: vid, CookieStatus: cookieStatus, Method: c.Request.Method, TargetURL: l.TargetURL, Device: device, OS: osName, Browser: browser, Country: country, Region: region, City: city, Source: source, CampaignID: campaign, AdsetID: adset, AdID: ad, Referrer: ref, Parameters: b, AttributionConflict: conflict, Classification: class, Reason: reason, Type: eventType, Surface: surface, Status: status, MetaConnectionID: l.MetaConnectionID, MetaPixelID: l.MetaPixelID, TimeSpentThreshold: l.TimeSpentThreshold})
 	if e != nil {
 		a.WriteFailures.Add(1)
 		slog.Error("CLICK_WRITE_FAILED: redirect continues; analytics gap", "link_id", l.ID, "error", e)
 	}
 	if surface == "audio_novel" {
 		a.AudioNovelPage.Render(c, l, eventID, e == nil)
+		return
+	}
+	if surface == "novel" {
+		a.NovelPage.Render(c, l, eventID, e == nil)
 		return
 	}
 	if l.Mode == "landing" {
@@ -190,6 +235,10 @@ func (a *Handler) track(c *gin.Context, surface string) {
 func (a *Handler) unavailable(c *gin.Context, surface string, status int, message string) {
 	if surface == "audio_novel" && a.AudioNovelPage != nil {
 		a.AudioNovelPage.Unavailable(c, status, message)
+		return
+	}
+	if surface == "novel" && a.NovelPage != nil {
+		a.NovelPage.Unavailable(c, status, message)
 		return
 	}
 	a.Landing.Unavailable(c, status, message)

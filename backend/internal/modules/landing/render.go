@@ -101,9 +101,9 @@ func (a *Handler) render(c *gin.Context, status int, data Bootstrap) error {
 		fallback := []byte(`<noscript><img height="1" width="1" style="display:none" alt="" src="https://www.facebook.com/tr?id=` + pixel + `&amp;ev=PageView&amp;noscript=1" /></noscript>`)
 		page = bytes.Replace(page, []byte("</body>"), append(fallback, []byte("</body>")...), 1)
 	}
-	// Permit only Meta's official loader and collection host for the optional
-	// browser Pixel while retaining the landing page's deny-by-default policy.
-	c.Header("Content-Security-Policy", "default-src 'none'; script-src 'self' 'nonce-"+nonce+"' https://connect.facebook.net; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://www.facebook.com; font-src 'self'; connect-src 'self' https://www.facebook.com; form-action 'self' https://wa.me https://*.whatsapp.com whatsapp:; base-uri 'none'; frame-ancestors 'none'")
+	// Permit the exact Meta and AnyTrack loader/collection hosts while retaining
+	// the landing page's deny-by-default policy.
+	c.Header("Content-Security-Policy", "default-src 'none'; script-src 'self' 'nonce-"+nonce+"' https://connect.facebook.net https://assets.anytrack.io; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://www.facebook.com; font-src 'self'; connect-src 'self' https://www.facebook.com https://t1.anytrack.io; form-action 'self' https://wa.me https://*.whatsapp.com whatsapp:; base-uri 'none'; frame-ancestors 'none'")
 	c.Header("Referrer-Policy", "same-origin")
 	c.Header("Content-Type", "text/html; charset=utf-8")
 	if c.Request.Method == "HEAD" {

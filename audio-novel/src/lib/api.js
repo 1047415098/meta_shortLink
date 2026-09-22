@@ -1,6 +1,10 @@
 async function readJSON(url, request) {
   const response = await request(url, { headers: { Accept: "application/json" } });
-  if (!response.ok) throw new Error(response.status === 410 ? "This literature archive is unavailable." : "The archive could not be loaded. Please try again.");
+  if (!response.ok) {
+    const error = new Error(response.status === 410 ? "This literature archive is unavailable." : "The archive could not be loaded. Please try again.");
+    error.status = response.status;
+    throw error;
+  }
   return response.json();
 }
 
@@ -20,3 +24,18 @@ export async function fetchAudioNovelStory(code, slug, request = fetch) {
   return data;
 }
 
+export async function fetchAudioNovelAudioList(code, page = 1, pageSize = 6, request = fetch) {
+  const data = await readJSON(`/audio-novel-api/${encodeURIComponent(code)}/audio?page=${Number(page) || 1}&page_size=${Number(pageSize) || 6}`, request);
+  if (!Array.isArray(data.items)) throw new Error("The archive returned an incomplete response.");
+  return data;
+}
+
+export async function fetchAudioNovelAudio(code, slug, request = fetch) {
+  const data = await readJSON(`/audio-novel-api/${encodeURIComponent(code)}/audio/${encodeURIComponent(slug)}`, request);
+  if (!data.audio) throw new Error("The archive returned an incomplete response.");
+  return data;
+}
+
+export function formatAudioSize(bytes) {
+  return `${(Math.max(0, Number(bytes) || 0) / 1024 / 1024).toFixed(2)} MB`;
+}

@@ -2,7 +2,7 @@
 import { inject, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
 import { useRoute } from "vue-router";
 import WhatsAppAction from "../components/WhatsAppAction.vue";
-import { fetchAudioNovelStory } from "../lib/api.js";
+import { fetchAudioNovelStory, formatAudioSize } from "../lib/api.js";
 import { DEFAULT_SIZE, readSavedSize, saveReadingSize } from "../lib/reading.js";
 
 const bootstrap = inject("bootstrap");
@@ -38,6 +38,18 @@ onBeforeUnmount(() => { setImmersive(false); window.removeEventListener("keydown
         <h1>{{ story.title }}</h1>
         <p class="byline dark">{{ story.published_at }}</p>
       </header>
+      <!-- 文章有关联 MP3 时直接提供原生播放器，同时保留独立 Podcast 页面。 -->
+      <section v-if="story.audio_path" class="story-audio" aria-label="Story audio">
+        <p class="eyebrow ink">Listen to this story</p>
+        <audio :src="story.audio_path" controls preload="metadata"></audio>
+        <div class="story-audio-meta">
+          <span>{{ story.audio_duration }} · {{ formatAudioSize(story.audio_size_bytes) }}</span>
+          <div class="audio-actions">
+            <RouterLink class="read-more" :to="{ name: 'audio-detail', params: { code: bootstrap.link.code, slug: story.slug } }">Podcast page</RouterLink>
+            <a class="read-more" :href="story.audio_path" download>Download MP3</a>
+          </div>
+        </div>
+      </section>
       <!-- body_html 只来自后端统一安全渲染器。 -->
       <article class="story-body" :style="{ fontSize: `${size}px` }" v-html="story.body_html"></article>
       <WhatsAppAction />

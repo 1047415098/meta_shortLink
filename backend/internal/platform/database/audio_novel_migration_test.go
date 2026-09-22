@@ -152,6 +152,25 @@ func TestAudioNovelRenameMigration(t *testing.T) {
 	}
 }
 
+func TestAudioNovelPodcastMigrationDefinesCompleteMetadata(t *testing.T) {
+	sqlBytes, err := migrations.ReadFile("migrations/020_audio_novel_podcasts.sql")
+	if err != nil {
+		t.Fatalf("read audio novel podcast migration: %v", err)
+	}
+	sqlText := string(sqlBytes)
+	for _, required := range []string{
+		"audio_path text NOT NULL DEFAULT ''",
+		"audio_duration text NOT NULL DEFAULT ''",
+		"audio_size_bytes bigint NOT NULL DEFAULT 0",
+		"audio_novels_audio_fields_check",
+		"audio_novels_public_audio_order",
+	} {
+		if !strings.Contains(sqlText, required) {
+			t.Fatalf("migration missing %q", required)
+		}
+	}
+}
+
 func migrationTableCount(t *testing.T, ctx context.Context, db *pgxpool.Pool, table string) int {
 	t.Helper()
 	var count int

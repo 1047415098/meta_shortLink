@@ -57,10 +57,13 @@ func TestVueBootstrapEscapingAndMetadata(t *testing.T) {
 		t.Fatal("bootstrap marker or CSP invalid")
 	}
 	// Browser Pixel delivery requires only Meta's script and collection hosts;
-	// no broader third-party origin should be admitted by the landing CSP.
+	// AnyTrack adds only its property script and collection endpoint.
 	csp := w.Header().Get("Content-Security-Policy")
 	if !strings.Contains(csp, "https://connect.facebook.net") || !strings.Contains(csp, "https://www.facebook.com") {
 		t.Fatalf("Meta Pixel hosts missing from CSP: %s", csp)
+	}
+	if !strings.Contains(csp, "https://assets.anytrack.io") || !strings.Contains(csp, "https://t1.anytrack.io") {
+		t.Fatalf("AnyTrack hosts missing from CSP: %s", csp)
 	}
 }
 func TestVueUnavailableAndHead(t *testing.T) {

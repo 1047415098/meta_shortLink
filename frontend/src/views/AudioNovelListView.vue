@@ -49,6 +49,14 @@
           ></el-table-column
         >
         <el-table-column prop="published_at" label="发布日期" width="125" />
+        <el-table-column label="Podcast" width="150">
+          <template #default="{ row }">
+            <el-tag v-if="row.audio_path" type="success">
+              已上传 · {{ row.audio_duration }}
+            </el-tag>
+            <span v-else class="muted">无音频</span>
+          </template>
+        </el-table-column>
         <el-table-column label="状态" width="95"
           ><template #default="{ row }"
             ><el-tag :type="row.enabled ? 'success' : 'info'">{{

@@ -18,6 +18,9 @@ export function audioNovelPayload(source) {
     excerpt: source.excerpt || "",
     body_markdown: source.body_markdown || "",
     cover_path: source.cover_path || "",
+    audio_path: source.audio_path || "",
+    audio_duration: source.audio_duration || "",
+    audio_size_bytes: Number(source.audio_size_bytes) || 0,
     published_at: source.published_at || "",
     enabled: Boolean(source.enabled),
     featured: Boolean(source.featured),
@@ -62,4 +65,22 @@ export function uploadAudioNovelCover(file) {
   const body = new FormData();
   body.append("file", file);
   return request("/audio-novel-covers", { method: "POST", body });
+}
+
+export function uploadAudioNovelAudio(file) {
+  const body = new FormData();
+  body.append("file", file);
+  return request("/audio-novel-audio", { method: "POST", body });
+}
+
+export const removeAudioNovelAudio = (id) =>
+  request(`/audio-novels/${id}/audio`, { method: "DELETE" });
+
+export function formatAudioDuration(value) {
+  const total = Math.max(0, Math.floor(Number(value) || 0));
+  const hours = Math.floor(total / 3600);
+  const minutes = Math.floor((total % 3600) / 60);
+  const seconds = total % 60;
+  const tail = `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+  return hours ? `${hours}:${tail}` : tail;
 }

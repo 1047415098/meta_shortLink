@@ -24,6 +24,7 @@ type LinkStatsMetrics struct {
 	NoCookie                 int64 `json:"no_cookie"`
 	ShortLinkViews           int64 `json:"short_link_views"`
 	AudioNovelViews          int64 `json:"audio_novel_views"`
+	NovelViews               int64 `json:"novel_views"`
 	ShortLinkWhatsAppClicks  int64 `json:"short_link_whatsapp_clicks"`
 	AudioNovelWhatsAppClicks int64 `json:"audio_novel_whatsapp_clicks"`
 }
@@ -100,11 +101,12 @@ const linkStatsMetricsSQL = `count(*) AS visits,count(DISTINCT NULLIF(visitor_id
  count(*) FILTER(WHERE NULLIF(visitor_id,'') IS NULL) AS no_cookie,
  count(*) FILTER(WHERE surface='short_link') AS short_link_views,
  count(*) FILTER(WHERE surface='audio_novel') AS audio_novel_views,
+ count(*) FILTER(WHERE surface='novel') AS novel_views,
  count(*) FILTER(WHERE surface='short_link' AND whatsapp_clicked_at IS NOT NULL) AS short_link_whatsapp_clicks,
  count(*) FILTER(WHERE surface='audio_novel' AND whatsapp_clicked_at IS NOT NULL) AS audio_novel_whatsapp_clicks`
 
 func linkStatsTargets(m *LinkStatsMetrics) []any {
-	return []any{&m.Visits, &m.UniqueVisitors, &m.ManualConsultations, &m.AutoRedirects, &m.NoCookie, &m.ShortLinkViews, &m.AudioNovelViews, &m.ShortLinkWhatsAppClicks, &m.AudioNovelWhatsAppClicks}
+	return []any{&m.Visits, &m.UniqueVisitors, &m.ManualConsultations, &m.AutoRedirects, &m.NoCookie, &m.ShortLinkViews, &m.AudioNovelViews, &m.NovelViews, &m.ShortLinkWhatsAppClicks, &m.AudioNovelWhatsAppClicks}
 }
 
 // Optional date fields retain report defaults; explicit invalid values are still
@@ -188,7 +190,8 @@ func (r Repository) LinkStats(ctx context.Context, f Filter, page int, sort, ord
 		return out, err
 	}
 	defer tx.Rollback(ctx)
-	err = tx.QueryRow(ctx, `SELECT id,name,code,mode,attribution_mode,ad_id FROM short_links WHERE id=$1`, f.LinkID).Scan(&out.Link.ID, &out.Link.Name, &out.Link.Code, &out.Link.Mode, &out.Link.AttributionMode, &out.Link.AdID)
+	// Novel links expose their dedicated reading report instead of the WhatsApp funnel report.
+	err = tx.QueryRow(ctx, `SELECT id,name,code,mode,attribution_mode,ad_id FROM short_links WHERE id=$1 AND product_type IN ('legacy','short_link')`, f.LinkID).Scan(&out.Link.ID, &out.Link.Name, &out.Link.Code, &out.Link.Mode, &out.Link.AttributionMode, &out.Link.AdID)
 	if err != nil {
 		return out, err
 	}
@@ -220,7 +223,7 @@ func (r Repository) LinkStats(ctx context.Context, f Filter, page int, sort, ord
  CASE WHEN g.source_kind<>'ad_id' THEN '' WHEN NULLIF(e.ad_name,'') IS NOT NULL THEN 'meta' WHEN g.captured_name IS NOT NULL THEN 'parameter' ELSE '' END,
  -- Keep real-click row metrics in the same order as linkStatsTargets.
  g.visits,g.unique_visitors,g.manual_consultations,g.auto_redirects,g.no_cookie,
- g.short_link_views,g.audio_novel_views,g.short_link_whatsapp_clicks,g.audio_novel_whatsapp_clicks,
+ g.short_link_views,g.audio_novel_views,g.novel_views,g.short_link_whatsapp_clicks,g.audio_novel_whatsapp_clicks,
  COALESCE(l.locations,'[]')
  FROM groups g LEFT JOIN meta_connections c ON c.id=g.connection_id AND c.account_id=g.meta_account_id
  LEFT JOIN meta_ad_entities e ON e.connection_id=c.id AND e.ad_id=g.source_value AND g.source_kind='ad_id'

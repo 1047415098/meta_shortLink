@@ -24,7 +24,7 @@ func parseFilterValues(query url.Values, timezone string) (Filter, error) {
 		return fallback
 	}
 	f := Filter{TZ: defaultQuery("tz", timezone), AdID: query.Get("ad_id"), Surface: query.Get("surface")}
-	if f.Surface != "" && f.Surface != "short_link" && f.Surface != "audio_novel" {
+	if f.Surface != "" && f.Surface != "short_link" && f.Surface != "audio_novel" && f.Surface != "novel" {
 		return f, errors.New("入口类型无效")
 	}
 	loc, e := time.LoadLocation(f.TZ)

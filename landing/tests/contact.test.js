@@ -161,6 +161,29 @@ test("consultation posts attribution headers before navigating to WhatsApp", asy
   assert.deepEqual(navigations, ["https://wa.me/13365661092"]);
 });
 
+test("AnyTrack failure never blocks a recorded manual consultation", async () => {
+  let trackingAttempts = 0;
+  const navigations = [];
+
+  await submitLandingContact({
+    code: "hello",
+    ticket: "signed-ticket",
+    trigger: "manual",
+    request: async () => ({
+      ok: true,
+      json: async () => ({ target_url: "https://wa.me/13365661092" }),
+    }),
+    anyTrack: () => {
+      trackingAttempts += 1;
+      throw new Error("tracking unavailable");
+    },
+    navigate: (target) => navigations.push(target),
+  });
+
+  assert.equal(trackingAttempts, 1);
+  assert.deepEqual(navigations, ["https://wa.me/13365661092"]);
+});
+
 // The countdown listener owns classification and prevents native form navigation when Fetch is enabled.
 test("consultation submit hook receives manual and automatic classifications", () => {
   const form = new EventTarget();

@@ -1,0 +1,7 @@
+<script setup>
+import { onMounted, ref } from "vue"; import { useRoute } from "vue-router"; import AppHeader from "../components/AppHeader.vue"; import BottomNav from "../components/BottomNav.vue"; import StoryCard from "../components/StoryCard.vue"; import { fetchNovelList } from "../lib/api.js";
+const route=useRoute(),items=ref([]),page=ref(1),pages=ref(1),loading=ref(false),error=ref("");
+async function load(){if(loading.value||page.value>pages.value)return;loading.value=true;error.value="";try{const data=await fetchNovelList(route.params.code,{page:page.value,pageSize:20});items.value.push(...data.items.filter(next=>!items.value.some(item=>item.id===next.id)));pages.value=data.pages||1;page.value++;}catch(e){error.value=e.message;}finally{loading.value=false;}}
+onMounted(load);
+</script>
+<template><div class="page with-nav"><AppHeader back /><section class="section list-page"><div class="page-heading"><p>Browse the shelf</p><h1>All Stories</h1></div><div v-if="error" class="state-block compact-state"><p class="error-text">{{ error }}</p><button class="secondary-button" @click="load">Try again</button></div><div class="story-grid"><StoryCard v-for="story in items" :key="story.id" :story="story" /></div><button v-if="!error&&page<=pages" class="load-more" :disabled="loading" @click="load">{{ loading?'Loading…':'Load more' }}</button><div v-else-if="!error&&!items.length&&!loading" class="state-block"><p>No stories have been published yet.</p></div></section><BottomNav /></div></template>

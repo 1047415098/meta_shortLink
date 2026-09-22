@@ -14,6 +14,7 @@ const open = ref(false);
     <nav :class="{ open }" aria-label="Primary navigation">
       <RouterLink :to="{ name: 'home', params: { code: bootstrap.link.code } }" @click="open = false">Home</RouterLink>
       <RouterLink :to="{ name: 'stories', params: { code: bootstrap.link.code } }" @click="open = false">Stories</RouterLink>
+      <RouterLink :to="{ name: 'audio-list', params: { code: bootstrap.link.code } }" @click="open = false">Audio Fiction</RouterLink>
     </nav>
   </header>
 </template>

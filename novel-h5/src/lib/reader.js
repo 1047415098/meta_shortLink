@@ -1,0 +1,2 @@
+export function chapterNavigation(chapters, number) { const index = chapters.findIndex((item) => item.chapter_number === Number(number)); return { previous:index > 0 ? chapters[index-1].chapter_number : null, next:index >= 0 && index+1 < chapters.length ? chapters[index+1].chapter_number : null }; }
+export function progressChapter(chapters, saved) { return chapters.some((item) => item.chapter_number === Number(saved)) ? Number(saved) : chapters[0]?.chapter_number || null; }

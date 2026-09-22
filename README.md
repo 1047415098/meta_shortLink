@@ -37,7 +37,7 @@ docker compose up -d --build
 3. 设置 `PUBLIC_BASE_URL=https://你的短域名`，重启应用。管理后台复制的链接使用此地址。
 4. **必须设置可信代理。** 后端只接受 `TRUSTED_PROXIES` 列出的代理转发 IP。宿主机 Nginx 转 Docker 通常呈现 Docker 网桥网关地址；通过 `docker inspect` 确认实际网关后填写精确地址，不要填写 `0.0.0.0/0`。代理必须覆盖而非拼接来自公网的 `X-Forwarded-For`。
 5. 从两台不同网络设备访问并验证代理转发；未配置时所有访问可能被识别为网关 IP，地区和频率判断均会失真。没有代理时保持为空。
-6. 设置目标地区适用的采集策略。`COOKIE_MODE=off` 默认不采集访客 Cookie；确定适用条件后可设为 `all`。此版本没有按地区同意管理系统，需同意而没有同意依据时使用 `off`。
+6. 小说投放统计默认使用 `COOKIE_MODE=all` 创建匿名访客 Cookie，以计算独立访客；它不用于登录，也不读取第三方 Cookie。部署前仍需确认目标地区适用的采集策略；需要同意而没有同意依据时改为 `off`。
 7. 已附带 DB-IP City Lite 2026-09 地区数据库，`.env.example` 已配置容器路径。它使用 CC BY 4.0，后台显示署名链接。数据精度有限，建议按月更新；可替换为合法取得的兼容 City MMDB。取消 GEOIP_DB_PATH 时地区显示 unknown。
 8. 开始投放前实测 iPhone、Android、电脑、Facebook 内置浏览器。当前本地验收不能替代真实设备和广告账户落地页检查。
 
@@ -109,6 +109,9 @@ audio-novel/                    独立语音小说 Vue 3 工程
   src/lib/api.js                从同一 Gin 服务读取全局语音小说内容
   src/views/                    首页、列表、详情和错误页
   public/audio-novel-assets/images/ 项目原创奇幻视觉素材
+novel-h5/                       独立免费小说 Vue 3 H5 工程
+  src/views/                    首页、搜索、列表、阅读与错误页
+  src/components/               小说卡片、底部导航和章节目录
 backend/
   cmd/server/                   唯一服务入口
   internal/bootstrap/           初始化与关闭服务
@@ -129,6 +132,7 @@ backend/
 | `/admin/overview` | 数据总览 |
 | `/admin/links` | 短链接管理 |
 | `/admin/audio-novels` | 语音小说列表、新增、编辑、启停、推荐和删除 |
+| `/admin/novels` | 免费小说、封面和章节内容管理 |
 | `/admin/visits` | 访问明细 |
 | `/admin/ads` | 广告分析 |
 | `/admin/logs` | 用户端请求日志 |
@@ -146,19 +150,32 @@ backend/
 | `/audio-novel-api/:code/stories` | 公开分页内容 |
 | `/audio-novel-api/:code/stories/:slug` | 公开详情与相关推荐 |
 | `/audio-novel-uploads/*` | 后台上传并持久化的封面 |
+| `/novel/:code` | 免费小说首页，并记录 `novel` 入口访问 |
+| `/novel/:code/search` | 免费小说搜索页 |
+| `/novel/:code/stories` | 免费小说列表页 |
+| `/novel/:code/stories/:slug` | 小说详情、正文阅读与章节目录 |
+| `/novel/:code/view` | 确认本次小说站 PageView，不重复增加入口访问 |
+| `/novel/:code/time-spent` | 达到短码配置阈值后的可见停留上报 |
+| `/novel-api/:code/home` | 免费小说首页数据 |
+| `/novel-api/:code/stories` | 免费小说搜索与分页列表 |
+| `/novel-api/:code/stories/:slug` | 小说详情、目录及相关推荐 |
+| `/novel-api/:code/stories/:slug/chapters/:number` | 单章安全 HTML 正文与前后章 |
+| `/novel-uploads/*` | 免费小说封面 |
 | `/api/v1/*` | 后台 API |
 | `/admin-assets/*` | 后台构建资源 |
 | `/landing-assets/*` | 落地页构建资源及图片 |
 | `/audio-novel-assets/*` | 语音小说站构建资源及原创图片 |
+| `/novel-assets/*` | 免费小说 H5 构建资源 |
 
 ## 本地开发与测试
 
-需要 Go 1.27.1、Node 22 与 PostgreSQL。先分别构建三个前端：
+需要 Go 1.27.1、Node 22 与 PostgreSQL。先分别构建四个前端：
 
 ```sh
 (cd frontend && npm ci && npm run build)
 (cd landing && npm ci && npm run build)
 (cd audio-novel && npm ci && npm run build)
+(cd novel-h5 && npm ci && npm run build)
 ```
 
 然后在 `backend/` 中设置 `DATABASE_URL`、`ADMIN_PASSWORD`、`APP_SECRET` 后启动：
@@ -167,18 +184,21 @@ backend/
 go run ./cmd/server
 ```
 
-本地默认读取 `../frontend/dist`、`../landing/dist` 和 `../audio-novel/dist`，可通过 `FRONTEND_DIR`、`LANDING_DIR`、`AUDIO_NOVEL_DIR` 覆盖。Docker 会构建并复制三端资源。
+本地默认读取 `../frontend/dist`、`../landing/dist`、`../audio-novel/dist` 和 `../novel-h5/dist`，可通过对应的 `*_DIR` 环境变量覆盖。Docker 会构建并复制四端资源。
+
+免费小说与语音小说是两套独立内容。免费小说正文按章节保存 Markdown，后端只向 H5 返回清洗后的 HTML；站点不包含登录、支付或章节锁。封面保存到 `NOVEL_UPLOAD_DIR`，Docker 使用独立 `novel_uploads` 持久卷。
 
 语音小说内容全局共享，不绑定短码；访问 `/audio-novel/:code/*` 时仍复用该短码的 WhatsApp、Meta、TimeSpent 和统计配置。正文以 Markdown 保存，公开 HTML 由后端安全渲染。封面只接受 JPEG、PNG、WebP，最大 5MB，并保存到 `AUDIO_NOVEL_UPLOAD_DIR`；Docker 使用 `audio_novel_uploads` 持久卷。
 
 从旧开发卷迁移时，先停止应用容器但保留数据库，再把 `linkscope_novel_uploads` 只读复制到 `linkscope_audio_novel_uploads`。确认新卷文件完整前不要删除旧卷，具体命令见 `docs/verification.md` 的 2026-09-21 记录。
 
-本地热更新：保持 Go 服务运行在 8080，然后执行 `./scripts/dev-local.sh`。运营后台使用 `http://localhost:5173/admin/login`；产品落地页使用 `http://localhost:5174/:code`；语音小说站使用 `http://localhost:5175/audio-novel/:code`。生产入口由 Gin 在 8080 端口注入真实短链接数据与签名凭证。
+本地热更新：保持 Go 服务运行在 8080，然后执行 `./scripts/dev-local.sh`。运营后台使用 `http://localhost:5173/admin/login`；产品落地页使用 `http://localhost:5174/:code`；语音小说站使用 `http://localhost:5175/audio-novel/:code`；免费小说站使用 `http://localhost:5176/novel/:code`。生产入口由 Gin 在 8080 端口注入真实短链接数据。
 
 ```sh
 (cd frontend && npm test && npm run build)
 (cd landing && npm test && npm run build)
 (cd audio-novel && npm test && npm run build)
+(cd novel-h5 && npm test && npm run build)
 (cd backend && go test ./... && go vet ./...)
 ```
 

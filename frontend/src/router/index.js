@@ -57,6 +57,44 @@ const router = createRouter({
           },
         },
         {
+          path: "novels",
+          name: "novels",
+          component: () => import("../views/NovelListView.vue"),
+          meta: { title: "小说管理", requiresAuth: true },
+        },
+        {
+          path: "novels/new",
+          name: "novel-create",
+          component: () => import("../views/NovelFormView.vue"),
+          meta: { title: "新增小说", requiresAuth: true, activeMenu: "novels" },
+        },
+        {
+          path: "novels/:id/edit",
+          name: "novel-edit",
+          component: () => import("../views/NovelFormView.vue"),
+          meta: { title: "编辑小说", requiresAuth: true, activeMenu: "novels" },
+        },
+        {
+          path: "novels/:id/links",
+          name: "novel-links",
+          component: () => import("../views/NovelLinkListView.vue"),
+          meta: {
+            title: "小说投放链接",
+            requiresAuth: true,
+            activeMenu: "novels",
+          },
+        },
+        {
+          path: "novel-links/:id/stats",
+          name: "novel-link-stats",
+          component: () => import("../views/NovelLinkStatsView.vue"),
+          meta: {
+            title: "小说投放统计",
+            requiresAuth: true,
+            activeMenu: "novels",
+          },
+        },
+        {
           // Keep a dedicated, refreshable page for each short link's ad statistics.
           path: "links/:id/stats",
           name: "link-stats",

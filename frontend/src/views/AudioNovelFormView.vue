@@ -64,6 +64,38 @@
             </div>
             <div class="muted">JPEG、PNG 或 WebP，最大 5MB</div></el-form-item
           >
+          <el-form-item label="Podcast MP3">
+            <div class="audio-row">
+              <audio
+                v-if="editing && form.audio_path"
+                :src="form.audio_path"
+                controls
+                preload="metadata"
+              ></audio>
+              <el-upload
+                :show-file-list="false"
+                :http-request="uploadAudio"
+                accept="audio/mpeg,.mp3"
+                ><el-button :loading="audioUploading">{{
+                  form.audio_path ? "替换 MP3" : "上传 MP3"
+                }}</el-button></el-upload
+              >
+              <el-button
+                v-if="form.audio_path"
+                link
+                type="danger"
+                :loading="audioRemoving"
+                @click="removeAudio"
+                >移除音频</el-button
+              >
+            </div>
+            <div class="muted">
+              MP3，最大 100MB；上传后请先试听，再保存文章。
+              <span v-if="form.audio_duration"
+                >当前时长 {{ form.audio_duration }}</span
+              >
+            </div>
+          </el-form-item>
           <el-form-item label="Markdown 正文" required
             ><el-input
               v-model="form.body_markdown"
@@ -93,7 +125,7 @@
 <script setup>
 import { onBeforeUnmount, onMounted, reactive, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
-import { ElMessage } from "element-plus";
+import { ElMessage, ElMessageBox } from "element-plus";
 import PageHeader from "../components/PageHeader.vue";
 import {
   createAudioNovel,
@@ -102,6 +134,9 @@ import {
   previewAudioNovelMarkdown,
   updateAudioNovel,
   uploadAudioNovelCover,
+  uploadAudioNovelAudio,
+  removeAudioNovelAudio,
+  formatAudioDuration,
 } from "../api/audioNovels.js";
 const route = useRoute(),
   router = useRouter(),
@@ -109,6 +144,8 @@ const route = useRoute(),
   loading = ref(editing),
   saving = ref(false),
   uploading = ref(false),
+  audioUploading = ref(false),
+  audioRemoving = ref(false),
   previewing = ref(false),
   bodyHTML = ref("");
 const today = new Date().toISOString().slice(0, 10),
@@ -119,11 +156,15 @@ const today = new Date().toISOString().slice(0, 10),
     excerpt: "",
     body_markdown: "",
     cover_path: "",
+    audio_path: "",
+    audio_duration: "",
+    audio_size_bytes: 0,
     published_at: today,
     enabled: true,
     featured: false,
   });
 let timer;
+let savedAudioPath = "";
 function schedulePreview() {
   clearTimeout(timer);
   timer = setTimeout(renderPreview, 300);
@@ -149,6 +190,66 @@ async function upload({ file }) {
     ElMessage.error(error.message);
   } finally {
     uploading.value = false;
+  }
+}
+
+function readAudioDuration(file) {
+  return new Promise((resolve, reject) => {
+    const objectURL = URL.createObjectURL(file);
+    const audio = new Audio();
+    // 浏览器只读取本地元数据来计算时长，不会自动播放或上传临时地址。
+    audio.preload = "metadata";
+    audio.onloadedmetadata = () => {
+      URL.revokeObjectURL(objectURL);
+      Number.isFinite(audio.duration) && audio.duration > 0
+        ? resolve(formatAudioDuration(audio.duration))
+        : reject(new Error("无法读取 MP3 时长"));
+    };
+    audio.onerror = () => {
+      URL.revokeObjectURL(objectURL);
+      reject(new Error("无法读取 MP3 时长"));
+    };
+    audio.src = objectURL;
+  });
+}
+
+async function uploadAudio({ file }) {
+  audioUploading.value = true;
+  try {
+    if (file.size > 100 * 1024 * 1024) throw new Error("音频不能超过 100MB");
+    const duration = await readAudioDuration(file);
+    // 新文件上传成功后才替换表单元数据；旧文件在文章保存成功后由后端清理。
+    const uploaded = await uploadAudioNovelAudio(file);
+    form.audio_path = uploaded.path;
+    form.audio_duration = duration;
+    form.audio_size_bytes = uploaded.size_bytes;
+    ElMessage.success("MP3 上传成功，请试听后保存");
+  } catch (error) {
+    ElMessage.error(error.message);
+  } finally {
+    audioUploading.value = false;
+  }
+}
+
+async function removeAudio() {
+  try {
+    await ElMessageBox.confirm("确认移除当前 Podcast 音频？", "移除音频", {
+      type: "warning",
+    });
+    audioRemoving.value = true;
+    if (editing && form.audio_path === savedAudioPath) {
+      await removeAudioNovelAudio(route.params.id);
+      savedAudioPath = "";
+    }
+    form.audio_path = "";
+    form.audio_duration = "";
+    form.audio_size_bytes = 0;
+    ElMessage.success("音频已移除");
+  } catch (error) {
+    if (error !== "cancel" && error !== "close")
+      ElMessage.error(error.message || "移除失败");
+  } finally {
+    audioRemoving.value = false;
   }
 }
 async function save() {
@@ -180,6 +281,7 @@ onMounted(async () => {
   if (!editing) return;
   try {
     Object.assign(form, await getAudioNovel(route.params.id));
+    savedAudioPath = form.audio_path;
     renderPreview();
   } catch (error) {
     ElMessage.error(error.message);
@@ -212,6 +314,16 @@ onBeforeUnmount(() => clearTimeout(timer));
   width: 110px;
   height: 80px;
   border-radius: 6px;
+}
+.audio-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  width: 100%;
+}
+.audio-row audio {
+  width: min(100%, 420px);
 }
 .feature-switch {
   margin-left: 24px;
