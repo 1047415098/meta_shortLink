@@ -21,6 +21,13 @@ ADMIN_PASSWORD=admin
 APP_SECRET=$application_secret
 META_ENCRYPTION_KEYS='{"primary":"$meta_key"}'
 META_ENCRYPTION_KEY_ID=primary
+# 在服务器现场填写 APIHZ 会员凭证；空值时仅禁用生成翻译，不影响英文小说。
+APIHZ_TRANSLATION_ID=
+APIHZ_TRANSLATION_KEY=
+APIHZ_TRANSLATION_URL=https://cn.apihz.cn/api/zici/fanyiapihz.php
+# 越南语使用 DeepL Free API；部署现场填写，不能写入仓库。
+DEEPL_AUTH_KEY=
+DEEPL_TRANSLATION_URL=https://api-free.deepl.com/v2/translate
 COOKIE_MODE=all
 TRUSTED_PROXIES=127.0.0.1
 EOF

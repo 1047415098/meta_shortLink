@@ -51,3 +51,36 @@ func TestAudioNovelAudioDirUsesIndependentDefaultAndOverride(t *testing.T) {
 		t.Fatalf("audio directory override = %q", c.AudioNovelAudioDir)
 	}
 }
+
+func TestAPIHZTranslationConfigUsesServerOnlyEnvironment(t *testing.T) {
+	t.Setenv("DATABASE_URL", "postgres://test")
+	t.Setenv("APP_SECRET", "0123456789abcdef0123456789abcdef")
+	t.Setenv("ADMIN_PASSWORD", "test-password")
+	t.Setenv("APIHZ_TRANSLATION_ID", "developer")
+	t.Setenv("APIHZ_TRANSLATION_KEY", "server-secret")
+	t.Setenv("APIHZ_TRANSLATION_URL", "")
+
+	c, err := LoadConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.APIHZTranslationID != "developer" || c.APIHZTranslationKey != "server-secret" || c.APIHZTranslationURL != "https://cn.apihz.cn/api/zici/fanyiapihz.php" {
+		t.Fatalf("unexpected APIHZ config: id=%q key-set=%v url=%q", c.APIHZTranslationID, c.APIHZTranslationKey != "", c.APIHZTranslationURL)
+	}
+}
+
+func TestDeepLTranslationConfigUsesServerOnlyEnvironment(t *testing.T) {
+	t.Setenv("DATABASE_URL", "postgres://test")
+	t.Setenv("APP_SECRET", "0123456789abcdef0123456789abcdef")
+	t.Setenv("ADMIN_PASSWORD", "test-password")
+	t.Setenv("DEEPL_AUTH_KEY", "server-secret")
+	t.Setenv("DEEPL_TRANSLATION_URL", "")
+
+	c, err := LoadConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.DeepLAuthKey != "server-secret" || c.DeepLTranslationURL != "https://api-free.deepl.com/v2/translate" {
+		t.Fatalf("unexpected DeepL config: key-set=%v url=%q", c.DeepLAuthKey != "", c.DeepLTranslationURL)
+	}
+}

@@ -12,3 +12,17 @@ test("novel API rejects incomplete responses and maps unavailable links", async 
   await assert.rejects(() => fetchNovelHome("x", async () => response({})), /incomplete/i);
   await assert.rejects(() => fetchNovelHome("x", async () => response({}, false, 410)), /unavailable/i);
 });
+
+test("novel API sends the selected language in a request header without changing URLs", async () => {
+  const calls = [], request = async (url, options) => { calls.push({ url, headers:options.headers }); return response(url.includes("/home") ? { featured:null, ranking:[], items:[] } : url.includes("chapters") ? { chapter:{}, previous:null, next:null } : url.includes("/stories/") ? { story:{}, chapters:[], related:[] } : { items:[] }); };
+  await fetchNovelHome("code", request, "ja");
+  await fetchNovelList("code", { q:"moon", locale:"th" }, request);
+  await fetchNovelStory("code", "story", request, "ko");
+  await fetchNovelChapter("code", "story", 2, request, "vi");
+  assert.deepEqual(calls, [
+    { url:"/novel-api/code/home", headers:{ Accept:"application/json", "X-Novel-Language":"ja" } },
+    { url:"/novel-api/code/stories?q=moon&page=1&page_size=20", headers:{ Accept:"application/json", "X-Novel-Language":"th" } },
+    { url:"/novel-api/code/stories/story", headers:{ Accept:"application/json", "X-Novel-Language":"ko" } },
+    { url:"/novel-api/code/stories/story/chapters/2", headers:{ Accept:"application/json", "X-Novel-Language":"vi" } },
+  ]);
+});

@@ -46,6 +46,25 @@ func (h *Handler) UpdateAdmin(c *gin.Context) {
 	}
 }
 
+func (h *Handler) UpdateCover(c *gin.Context) {
+	id, ok := positiveID(c, "id", "小说编号无效")
+	if !ok {
+		return
+	}
+	var input struct {
+		CoverPath string `json:"cover_path"`
+	}
+	if decodeJSON(c, &input) != nil || !coverPattern.MatchString(input.CoverPath) {
+		runtime.Bad(c, "封面路径无效")
+		return
+	}
+	ctx, cancel := context.WithTimeout(c.Request.Context(), 5*time.Second)
+	defer cancel()
+	// 上传成功后只持久化封面，避免把编辑页里尚未保存的其他字段一并写入。
+	item, err := (Repository{DB: h.DB}).UpdateCover(ctx, id, input.CoverPath, h.Config.AdminUser)
+	writeNovel(c, item, err)
+}
+
 func (h *Handler) writeAdmin(c *gin.Context, id int64) {
 	var input NovelInput
 	if decodeJSON(c, &input) != nil {
@@ -199,6 +218,84 @@ func (h *Handler) Preview(c *gin.Context) {
 		return
 	}
 	c.JSON(200, gin.H{"body_html": RenderMarkdown(input.BodyMarkdown)})
+}
+
+func (h *Handler) ListTranslations(c *gin.Context) {
+	id, ok := positiveID(c, "id", "小说编号无效")
+	if !ok {
+		return
+	}
+	ctx, cancel := context.WithTimeout(c.Request.Context(), 5*time.Second)
+	defer cancel()
+	items, err := h.Translations.List(ctx, id)
+	if errors.Is(err, pgx.ErrNoRows) {
+		c.Status(404)
+	} else if err != nil {
+		runtime.ServerError(c, err)
+	} else {
+		c.JSON(200, gin.H{"items": items})
+	}
+}
+
+func (h *Handler) GenerateTranslations(c *gin.Context) {
+	id, ok := positiveID(c, "id", "小说编号无效")
+	if !ok {
+		return
+	}
+	var input struct {
+		Locales []string `json:"locales"`
+	}
+	if decodeJSON(c, &input) != nil {
+		runtime.Bad(c, "翻译语言格式无效")
+		return
+	}
+	if _, err := NormalizeTargetLocales(input.Locales); err != nil {
+		runtime.Bad(c, err.Error())
+		return
+	}
+	if !h.Translations.Configured() {
+		c.JSON(503, gin.H{"error": "翻译服务尚未配置"})
+		return
+	}
+	ctx, cancel := context.WithTimeout(c.Request.Context(), 5*time.Second)
+	defer cancel()
+	items, err := h.Translations.Queue(ctx, id, input.Locales, h.Config.AdminUser)
+	if errors.Is(err, pgx.ErrNoRows) {
+		c.Status(404)
+	} else if err != nil {
+		runtime.ServerError(c, err)
+	} else {
+		c.JSON(200, gin.H{"items": items})
+	}
+}
+
+func (h *Handler) SetTranslationEnabled(c *gin.Context) {
+	id, ok := positiveID(c, "id", "小说编号无效")
+	if !ok {
+		return
+	}
+	locale := c.Param("locale")
+	if _, valid := TranslationType(locale); !valid {
+		runtime.Bad(c, "不支持的目标语言")
+		return
+	}
+	var input struct {
+		Enabled *bool `json:"enabled"`
+	}
+	if decodeJSON(c, &input) != nil || input.Enabled == nil {
+		runtime.Bad(c, "请提交 enabled")
+		return
+	}
+	ctx, cancel := context.WithTimeout(c.Request.Context(), 5*time.Second)
+	defer cancel()
+	err := h.Translations.SetEnabled(ctx, id, locale, *input.Enabled, h.Config.AdminUser)
+	if errors.Is(err, pgx.ErrNoRows) {
+		c.Status(404)
+	} else if err != nil {
+		runtime.ServerError(c, err)
+	} else {
+		c.Status(204)
+	}
 }
 
 func positiveID(c *gin.Context, name, message string) (int64, bool) {

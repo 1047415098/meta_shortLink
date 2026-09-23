@@ -19,7 +19,8 @@ func (h *Handler) PublicHome(c *gin.Context) {
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 5*time.Second)
 	defer cancel()
 	repo := Repository{DB: h.DB}
-	featured, err := repo.PublicHome(ctx)
+	locale := h.requestLocale(c)
+	featured, err := repo.PublicHomeLocalized(ctx, locale)
 	if errors.Is(err, pgx.ErrNoRows) {
 		c.JSON(200, gin.H{"featured": nil, "ranking": []Novel{}, "items": []Novel{}})
 		return
@@ -28,7 +29,7 @@ func (h *Handler) PublicHome(c *gin.Context) {
 		runtime.ServerError(c, err)
 		return
 	}
-	list, err := repo.PublicList(ctx, "", 1, 20)
+	list, err := repo.PublicListLocalized(ctx, "", 1, 20, locale)
 	if err != nil {
 		runtime.ServerError(c, err)
 		return
@@ -47,7 +48,7 @@ func (h *Handler) PublicList(c *gin.Context) {
 	pageSize, _ := strconv.Atoi(c.DefaultQuery("page_size", "20"))
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 5*time.Second)
 	defer cancel()
-	result, err := (Repository{DB: h.DB}).PublicList(ctx, c.Query("q"), page, pageSize)
+	result, err := (Repository{DB: h.DB}).PublicListLocalized(ctx, c.Query("q"), page, pageSize, h.requestLocale(c))
 	if err != nil {
 		runtime.ServerError(c, err)
 		return
@@ -61,7 +62,8 @@ func (h *Handler) PublicStory(c *gin.Context) {
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 5*time.Second)
 	defer cancel()
 	repo := Repository{DB: h.DB}
-	item, err := repo.PublicBySlug(ctx, c.Param("slug"))
+	locale := h.requestLocale(c)
+	item, err := repo.PublicBySlugLocalized(ctx, c.Param("slug"), locale)
 	if errors.Is(err, pgx.ErrNoRows) {
 		c.Status(404)
 		return
@@ -70,12 +72,12 @@ func (h *Handler) PublicStory(c *gin.Context) {
 		runtime.ServerError(c, err)
 		return
 	}
-	chapters, err := repo.ListChapters(ctx, item.ID, true)
+	chapters, err := repo.ListChaptersLocalized(ctx, item.ID, locale)
 	if err != nil {
 		runtime.ServerError(c, err)
 		return
 	}
-	related, err := repo.Related(ctx, item, 3)
+	related, err := repo.RelatedLocalized(ctx, item, 3, locale)
 	if err != nil {
 		runtime.ServerError(c, err)
 		return
@@ -94,7 +96,8 @@ func (h *Handler) PublicChapter(c *gin.Context) {
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 5*time.Second)
 	defer cancel()
 	repo := Repository{DB: h.DB}
-	item, err := repo.PublicBySlug(ctx, c.Param("slug"))
+	locale := h.requestLocale(c)
+	item, err := repo.PublicBySlugLocalized(ctx, c.Param("slug"), locale)
 	if errors.Is(err, pgx.ErrNoRows) {
 		c.Status(404)
 		return
@@ -103,7 +106,7 @@ func (h *Handler) PublicChapter(c *gin.Context) {
 		runtime.ServerError(c, err)
 		return
 	}
-	chapter, err := repo.PublicChapter(ctx, item.ID, number)
+	chapter, err := repo.PublicChapterLocalized(ctx, item.ID, number, locale)
 	if errors.Is(err, pgx.ErrNoRows) {
 		c.Status(404)
 		return
@@ -112,7 +115,7 @@ func (h *Handler) PublicChapter(c *gin.Context) {
 		runtime.ServerError(c, err)
 		return
 	}
-	chapters, err := repo.ListChapters(ctx, item.ID, true)
+	chapters, err := repo.ListChaptersLocalized(ctx, item.ID, locale)
 	if err != nil {
 		runtime.ServerError(c, err)
 		return
@@ -130,6 +133,18 @@ func (h *Handler) PublicChapter(c *gin.Context) {
 		}
 	}
 	c.JSON(200, gin.H{"chapter": chapter, "previous": previous, "next": next})
+}
+
+func (h *Handler) requestLocale(c *gin.Context) string {
+	remembered, _ := c.Cookie(LanguageCookieName)
+	requested := c.GetHeader(LanguageHeaderName)
+	if requested == "" {
+		// 旧投放地址仍可读取 lang，但新 H5 已统一使用语言请求头。
+		requested = c.Query("lang")
+	}
+	locale := ResolveLocale(requested, remembered, "", SupportedLocaleCodes())
+	c.Header("Content-Language", locale)
+	return locale
 }
 func (h *Handler) validPublicCode(c *gin.Context) bool {
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 3*time.Second)

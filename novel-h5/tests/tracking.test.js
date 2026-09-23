@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { installMetaPixel } from "../src/lib/meta.js";
 import { createVisibleTimeTracker, reportReadingTime, reportTimeSpent } from "../src/lib/timeSpent.js";
@@ -36,18 +37,47 @@ test("reading time reports cumulative seconds with keepalive", async () => {
   assert.equal(calls[0][1].keepalive,true);
 });
 
-test("reader shows an explicit empty state when no chapters are enabled", async () => {
+test("story introduction shows an explicit empty state when no chapters are enabled", async () => {
   const source=await readFile(new URL("../src/views/StoryView.vue",import.meta.url),"utf8");
-  assert.match(source,/This story has no readable chapters yet/);
-  assert.match(source,/v-if="chapters.length" id="reading"/);
+  assert.match(source,/t\("noReadableChapters"\)/);
+  assert.match(source,/name:\s*"reader"/);
 });
 
-test("reader header keeps search and contents in the same flex action row", async () => {
-  // 回归保护：目录按钮必须进入通用头部布局，不能再绝对定位到搜索按钮上方。
+test("story introduction and chapter reader have separate page responsibilities", async () => {
   const header=await readFile(new URL("../src/components/AppHeader.vue",import.meta.url),"utf8");
   const story=await readFile(new URL("../src/views/StoryView.vue",import.meta.url),"utf8");
+  const readerURL=new URL("../src/views/ReaderView.vue",import.meta.url);
+  assert.equal(existsSync(readerURL),true,"ReaderView.vue should exist");
+  const reader=await readFile(readerURL,"utf8");
   assert.match(header,/<slot\s*\/>/);
-  assert.match(story,/<AppHeader back><button[^>]+class="menu-button"/);
+  assert.match(story,/<AppHeader back show-language :show-search="false"><button[^>]+class="menu-button"/);
+  assert.doesNotMatch(story,/fetchNovelChapter/);
+  assert.match(reader,/<AppHeader back :show-search="false"><button[^>]+class="menu-button"/);
+  assert.match(reader,/fetchNovelChapter/);
+});
+
+test("language menu is limited to home and story introduction", async () => {
+  const sources=await Promise.all(["HomeView.vue","StoryView.vue","SearchView.vue","StoryListView.vue"].map((name)=>readFile(new URL(`../src/views/${name}`,import.meta.url),"utf8")));
+  assert.match(sources[0],/<AppHeader show-language\s*\/>/);
+  assert.match(sources[1],/<AppHeader back show-language/);
+  assert.doesNotMatch(sources[2],/show-language/);
+  assert.doesNotMatch(sources[3],/show-language/);
+});
+
+test("chapter navigation keeps previous left and continue reading right", async () => {
+  const css=await readFile(new URL("../src/styles.css",import.meta.url),"utf8");
+  const actions=css.match(/\.chapter-actions\s*\{([^}]+)\}/)?.[1]||"";
+  assert.match(actions,/justify-content:\s*space-between/);
+  assert.match(css,/\.chapter-actions \.primary-button\s*\{[^}]*margin-left:\s*auto/);
+});
+
+test("reader renders chapter content before restoring saved scroll position", async () => {
+  // 先移除加载态再等待 DOM 更新，保存的深层阅读位置才不会被短页面截断为顶部。
+  const reader=await readFile(new URL("../src/views/ReaderView.vue",import.meta.url),"utf8");
+  const renderIndex=reader.indexOf("loading.value=false;",reader.indexOf("story.value=storyData.story"));
+  const restoreIndex=reader.indexOf("await nextTick()");
+  assert.notEqual(renderIndex,-1);
+  assert.ok(renderIndex<restoreIndex);
 });
 
 test("active carousel indicator remains a circle", async () => {

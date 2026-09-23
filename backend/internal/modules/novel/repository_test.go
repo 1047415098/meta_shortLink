@@ -26,6 +26,10 @@ func TestRepositoryCreatesIndependentChaptersAndChecksOwnership(t *testing.T) {
 	if err = db.QueryRow(ctx, "SELECT current_database()").Scan(&name); err != nil || !strings.Contains(name, "_test") {
 		t.Fatalf("refusing non-test database %q: %v", name, err)
 	}
+	// Migration tests intentionally leave partial schemas behind, so each destructive integration test starts clean.
+	if _, err = db.Exec(ctx, "DROP SCHEMA public CASCADE; CREATE SCHEMA public"); err != nil {
+		t.Fatalf("reset test schema: %v", err)
+	}
 	if err = database.Migrate(ctx, db); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}

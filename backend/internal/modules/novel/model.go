@@ -8,21 +8,22 @@ import (
 )
 
 type Novel struct {
-	ID           int64      `json:"id"`
-	Title        string     `json:"title"`
-	Slug         string     `json:"slug"`
-	Author       string     `json:"author"`
-	Category     string     `json:"category"`
-	Excerpt      string     `json:"excerpt"`
-	CoverPath    string     `json:"cover_path"`
-	PublishedAt  string     `json:"published_at"`
-	Enabled      bool       `json:"enabled"`
-	Featured     bool       `json:"featured"`
-	SortOrder    int        `json:"sort_order"`
-	ChapterCount int        `json:"chapter_count"`
-	CreatedAt    time.Time  `json:"created_at"`
-	UpdatedAt    time.Time  `json:"updated_at"`
-	DeletedAt    *time.Time `json:"deleted_at,omitempty"`
+	ID             int64      `json:"id"`
+	Title          string     `json:"title"`
+	Slug           string     `json:"slug"`
+	Author         string     `json:"author"`
+	Category       string     `json:"category"`
+	Excerpt        string     `json:"excerpt"`
+	CoverPath      string     `json:"cover_path"`
+	PublishedAt    string     `json:"published_at"`
+	Enabled        bool       `json:"enabled"`
+	Featured       bool       `json:"featured"`
+	SortOrder      int        `json:"sort_order"`
+	SourceRevision int64      `json:"source_revision"`
+	ChapterCount   int        `json:"chapter_count"`
+	CreatedAt      time.Time  `json:"created_at"`
+	UpdatedAt      time.Time  `json:"updated_at"`
+	DeletedAt      *time.Time `json:"deleted_at,omitempty"`
 }
 
 type NovelInput struct {

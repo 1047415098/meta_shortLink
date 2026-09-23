@@ -32,3 +32,10 @@ func TestValidateNovelAndChapterInput(t *testing.T) {
 		}
 	}
 }
+
+func TestNovelCarriesEnglishSourceRevision(t *testing.T) {
+	item := Novel{SourceRevision: 7}
+	if item.SourceRevision != 7 {
+		t.Fatalf("source revision = %d, want 7", item.SourceRevision)
+	}
+}

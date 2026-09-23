@@ -28,8 +28,9 @@ import (
 
 type App struct {
 	*runtime.Core
-	Router *gin.Engine
-	Meta   *meta.Service
+	Router            *gin.Engine
+	Meta              *meta.Service
+	NovelTranslations *novel.TranslationService
 }
 
 func New(c config.Config, db *pgxpool.Pool) (*App, error) {
@@ -54,7 +55,14 @@ func New(c config.Config, db *pgxpool.Pool) (*App, error) {
 	landingHandler.Meta = metaService
 	// The standalone audio novel app reuses the shared link, tracking and Meta services.
 	audioNovelHandler := &audionovel.Handler{Core: core, Meta: metaService}
-	novelHandler := &novel.Handler{Core: core, Meta: metaService}
+	// Vietnamese uses DeepL because APIHZ currently advertises etype=48 but its live engine rejects vi.
+	translator := novel.RoutedTranslator{
+		APIHZ: &novel.TranslationClient{Endpoint: c.APIHZTranslationURL, DeveloperID: c.APIHZTranslationID, DeveloperKey: c.APIHZTranslationKey},
+		DeepL: &novel.DeepLTranslationClient{Endpoint: c.DeepLTranslationURL, AuthKey: c.DeepLAuthKey},
+	}
+	// APIHZ 请求起点已由共享限速器保护，8 个 worker 可覆盖两个供应商的等待和重试时间。
+	novelTranslations := novel.NewTranslationService(db, translator, 8)
+	novelHandler := &novel.Handler{Core: core, Meta: metaService, Translations: novelTranslations}
 	trackingHandler := &tracking.Handler{Core: core, Landing: landingHandler, AudioNovelPage: audioNovelHandler, NovelPage: novelHandler}
 	router, err := httptransport.New(core, httptransport.Handlers{
 		Auth:       &auth.Handler{Core: core, Password: hash},
@@ -69,14 +77,16 @@ func New(c config.Config, db *pgxpool.Pool) (*App, error) {
 		Meta:       &meta.Handler{Service: metaService},
 	})
 	if err != nil {
+		novelTranslations.Close()
 		if core.Geo != nil {
 			core.Geo.Close()
 		}
 		return nil, err
 	}
-	return &App{Core: core, Router: router, Meta: metaService}, nil
+	return &App{Core: core, Router: router, Meta: metaService, NovelTranslations: novelTranslations}, nil
 }
 func (a *App) Close() {
+	a.NovelTranslations.Close()
 	a.Meta.Close()
 	if a.Geo != nil {
 		a.Geo.Close()

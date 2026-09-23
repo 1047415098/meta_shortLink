@@ -29,6 +29,13 @@ services:
       APP_SECRET: ${APP_SECRET:?Set APP_SECRET in .env}
       META_ENCRYPTION_KEYS: ${META_ENCRYPTION_KEYS:-}
       META_ENCRYPTION_KEY_ID: ${META_ENCRYPTION_KEY_ID:-}
+      # APIHZ 翻译凭证仅注入 Go 后端，不进入任何前端构建变量。
+      APIHZ_TRANSLATION_ID: ${APIHZ_TRANSLATION_ID:-}
+      APIHZ_TRANSLATION_KEY: ${APIHZ_TRANSLATION_KEY:-}
+      APIHZ_TRANSLATION_URL: ${APIHZ_TRANSLATION_URL:-https://cn.apihz.cn/api/zici/fanyiapihz.php}
+      # 越南语专用 DeepL 凭证同样只注入后端容器。
+      DEEPL_AUTH_KEY: ${DEEPL_AUTH_KEY:-}
+      DEEPL_TRANSLATION_URL: ${DEEPL_TRANSLATION_URL:-https://api-free.deepl.com/v2/translate}
       # 小说投放统计使用匿名访客 Cookie 计算独立访客，不承载登录身份。
       COOKIE_MODE: ${COOKIE_MODE:-all}
       REPORT_TIMEZONE: ${REPORT_TIMEZONE:-Asia/Shanghai}

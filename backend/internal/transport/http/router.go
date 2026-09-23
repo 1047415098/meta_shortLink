@@ -107,6 +107,8 @@ func New(core *runtime.Core, h Handlers) (*gin.Engine, error) {
 	api.POST("/novels", h.Novel.CreateAdmin)
 	api.GET("/novels/:id", h.Novel.GetAdmin)
 	api.PATCH("/novels/:id", h.Novel.UpdateAdmin)
+	// 封面上传后独立保存，列表刷新即可读取最新 cover_path。
+	api.PATCH("/novels/:id/cover", h.Novel.UpdateCover)
 	api.DELETE("/novels/:id", h.Novel.DeleteAdmin)
 	api.PATCH("/novels/:id/status", h.Novel.SetEnabled)
 	api.PATCH("/novels/:id/featured", h.Novel.SetFeatured)
@@ -116,6 +118,9 @@ func New(core *runtime.Core, h Handlers) (*gin.Engine, error) {
 	api.DELETE("/novels/:id/chapters/:chapterId", h.Novel.DeleteChapterAdmin)
 	api.POST("/novels/preview", h.Novel.Preview)
 	api.POST("/novel-covers", h.Novel.UploadCover)
+	api.GET("/novels/:id/translations", h.Novel.ListTranslations)
+	api.POST("/novels/:id/translations", h.Novel.GenerateTranslations)
+	api.PATCH("/novels/:id/translations/:locale/status", h.Novel.SetTranslationEnabled)
 	// 小说投放链接使用独立接口，避免普通短链接列表混入其他前端项目的数据。
 	api.GET("/novel-links", h.Novel.ListDistributionLinks)
 	api.POST("/novel-links", h.Novel.CreateDistributionLink)
@@ -156,7 +161,8 @@ func New(core *runtime.Core, h Handlers) (*gin.Engine, error) {
 	r.GET("/novel-api/:code/stories/:slug", h.Novel.PublicStory)
 	r.GET("/novel-api/:code/stories/:slug/chapters/:number", h.Novel.PublicChapter)
 	// 免费小说路由必须位于通用短码之前，避免 novel 被误识别为一个广告短码。
-	for _, path := range []string{"/novel/:code", "/novel/:code/search", "/novel/:code/stories", "/novel/:code/stories/:slug"} {
+	// Every Vue history route must return the H5 bootstrap on a direct visit or browser refresh.
+	for _, path := range []string{"/novel/:code", "/novel/:code/search", "/novel/:code/stories", "/novel/:code/stories/:slug", "/novel/:code/stories/:slug/chapters/:chapter"} {
 		r.GET(path, h.Tracking.Novel)
 		r.HEAD(path, h.Tracking.Novel)
 	}

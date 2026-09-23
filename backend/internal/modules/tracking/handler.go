@@ -28,7 +28,7 @@ type Handler struct {
 		Unavailable(*gin.Context, int, string)
 	}
 	NovelPage interface {
-		Render(*gin.Context, links.Link, string, bool)
+		Render(*gin.Context, links.Link, string, bool, string)
 		Unavailable(*gin.Context, int, string)
 	}
 }
@@ -207,7 +207,7 @@ func (a *Handler) track(c *gin.Context, surface string) {
 		return
 	}
 	if surface == "novel" {
-		a.NovelPage.Render(c, l, eventID, e == nil)
+		a.NovelPage.Render(c, l, eventID, e == nil, country)
 		return
 	}
 	if l.Mode == "landing" {

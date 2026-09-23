@@ -44,6 +44,7 @@ import { ElDialog } from "element-plus/es/components/dialog/index";
 import { ElForm } from "element-plus/es/components/form/index";
 import { ElFormItem } from "element-plus/es/components/form/index";
 import { ElSwitch } from "element-plus/es/components/switch/index";
+import { ElCheckbox, ElCheckboxGroup } from "element-plus/es/components/checkbox/index";
 import { ElLoading } from "element-plus/es/components/loading/index";
 import { ElConfigProvider } from "element-plus/es/components/config-provider/index";
 import "element-plus/dist/index.css";
@@ -91,6 +92,8 @@ for (const component of [
   ElForm,
   ElFormItem,
   ElSwitch,
+  ElCheckbox,
+  ElCheckboxGroup,
   ElConfigProvider,
 ])
   app.use(component);

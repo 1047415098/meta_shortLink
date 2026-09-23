@@ -17,7 +17,8 @@ import (
 
 type Handler struct {
 	*runtime.Core
-	Meta *meta.Service
+	Meta         *meta.Service
+	Translations *TranslationService
 }
 
 // View confirms the one document PageView using the signed visit created by tracking.

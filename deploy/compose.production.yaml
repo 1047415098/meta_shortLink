@@ -38,6 +38,13 @@ services:
       APP_SECRET: ${APP_SECRET:?Set the server application secret}
       META_ENCRYPTION_KEYS: ${META_ENCRYPTION_KEYS:-}
       META_ENCRYPTION_KEY_ID: ${META_ENCRYPTION_KEY_ID:-}
+      # 翻译密钥仅传给后端容器，不能使用 VITE_ 前缀或打入静态资源。
+      APIHZ_TRANSLATION_ID: ${APIHZ_TRANSLATION_ID:-}
+      APIHZ_TRANSLATION_KEY: ${APIHZ_TRANSLATION_KEY:-}
+      APIHZ_TRANSLATION_URL: ${APIHZ_TRANSLATION_URL:-https://cn.apihz.cn/api/zici/fanyiapihz.php}
+      # 越南语专用 DeepL 凭证只在生产服务器运行时注入。
+      DEEPL_AUTH_KEY: ${DEEPL_AUTH_KEY:-}
+      DEEPL_TRANSLATION_URL: ${DEEPL_TRANSLATION_URL:-https://api-free.deepl.com/v2/translate}
       COOKIE_MODE: ${COOKIE_MODE:-all}
       REPORT_TIMEZONE: Asia/Shanghai
       RETENTION_DAYS: 90

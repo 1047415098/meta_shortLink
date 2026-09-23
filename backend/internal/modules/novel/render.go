@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"html"
+	"net/http"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -23,6 +24,8 @@ type Bootstrap struct {
 	MetaBrowserPixelID   string      `json:"meta_browser_pixel_id,omitempty"`
 	MetaPageViewEventID  string      `json:"meta_pageview_event_id,omitempty"`
 	MetaTimeSpentEventID string      `json:"meta_time_spent_event_id,omitempty"`
+	Locale               string      `json:"locale"`
+	AvailableLocales     []string    `json:"available_locales"`
 	Error                *PageError  `json:"error,omitempty"`
 }
 type PublicLink struct {
@@ -35,15 +38,26 @@ type PageError struct {
 	Message string `json:"message"`
 }
 
-func (h *Handler) Render(c *gin.Context, link links.Link, eventID string, recorded bool) {
+func (h *Handler) Render(c *gin.Context, link links.Link, eventID string, recorded bool, country string) {
 	publicLink := &PublicLink{Code: link.Code, TimeSpentThreshold: link.TimeSpentThreshold}
+	available := []string{"en"}
 	if link.NovelID != nil {
 		// The bootstrap carries the bound slug so the SPA can switch routes without a second entry request.
 		if item, err := (Repository{DB: h.DB}).ByID(c.Request.Context(), *link.NovelID); err == nil {
 			publicLink.EntryStorySlug = item.Slug
 		}
+		if locales, err := (Repository{DB: h.DB}).PublishedLocales(c.Request.Context(), *link.NovelID); err == nil {
+			available = locales
+		}
 	}
-	data := Bootstrap{Link: publicLink, Surface: "novel", CookieEnabled: h.Config.CookieMode == "all"}
+	remembered, _ := c.Cookie(LanguageCookieName)
+	locale := ResolveLocale(c.Query("lang"), remembered, country, available)
+	data := Bootstrap{Link: publicLink, Surface: "novel", CookieEnabled: h.Config.CookieMode == "all", Locale: locale, AvailableLocales: available}
+	c.Header("Content-Language", locale)
+	if remembered != locale {
+		// 语言 Cookie 必须允许 H5 更新，用户手动切换后才能覆盖首次 IP 识别结果。
+		http.SetCookie(c.Writer, &http.Cookie{Name: LanguageCookieName, Value: locale, Path: "/", MaxAge: 365 * 24 * 60 * 60, Secure: h.Config.SecureCookies, SameSite: http.SameSiteLaxMode})
+	}
 	if recorded {
 		data.Ticket = eventID + "." + h.Sign("contact:novel:"+link.Code+":"+eventID)
 		_ = h.loadMeta(c, eventID, &data)
@@ -53,7 +67,7 @@ func (h *Handler) Render(c *gin.Context, link links.Link, eventID string, record
 	}
 }
 func (h *Handler) Unavailable(c *gin.Context, status int, message string) {
-	if err := h.render(c, status, Bootstrap{Surface: "novel", CookieEnabled: h.Config.CookieMode == "all", Error: &PageError{Status: status, Message: message}}); err != nil {
+	if err := h.render(c, status, Bootstrap{Surface: "novel", CookieEnabled: h.Config.CookieMode == "all", Locale: "en", AvailableLocales: []string{"en"}, Error: &PageError{Status: status, Message: message}}); err != nil {
 		c.String(status, message)
 	}
 }
