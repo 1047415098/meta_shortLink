@@ -2,7 +2,8 @@ version: "3"
 tunnels:
   linkscope:
     proto: http
-    addr: http://127.0.0.1:8080
+    # VMOS 脚本固定使用该域名访问本地 Aggregation Cloud 后端。
+    addr: http://127.0.0.1:8000
     schemes: [https]
     domain: sputter-untimely-pardon.ngrok-free.dev
     inspect: false

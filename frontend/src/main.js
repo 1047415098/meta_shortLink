@@ -33,6 +33,8 @@ import { ElInputNumber } from "element-plus/es/components/input-number/index";
 import { ElSelect } from "element-plus/es/components/select/index";
 import { ElOption } from "element-plus/es/components/select/index";
 import { ElEmpty } from "element-plus/es/components/empty/index";
+// 小说与语音小说封面依赖图片组件；显式注册后才能生成实际的 img 元素。
+import { ElImage } from "element-plus/es/components/image/index";
 import { ElTable } from "element-plus/es/components/table/index";
 import { ElTableColumn } from "element-plus/es/components/table/index";
 import { ElTag } from "element-plus/es/components/tag/index";
@@ -81,6 +83,7 @@ for (const component of [
   ElSelect,
   ElOption,
   ElEmpty,
+  ElImage,
   ElTable,
   ElTableColumn,
   ElTag,

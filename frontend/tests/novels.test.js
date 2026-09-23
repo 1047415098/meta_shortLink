@@ -80,6 +80,19 @@ test("admin development server proxies persisted novel covers", () => {
   );
 });
 
+test("admin registers the image component used to render novel covers", () => {
+  // 本项目按需注册 Element Plus；未注册时 el-image 只会变成空的自定义标签。
+  const source = readFileSync(
+    new URL("../src/main.js", import.meta.url),
+    "utf8",
+  );
+  assert.match(
+    source,
+    /import \{ ElImage \} from "element-plus\/es\/components\/image\/index"/,
+  );
+  assert.match(source, /ElImage,\s*\n\s*ElTable/);
+});
+
 test("existing novel cover upload is persisted before the new path is returned", async (t) => {
   const calls = [];
   const originalFetch = globalThis.fetch;
