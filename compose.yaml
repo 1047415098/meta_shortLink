@@ -29,6 +29,9 @@ services:
       APP_SECRET: ${APP_SECRET:?Set APP_SECRET in .env}
       META_ENCRYPTION_KEYS: ${META_ENCRYPTION_KEYS:-}
       META_ENCRYPTION_KEY_ID: ${META_ENCRYPTION_KEY_ID:-}
+      # TikTok 默认关闭；完成测试 Pixel 校验后再由环境变量显式开启。
+      TIKTOK_ENABLED: ${TIKTOK_ENABLED:-false}
+      TIKTOK_EVENTS_URL: ${TIKTOK_EVENTS_URL:-https://business-api.tiktok.com/open_api/v1.3/event/track/}
       # APIHZ 翻译凭证仅注入 Go 后端，不进入任何前端构建变量。
       APIHZ_TRANSLATION_ID: ${APIHZ_TRANSLATION_ID:-}
       APIHZ_TRANSLATION_KEY: ${APIHZ_TRANSLATION_KEY:-}

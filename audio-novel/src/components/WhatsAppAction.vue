@@ -28,7 +28,9 @@ async function openWhatsApp() {
 </script>
 
 <template>
-  <div class="contact-action">
+  <!-- New audio campaign links intentionally have no WhatsApp destination;
+       legacy archive links keep rendering the action from their target URL. -->
+  <div v-if="bootstrap.link?.target_url" class="contact-action">
     <button class="whatsapp-button" type="button" :disabled="busy" @click="openWhatsApp">
       {{ busy ? "Opening…" : "Continue on WhatsApp" }}
     </button>

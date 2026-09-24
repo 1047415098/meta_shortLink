@@ -11,8 +11,9 @@ Vue 3 + JavaScript 管理后台，Go + Gin 采集和跳转服务，PostgreSQL �
 - 范围 UV、日／小时趋势、设备／国家／来源分布、分页明细、CSV 导出。
 - 广告花费 CSV 导入（事务、重复导入覆盖、不同币种独立展示、日期与时区匹配）。
 - Meta 多账户与多 Pixel 配置、真实广告点击识别、咨询 CAPI 队列、测试事件与失败重试。配置和验收见 [Meta 接入说明](docs/meta-setup.md)。
+- 免费小说支持 Meta/TikTok 二选一投放、TikTok Pixel + Events API 去重事件、动态广告参数和逐短链阅读漏斗统计。
 - 审计记录、定期清理、UTC 每日加和指标归档、Docker 部署和 HTTPS 代理示例。
-- 语音小说内容后台：内容新增、编辑、启停、唯一首页推荐、软删除、Markdown 安全预览和封面上传。当前仅完成项目命名迁移，尚未增加音频上传或播放。
+- 语音小说支持 MP3 上传与原生播放、Meta/TikTok 二选一投放、多投手独立短链、真实播放漏斗、前台可见时长和逐链接事件送达统计。
 
 ## 最快启动
 
@@ -40,6 +41,38 @@ docker compose up -d --build
 6. 小说投放统计默认使用 `COOKIE_MODE=all` 创建匿名访客 Cookie，以计算独立访客；它不用于登录，也不读取第三方 Cookie。部署前仍需确认目标地区适用的采集策略；需要同意而没有同意依据时改为 `off`。
 7. 已附带 DB-IP City Lite 2026-09 地区数据库，`.env.example` 已配置容器路径。它使用 CC BY 4.0，后台显示署名链接。数据精度有限，建议按月更新；可替换为合法取得的兼容 City MMDB。取消 GEOIP_DB_PATH 时地区显示 unknown。
 8. 开始投放前实测 iPhone、Android、电脑、Facebook 内置浏览器。当前本地验收不能替代真实设备和广告账户落地页检查。
+
+## TikTok 小说与语音小说投放上线
+
+TikTok Events API 默认关闭。先保持以下生产配置，再部署数据库迁移、后端、运营后台和小说 H5：
+
+```dotenv
+TIKTOK_ENABLED=false
+TIKTOK_EVENTS_URL=https://business-api.tiktok.com/open_api/v1.3/event/track/
+```
+
+安全启用顺序如下：
+
+1. 完成迁移并部署全部代码，但保持 `TIKTOK_ENABLED=false`，现有 Meta 小说链接不需要修改。
+2. 在“TikTok 管理”中新增凭证、Pixel Code 和 Test Event Code，并创建一条专用测试小说或语音小说链接。
+3. 只在一个应用实例设置 `TIKTOK_ENABLED=true`，重启后使用 TikTok Pixel Helper、Test Events 和 Payload Helper 验证 PageView、StartReading（文字）或 StartListening（语音）、ViewContent 及事件去重。
+4. 验证通过后清空 Test Event Code，再在全部应用实例开启 TikTok；新建正式 TikTok 链接进行低流量投放。
+5. 至少观察一个完整归因窗口。后台“TikTok 已接收”只表示 Events API 接收成功，最终是否归因必须到 TikTok Ads Manager 查看。
+
+Access Token 只保存在服务端加密字段中，不写入前端或投放 URL。Pixel/凭证停用时小说阅读和内部统计继续工作，服务端事件暂停发送；恢复后仅在 24 小时安全窗口内继续重试。
+
+## 语音小说投放与统计
+
+语音内容只维护一份，但每位投手或每次 Campaign 都要创建独立投放链接。推荐按以下顺序操作：
+
+1. 先在“语音小说管理”新增内容并上传 MP3；没有可播放 MP3 的内容不能创建正式投放链接。
+2. 在该内容行点击“投放链接”，为每位投手或每次投放分别新建链接。
+3. 每条链接只选择一个广告平台和该平台的一个 Pixel：Meta 与 TikTok 不能同时选择。链接首次产生正常访问后，绑定内容、平台和 Pixel 会锁定；需要更换时请新建链接。
+4. “达标播放时长”默认 10 秒。只有原生音频实际播放累计达到门槛才产生一次 ViewContent；暂停、缓冲和拖动进度条不会虚增时间。播放至音频结束且媒体消费达到 90% 只记为站内“完成”，不会新增广告平台事件。
+5. Meta 广告 URL 应按 [Meta 接入说明](docs/meta-setup.md) 添加动态 campaign_id、adset_id、ad_id 等参数。TikTok 使用后台的“复制 TikTok 投放模板”，由广告系统展开 campaign_id、adgroup_id、creative_id、ad_id_v2 和 placement；ttclid 由 TikTok 点击自动附加，不应由运营人员手填或复用。
+6. 在链接列表点击“统计”查看该链接自己的访问、匿名 UV、前台可见时长、实际播放漏斗与事件送达状态。后台“平台已接收”只表示 Events API 已接收；是否最终归因必须在 Meta Ads Manager 或 TikTok Ads Manager 查看，不能用站内完成数或 API 接收数替代。
+
+旧的 /audio-novel/{code} 普通短链仍进入公共语音小说首页。新投放链接直接打开绑定的音频详情。内容停用、删除或移除 MP3 时，新投放链接返回 410 且不新增正常访问；恢复内容并重新上传 MP3 后，原链接可继续使用，历史统计不会被删除。
 
 ## 免费小说多语言翻译
 
@@ -140,6 +173,8 @@ backend/
 | `/admin/overview` | 数据总览 |
 | `/admin/links` | 短链接管理 |
 | `/admin/audio-novels` | 语音小说列表、新增、编辑、启停、推荐和删除 |
+| `/admin/audio-novels/:id/links` | 某篇语音小说的独立投放链接 |
+| `/admin/audio-novel-links/:id/stats` | 单条语音投放链接的访问、播放漏斗与事件状态 |
 | `/admin/novels` | 免费小说、封面和章节内容管理 |
 | `/admin/visits` | 访问明细 |
 | `/admin/ads` | 广告分析 |
@@ -147,23 +182,39 @@ backend/
 | `/admin/settings` | 设置 |
 | `/admin/meta/connections` | Meta 广告账户分组 |
 | `/admin/meta/events` | 咨询回传记录 |
+| `/admin/tiktok/pixels` | TikTok Pixel 与 Test Event Code 管理 |
+| `/admin/tiktok/connections` | TikTok Events API 凭证管理 |
+| `/admin/tiktok/events` | TikTok 服务端事件状态与人工重试 |
 | `/:code` | 原短链接入口，记录访问并返回落地页或跳转 |
 | `/:code/contact` | 原咨询提交接口 |
 | `/audio-novel/:code` | 语音小说站首页，并记录 `audio_novel` 入口访问 |
 | `/audio-novel/:code/stories` | 内容列表，每页 6 篇 |
 | `/audio-novel/:code/stories/:slug` | 内容详情与阅读控制 |
+| `/audio-novel/:code/audio` | 可播放语音小说列表 |
+| `/audio-novel/:code/audio/:slug` | 语音详情、原生播放器与投放播放跟踪 |
 | `/audio-novel/:code/contact` | 语音小说站手动 WhatsApp 咨询 |
 | `/audio-novel/:code/time-spent` | 达到 code 配置阈值后的可见停留上报 |
+| `/audio-novel/:code/view` | 确认投放入口 PageView，不新增访问 |
+| `/audio-novel/:code/start-listening` | 音频首次真实播放后的签名上报 |
+| `/audio-novel/:code/playback-time` | 单调累计实际播放与媒体消费进度 |
+| `/audio-novel/:code/visible-time` | 单调累计投放页前台可见秒数 |
+| `/audio-novel/:code/complete` | 音频结束且消费达到 90% 后记录站内完成 |
 | `/audio-novel-api/:code/home` | 公开首页推荐内容，只验证短码、不新增访问事件 |
 | `/audio-novel-api/:code/stories` | 公开分页内容 |
 | `/audio-novel-api/:code/stories/:slug` | 公开详情与相关推荐 |
+| `/audio-novel-api/:code/audio` | 公开可播放语音列表 |
+| `/audio-novel-api/:code/audio/:slug` | 公开语音详情 |
 | `/audio-novel-uploads/*` | 后台上传并持久化的封面 |
+| `/api/v1/audio-novel-links` | 语音小说投放链接管理 |
+| `/api/v1/audio-novel-links/:id/stats` | 单条语音投放链接统计 |
 | `/novel/:code` | 免费小说首页，并记录 `novel` 入口访问 |
 | `/novel/:code/search` | 免费小说搜索页 |
 | `/novel/:code/stories` | 免费小说列表页 |
 | `/novel/:code/stories/:slug` | 小说详情、正文阅读与章节目录 |
 | `/novel/:code/view` | 确认本次小说站 PageView，不重复增加入口访问 |
+| `/novel/:code/start-reading` | 第一章成功显示后的签名 StartReading 上报 |
 | `/novel/:code/time-spent` | 达到短码配置阈值后的可见停留上报 |
+| `/novel/:code/reading-time` | 累计前台可见秒数并返回服务端确认的达标事件 |
 | `/novel-api/:code/home` | 免费小说首页数据 |
 | `/novel-api/:code/stories` | 免费小说搜索与分页列表 |
 | `/novel-api/:code/stories/:slug` | 小说详情、目录及相关推荐 |
@@ -196,7 +247,7 @@ go run ./cmd/server
 
 免费小说与语音小说是两套独立内容。免费小说正文按章节保存 Markdown，后端只向 H5 返回清洗后的 HTML；站点不包含登录、支付或章节锁。封面保存到 `NOVEL_UPLOAD_DIR`，Docker 使用独立 `novel_uploads` 持久卷。
 
-语音小说内容全局共享，不绑定短码；访问 `/audio-novel/:code/*` 时仍复用该短码的 WhatsApp、Meta、TimeSpent 和统计配置。正文以 Markdown 保存，公开 HTML 由后端安全渲染。封面只接受 JPEG、PNG、WebP，最大 5MB，并保存到 `AUDIO_NOVEL_UPLOAD_DIR`；Docker 使用 `audio_novel_uploads` 持久卷。
+语音小说内容全局共享，只需维护和上传一次。旧普通短码不绑定单篇内容，继续打开公共语音小说首页并沿用原 WhatsApp、Meta 和页面停留配置；新语音投放链接绑定一篇带 MP3 的内容，并独立冻结平台、Pixel、门槛和动态归因。正文以 Markdown 保存，公开 HTML 由后端安全渲染。封面与 MP3 分别保存到语音小说上传目录；Docker 使用 `audio_novel_uploads` 持久卷。
 
 从旧开发卷迁移时，先停止应用容器但保留数据库，再把 `linkscope_novel_uploads` 只读复制到 `linkscope_audio_novel_uploads`。确认新卷文件完整前不要删除旧卷，具体命令见 `docs/verification.md` 的 2026-09-21 记录。
 

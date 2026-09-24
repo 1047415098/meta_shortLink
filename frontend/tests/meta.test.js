@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import {
   connectionForm,
   connectionPayload,
@@ -34,6 +35,25 @@ test("Meta event labels keep manual and automatic AddToCart actions distinct", (
     metaEventLabel({ event_name: "WhatsAppAutoRedirect" }),
     "自动跳转（历史）",
   );
+  assert.equal(
+    metaEventLabel({ event_name: "StartListening", audio_novel_id: 7 }),
+    "语音小说 · 开始收听",
+  );
+  assert.equal(
+    metaEventLabel({ event_name: "ViewContent", audio_novel_id: 7 }),
+    "语音小说 · 播放达标",
+  );
+});
+
+test("Meta event page keeps raw names while identifying audio novel events", async () => {
+  const source = await readFile(
+    new URL("../src/views/MetaEventsView.vue", import.meta.url),
+    "utf8",
+  );
+  assert.match(source, /"StartListening"/);
+  assert.match(source, /"ViewContent"/);
+  assert.match(source, /audio_novel_id/);
+  assert.match(source, /语音小说编号/);
 });
 
 test("Meta URL parameter template keeps every canonical advertising field", () => {

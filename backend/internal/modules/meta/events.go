@@ -16,12 +16,13 @@ import (
 
 type ContactContext struct{ IP, UserAgent, FBC, FBP string }
 type ServerEvent struct {
-	Name     string            `json:"event_name"`
-	Time     int64             `json:"event_time"`
-	ID       string            `json:"event_id"`
-	Source   string            `json:"action_source"`
-	URL      string            `json:"event_source_url"`
-	UserData map[string]string `json:"user_data"`
+	Name       string            `json:"event_name"`
+	Time       int64             `json:"event_time"`
+	ID         string            `json:"event_id"`
+	Source     string            `json:"action_source"`
+	URL        string            `json:"event_source_url"`
+	UserData   map[string]string `json:"user_data"`
+	CustomData map[string]any    `json:"custom_data,omitempty"`
 }
 type eventPayload struct {
 	Data     []ServerEvent `json:"data"`
@@ -72,6 +73,84 @@ func (s *Service) EnqueuePageView(ctx context.Context, tx pgx.Tx, visit string, 
 // EnqueueTimeSpent shares one visit-scoped ID with the browser custom event.
 func (s *Service) EnqueueTimeSpent(ctx context.Context, tx pgx.Tx, visit string, input ContactContext) error {
 	return s.enqueueVisit(ctx, tx, visit, input, "time_spent")
+}
+
+type AudioEventInput struct {
+	LinkID  int64
+	EventAt time.Time
+	Context ContactContext
+}
+
+// EnqueueAudioEvent uses the immutable visit snapshot and a deterministic ID;
+// disabled Pixels remain pending for diagnostics instead of blocking playback.
+func (s *Service) EnqueueAudioEvent(ctx context.Context, tx pgx.Tx, visitID, eventName, eventID string, input AudioEventInput) (bool, error) {
+	if eventName != "PageView" && eventName != "StartListening" && eventName != "ViewContent" {
+		return false, errors.New("不支持的 Meta 语音事件")
+	}
+	if input.EventAt.IsZero() {
+		return false, errors.New("Meta 语音事件时间缺失")
+	}
+	var connectionID, pixelID *int64
+	var occurredAt time.Time
+	var code, classification, platform, adID, title, surface, method string
+	var audioNovelID *int64
+	var conflict bool
+	var params map[string]string
+	err := tx.QueryRow(ctx, `SELECT e.meta_connection_id,e.meta_pixel_id,e.occurred_at,l.code,e.classification,
+		e.attribution_conflict,e.parameters,e.ad_id,e.ad_platform,e.audio_novel_id,e.audio_novel_title,e.surface,e.method
+		FROM click_events e JOIN short_links l ON l.id=e.link_id
+		WHERE e.id=$1 AND e.link_id=$2`, visitID, input.LinkID).
+		Scan(&connectionID, &pixelID, &occurredAt, &code, &classification, &conflict, &params, &adID, &platform, &audioNovelID, &title, &surface, &method)
+	if err != nil {
+		return false, err
+	}
+	if platform != "meta" {
+		return false, nil
+	}
+	if connectionID == nil || pixelID == nil || audioNovelID == nil || surface != "audio_novel" || method != "GET" {
+		return false, errors.New("Meta 语音访问归因快照不完整")
+	}
+	pixel, err := scanPixel(tx.QueryRow(ctx, "SELECT "+pixelColumns+" FROM meta_pixels WHERE id=$1 AND connection_id=$2", *pixelID, *connectionID))
+	if err != nil {
+		return false, err
+	}
+	status, reason := "pending", ""
+	if classification != "normal" || conflict {
+		status, reason = "skipped", "访问未通过统计过滤或广告来源冲突"
+	} else if !isResolvedAdAttribution(params["fbclid"], adID) {
+		status, reason = "skipped", "缺少有效 fbclid 或广告 ID，不属于真实广告点击"
+	}
+	payload := eventPayload{Data: []ServerEvent{{
+		Name: eventName, Time: input.EventAt.Unix(), ID: eventID, Source: "website",
+		URL:      strings.TrimRight(s.Core.Config.PublicURL, "/") + "/audio-novel/" + code,
+		UserData: matchingData(input.Context, params["fbclid"], occurredAt),
+		CustomData: map[string]any{
+			"content_ids":  []string{fmt.Sprintf("audio_novel:%d", *audioNovelID)},
+			"content_name": title,
+			"content_type": "audio_novel",
+		},
+	}}}
+	raw, err := json.Marshal(payload)
+	if err != nil {
+		return false, err
+	}
+	ciphertext := ""
+	if status == "pending" {
+		ciphertext, err = s.seal(string(raw), "event:"+eventID)
+		if err != nil {
+			return false, err
+		}
+	}
+	// Persist the frozen content owner on the outbox row itself. Visit details
+	// can expire before delivery diagnostics, so later views must not depend on
+	// joining back to click_events.
+	_, err = tx.Exec(ctx, `INSERT INTO meta_events(
+		id,connection_id,pixel_record_id,visit_id,event_name,event_time,pixel_id,payload_cipher,status,last_error,audio_novel_id)
+		VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) ON CONFLICT(id) DO NOTHING`,
+		eventID, *connectionID, pixel.ID, visitID, eventName, input.EventAt, pixel.PixelID, ciphertext, status, reason, *audioNovelID)
+	// Only a fully attributed visit on an enabled Pixel may authorize the
+	// matching browser event. Skipped rows remain available for diagnostics.
+	return err == nil && status == "pending" && pixel.Enabled, err
 }
 
 // isResolvedAdAttribution mirrors the strict advertising report contract: both
@@ -170,6 +249,7 @@ func (s *Service) enqueueVisit(ctx context.Context, tx pgx.Tx, visit string, inp
 type EventRecord struct {
 	PixelID        string    `json:"pixel_id"`
 	PixelRecordID  *int64    `json:"pixel_record_id"`
+	AudioNovelID   *int64    `json:"audio_novel_id"`
 	ID             string    `json:"id"`
 	ConnectionID   int64     `json:"connection_id"`
 	ConnectionName string    `json:"connection_name"`

@@ -17,6 +17,7 @@ import (
 	"whatsapp-analytics/internal/modules/meta"
 	"whatsapp-analytics/internal/modules/novel"
 	"whatsapp-analytics/internal/modules/requestlogs"
+	"whatsapp-analytics/internal/modules/tiktok"
 	"whatsapp-analytics/internal/modules/tracking"
 	"whatsapp-analytics/internal/platform/runtime"
 	"whatsapp-analytics/internal/platform/staticfiles"
@@ -33,6 +34,7 @@ type Handlers struct {
 	Novel      *novel.Handler
 	Tracking   *tracking.Handler
 	Meta       *meta.Handler
+	TikTok     *tiktok.Handler
 }
 
 func New(core *runtime.Core, h Handlers) (*gin.Engine, error) {
@@ -77,6 +79,9 @@ func New(core *runtime.Core, h Handlers) (*gin.Engine, error) {
 	if h.Meta != nil {
 		h.Meta.Register(api)
 	}
+	if h.TikTok != nil {
+		h.TikTok.Register(api)
+	}
 	api.GET("/auth/me", func(c *gin.Context) { c.JSON(200, gin.H{"username": core.Config.AdminUser}) })
 	api.POST("/auth/logout", h.Auth.Logout)
 	api.GET("/links", h.Links.List)
@@ -103,6 +108,13 @@ func New(core *runtime.Core, h Handlers) (*gin.Engine, error) {
 	api.POST("/audio-novels/preview", h.AudioNovel.Preview)
 	api.POST("/audio-novel-covers", h.AudioNovel.UploadCover)
 	api.POST("/audio-novel-audio", h.AudioNovel.UploadAudio)
+	// 语音投放链接独立于普通短链和文字小说链接，避免三个前端项目的数据混在一起。
+	api.GET("/audio-novel-links", h.AudioNovel.ListDistributionLinks)
+	api.POST("/audio-novel-links", h.AudioNovel.CreateDistributionLink)
+	api.PATCH("/audio-novel-links/:id", h.AudioNovel.UpdateDistributionLink)
+	api.DELETE("/audio-novel-links/:id", h.AudioNovel.DeleteDistributionLink)
+	// Audio campaign statistics keep playback funnels isolated by link and bound content.
+	api.POST("/audio-novel-links/:id/stats", h.AudioNovel.DistributionStats)
 	api.GET("/novels", h.Novel.ListAdmin)
 	api.POST("/novels", h.Novel.CreateAdmin)
 	api.GET("/novels/:id", h.Novel.GetAdmin)
@@ -167,6 +179,7 @@ func New(core *runtime.Core, h Handlers) (*gin.Engine, error) {
 		r.HEAD(path, h.Tracking.Novel)
 	}
 	r.POST("/novel/:code/view", h.Novel.View)
+	r.POST("/novel/:code/start-reading", h.Novel.StartReading)
 	r.POST("/novel/:code/time-spent", h.Novel.TimeSpent)
 	r.POST("/novel/:code/reading-time", h.Novel.ReadingTime)
 	// Audio novel routes stay before the generic short-code route so the product prefix is never treated as a code.
@@ -184,6 +197,12 @@ func New(core *runtime.Core, h Handlers) (*gin.Engine, error) {
 	r.POST("/audio-novel/:code/view", h.AudioNovel.View)
 	// TimeSpent reuses the signed visit while remaining scoped to the audio novel surface.
 	r.POST("/audio-novel/:code/time-spent", h.AudioNovel.TimeSpent)
+	// Playback tickets stay in JSON request bodies; Beacon may use text/plain JSON on pagehide.
+	r.POST("/audio-novel/:code/start-listening", h.AudioNovel.StartListening)
+	r.POST("/audio-novel/:code/playback-time", h.AudioNovel.PlaybackTime)
+	r.POST("/audio-novel/:code/complete", h.AudioNovel.Complete)
+	// Foreground-visible time is independent from playback and never triggers advertising events.
+	r.POST("/audio-novel/:code/visible-time", h.AudioNovel.VisibleTime)
 	r.POST("/:code/contact", h.Landing.Contact)
 	r.POST("/:code/view", h.Landing.View)
 	r.POST("/:code/time-spent", h.Landing.TimeSpent)

@@ -36,7 +36,7 @@ func TestJapaneseVisitorFallsBackToEnglishWhenNovelHasNoJapaneseTranslation(t *t
 	pageContext, _ := gin.CreateTestContext(pageResponse)
 	pageContext.Request = pageRequest
 	// Tracking resolves the IP to JP before rendering; the renderer must limit that choice to this novel's published languages.
-	(&novel.Handler{Core: a.Core}).Render(pageContext, distributionLink, "", false, "JP")
+	(&novel.Handler{Core: a.Core}).Render(pageContext, distributionLink, "", false, "JP", true)
 	if pageResponse.Code != 200 || pageResponse.Header().Get("Content-Language") != "en" || !strings.Contains(pageResponse.Body.String(), `"locale":"en"`) || !strings.Contains(pageResponse.Body.String(), `"available_locales":["en"]`) {
 		t.Fatalf("Japanese visitor fallback page: %d %s %s", pageResponse.Code, pageResponse.Header().Get("Content-Language"), pageResponse.Body.String())
 	}

@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { installMetaPixel } from "../src/lib/meta.js";
-import { createVisibleTimeTracker, reportReadingTime, reportTimeSpent } from "../src/lib/timeSpent.js";
+import { createVisibleTimeTracker, reportReadingTime, reportStartReading, reportTimeSpent } from "../src/lib/timeSpent.js";
 
 test("novel Meta PageView is installed once per event", () => {
   const scope={},dataset={},head={ appendChild(){} },documentRef={ documentElement:{ dataset },head,createElement:()=>({}) };
@@ -31,10 +31,21 @@ test("visible tracker emits cumulative foreground seconds", () => {
 
 test("reading time reports cumulative seconds with keepalive", async () => {
   const calls=[];
-  assert.equal(await reportReadingTime({code:"wife-a",ticket:"signed",seconds:37,request:async(url,options)=>{calls.push([url,options]);return {ok:true};}}),true);
+  const result=await reportReadingTime({code:"wife-a",ticket:"signed",seconds:37,ttp:"cookie-1",request:async(url,options)=>{calls.push([url,options]);return {ok:true,json:async()=>({visible_seconds:35,tiktok_event:{name:"ViewContent",event_id:"event-1"}})};}});
+  assert.deepEqual(result,{ok:true,visibleSeconds:35,tiktokEvent:{name:"ViewContent",event_id:"event-1"}});
   assert.equal(calls[0][0],"/novel/wife-a/reading-time");
   assert.match(String(calls[0][1].body),/seconds=37/);
+  assert.match(String(calls[0][1].body),/_ttp=cookie-1/);
   assert.equal(calls[0][1].keepalive,true);
+});
+
+test("start reading posts chapter one and returns only a confirmed browser event", async () => {
+  const calls=[];
+  const result=await reportStartReading({code:"wife-a",ticket:"signed",ttp:"cookie-1",request:async(url,options)=>{calls.push([url,options]);return {ok:true,json:async()=>({ok:true,tiktok_event:{name:"StartReading",event_id:"event-start"}})};}});
+  assert.deepEqual(result,{ok:true,tiktokEvent:{name:"StartReading",event_id:"event-start"}});
+  assert.equal(calls[0][0],"/novel/wife-a/start-reading");
+  assert.match(String(calls[0][1].body),/chapter=1/);
+  assert.match(String(calls[0][1].body),/_ttp=cookie-1/);
 });
 
 test("story introduction shows an explicit empty state when no chapters are enabled", async () => {

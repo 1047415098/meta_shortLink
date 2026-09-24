@@ -20,6 +20,7 @@ export function audioNovelPayload(source) {
     cover_path: source.cover_path || "",
     audio_path: source.audio_path || "",
     audio_duration: source.audio_duration || "",
+    audio_duration_seconds: Number(source.audio_duration_seconds) || 0,
     audio_size_bytes: Number(source.audio_size_bytes) || 0,
     published_at: source.published_at || "",
     enabled: Boolean(source.enabled),

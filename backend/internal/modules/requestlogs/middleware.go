@@ -145,6 +145,7 @@ func (a *Handler) Middleware() gin.HandlerFunc {
 		visitorRoute := c.FullPath() == "/:code" || c.FullPath() == "/:code/contact" || c.FullPath() == "/:code/view" || c.FullPath() == "/:code/time-spent" ||
 			c.FullPath() == "/audio-novel/:code" || c.FullPath() == "/audio-novel/:code/stories" || c.FullPath() == "/audio-novel/:code/stories/:slug" ||
 			c.FullPath() == "/audio-novel/:code/contact" || c.FullPath() == "/audio-novel/:code/view" || c.FullPath() == "/audio-novel/:code/time-spent" ||
+			c.FullPath() == "/audio-novel/:code/start-listening" || c.FullPath() == "/audio-novel/:code/playback-time" || c.FullPath() == "/audio-novel/:code/complete" || c.FullPath() == "/audio-novel/:code/visible-time" ||
 			c.FullPath() == "/novel/:code" || c.FullPath() == "/novel/:code/search" || c.FullPath() == "/novel/:code/stories" || c.FullPath() == "/novel/:code/stories/:slug"
 		if !visitorRoute {
 			c.Next()

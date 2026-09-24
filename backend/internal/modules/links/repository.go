@@ -11,7 +11,7 @@ import (
 )
 
 func Scan(row pgx.Row) (l Link, e error) {
-	e = row.Scan(&l.ID, &l.Code, &l.Name, &l.TargetURL, &l.Enabled, &l.CampaignID, &l.AdsetID, &l.AdID, &l.Channel, &l.CreatedAt, &l.Mode, &l.LandingBrand, &l.LandingTitle, &l.LandingDescription, &l.LandingDetails, &l.LandingDelay, &l.MetaConnectionID, &l.AttributionMode, &l.MetaPixelID, &l.TimeSpentThreshold, &l.ProductType, &l.NovelID)
+	e = row.Scan(&l.ID, &l.Code, &l.Name, &l.TargetURL, &l.Enabled, &l.CampaignID, &l.AdsetID, &l.AdID, &l.Channel, &l.CreatedAt, &l.Mode, &l.LandingBrand, &l.LandingTitle, &l.LandingDescription, &l.LandingDetails, &l.LandingDelay, &l.MetaConnectionID, &l.AttributionMode, &l.MetaPixelID, &l.TimeSpentThreshold, &l.ProductType, &l.NovelID, &l.AdPlatform, &l.TikTokPixelID, &l.AudioNovelID)
 	return
 }
 
@@ -58,15 +58,19 @@ func (r Repository) Save(ctx context.Context, l Link, update bool, actor string)
 		// Internal callers share the same new-link fallback as the HTTP API.
 		l.AttributionMode = "dynamic"
 	}
+	if l.AdPlatform == "" {
+		// Historical and ordinary links remain Meta-compatible after the platform split.
+		l.AdPlatform = "meta"
+	}
 	// Link availability is persisted only as enabled/disabled; scheduled expiry
 	// no longer participates in the repository contract.
-	args := []any{l.Code, l.Name, l.TargetURL, l.Enabled, l.CampaignID, l.AdsetID, l.AdID, l.Channel, l.Mode, l.LandingBrand, l.LandingTitle, l.LandingDescription, l.LandingDetails, l.LandingDelay, l.MetaConnectionID, l.AttributionMode, l.MetaPixelID, l.TimeSpentThreshold, l.ProductType, l.NovelID}
-	query := "INSERT INTO short_links(code,name,target_url,enabled,campaign_id,adset_id,ad_id,channel,mode,landing_brand,landing_title,landing_description,landing_details,landing_delay,meta_connection_id,attribution_mode,meta_pixel_id,time_spent_threshold,product_type,novel_id) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20) RETURNING " + Columns
+	args := []any{l.Code, l.Name, l.TargetURL, l.Enabled, l.CampaignID, l.AdsetID, l.AdID, l.Channel, l.Mode, l.LandingBrand, l.LandingTitle, l.LandingDescription, l.LandingDetails, l.LandingDelay, l.MetaConnectionID, l.AttributionMode, l.MetaPixelID, l.TimeSpentThreshold, l.ProductType, l.NovelID, l.AdPlatform, l.TikTokPixelID, l.AudioNovelID}
+	query := "INSERT INTO short_links(code,name,target_url,enabled,campaign_id,adset_id,ad_id,channel,mode,landing_brand,landing_title,landing_description,landing_details,landing_delay,meta_connection_id,attribution_mode,meta_pixel_id,time_spent_threshold,product_type,novel_id,ad_platform,tiktok_pixel_id,audio_novel_id) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23) RETURNING " + Columns
 	action := "link.create"
 	if update {
 		action = "link.update"
 		args = append(args, l.ID)
-		query = "UPDATE short_links SET code=$1,name=$2,target_url=$3,enabled=$4,campaign_id=$5,adset_id=$6,ad_id=$7,channel=$8,mode=$9,landing_brand=$10,landing_title=$11,landing_description=$12,landing_details=$13,landing_delay=$14,meta_connection_id=$15,attribution_mode=$16,meta_pixel_id=$17,time_spent_threshold=$18,product_type=$19,novel_id=$20 WHERE id=$21 RETURNING " + Columns
+		query = "UPDATE short_links SET code=$1,name=$2,target_url=$3,enabled=$4,campaign_id=$5,adset_id=$6,ad_id=$7,channel=$8,mode=$9,landing_brand=$10,landing_title=$11,landing_description=$12,landing_details=$13,landing_delay=$14,meta_connection_id=$15,attribution_mode=$16,meta_pixel_id=$17,time_spent_threshold=$18,product_type=$19,novel_id=$20,ad_platform=$21,tiktok_pixel_id=$22,audio_novel_id=$23 WHERE id=$24 RETURNING " + Columns
 	}
 
 	saved, e := Scan(tx.QueryRow(ctx, query, args...))

@@ -36,6 +36,7 @@ func TestValidateAudioNovelInputRequiresCompleteAudioMetadata(t *testing.T) {
 	valid := base
 	valid.AudioPath = "/audio-novel-audio/0123456789abcdef0123456789abcdef.mp3"
 	valid.AudioDuration = "32:05"
+	valid.AudioDurationSeconds = 1925
 	valid.AudioSizeBytes = 23_100_419
 	if err := ValidateAudioNovelInput(valid); err != nil {
 		t.Fatalf("valid audio metadata rejected: %v", err)
@@ -45,6 +46,9 @@ func TestValidateAudioNovelInputRequiresCompleteAudioMetadata(t *testing.T) {
 	missingDuration := valid
 	missingDuration.AudioDuration = ""
 	cases = append(cases, missingDuration)
+	missingSeconds := valid
+	missingSeconds.AudioDurationSeconds = 0
+	cases = append(cases, missingSeconds)
 	wrongPrefix := valid
 	wrongPrefix.AudioPath = "/novel-audio/0123456789abcdef0123456789abcdef.mp3"
 	cases = append(cases, wrongPrefix)
@@ -54,6 +58,13 @@ func TestValidateAudioNovelInputRequiresCompleteAudioMetadata(t *testing.T) {
 	zeroSize := valid
 	zeroSize.AudioSizeBytes = 0
 	cases = append(cases, zeroSize)
+	durationMismatch := valid
+	durationMismatch.AudioDurationSeconds = 1900
+	cases = append(cases, durationMismatch)
+	durationTooLong := valid
+	durationTooLong.AudioDuration = "24:00:01"
+	durationTooLong.AudioDurationSeconds = 86_401
+	cases = append(cases, durationTooLong)
 
 	if err := ValidateAudioNovelInput(cases[0]); err != nil {
 		t.Fatalf("empty audio metadata group rejected: %v", err)
@@ -61,6 +72,25 @@ func TestValidateAudioNovelInputRequiresCompleteAudioMetadata(t *testing.T) {
 	for index, input := range cases[1:] {
 		if err := ValidateAudioNovelInput(input); err == nil {
 			t.Fatalf("invalid audio case %d accepted", index)
+		}
+	}
+}
+
+func TestParseAudioDurationSecondsSupportsPodcastFormats(t *testing.T) {
+	for raw, expected := range map[string]int{
+		"00:01":    1,
+		"32:05":    1925,
+		"1:02:03":  3723,
+		"23:59:59": 86399,
+	} {
+		actual, ok := parseAudioDurationSeconds(raw)
+		if !ok || actual != expected {
+			t.Fatalf("parseAudioDurationSeconds(%q) = %d, %v; want %d, true", raw, actual, ok, expected)
+		}
+	}
+	for _, raw := range []string{"", "32:60", "1:60:00", "24:00:01", "not-a-duration"} {
+		if actual, ok := parseAudioDurationSeconds(raw); ok {
+			t.Fatalf("parseAudioDurationSeconds(%q) = %d, true; want invalid", raw, actual)
 		}
 	}
 }

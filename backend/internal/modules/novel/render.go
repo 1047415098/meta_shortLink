@@ -12,6 +12,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"whatsapp-analytics/internal/modules/links"
+	"whatsapp-analytics/internal/modules/tiktok"
 	"whatsapp-analytics/internal/platform/runtime"
 )
 
@@ -24,6 +25,11 @@ type Bootstrap struct {
 	MetaBrowserPixelID   string      `json:"meta_browser_pixel_id,omitempty"`
 	MetaPageViewEventID  string      `json:"meta_pageview_event_id,omitempty"`
 	MetaTimeSpentEventID string      `json:"meta_time_spent_event_id,omitempty"`
+	AdPlatform           string      `json:"ad_platform"`
+	TikTokEnabled        bool        `json:"tiktok_enabled"`
+	TikTokPixelCode      string      `json:"tiktok_pixel_code,omitempty"`
+	TikTokStartEventID   string      `json:"tiktok_start_event_id,omitempty"`
+	TikTokQualifiedID    string      `json:"tiktok_qualified_event_id,omitempty"`
 	Locale               string      `json:"locale"`
 	AvailableLocales     []string    `json:"available_locales"`
 	Error                *PageError  `json:"error,omitempty"`
@@ -38,7 +44,7 @@ type PageError struct {
 	Message string `json:"message"`
 }
 
-func (h *Handler) Render(c *gin.Context, link links.Link, eventID string, recorded bool, country string) {
+func (h *Handler) Render(c *gin.Context, link links.Link, eventID string, recorded bool, country string, allowLanguageCookie bool) {
 	publicLink := &PublicLink{Code: link.Code, TimeSpentThreshold: link.TimeSpentThreshold}
 	available := []string{"en"}
 	if link.NovelID != nil {
@@ -52,19 +58,42 @@ func (h *Handler) Render(c *gin.Context, link links.Link, eventID string, record
 	}
 	remembered, _ := c.Cookie(LanguageCookieName)
 	locale := ResolveLocale(c.Query("lang"), remembered, country, available)
-	data := Bootstrap{Link: publicLink, Surface: "novel", CookieEnabled: h.Config.CookieMode == "all", Locale: locale, AvailableLocales: available}
+	platform := link.AdPlatform
+	if platform == "" {
+		platform = "meta"
+	}
+	data := Bootstrap{Link: publicLink, Surface: "novel", AdPlatform: platform, CookieEnabled: h.Config.CookieMode == "all", Locale: locale, AvailableLocales: available}
 	c.Header("Content-Language", locale)
-	if remembered != locale {
-		// 语言 Cookie 必须允许 H5 更新，用户手动切换后才能覆盖首次 IP 识别结果。
+	if allowLanguageCookie && remembered != locale {
+		// 只为真实读者记住语言选择；爬虫和平台预览请求必须保持无 Cookie。
 		http.SetCookie(c.Writer, &http.Cookie{Name: LanguageCookieName, Value: locale, Path: "/", MaxAge: 365 * 24 * 60 * 60, Secure: h.Config.SecureCookies, SameSite: http.SameSiteLaxMode})
 	}
 	if recorded {
 		data.Ticket = eventID + "." + h.Sign("contact:novel:"+link.Code+":"+eventID)
-		_ = h.loadMeta(c, eventID, &data)
+		if platform == "tiktok" {
+			_ = h.loadTikTok(c, eventID, &data)
+		} else {
+			_ = h.loadMeta(c, eventID, &data)
+		}
 	}
 	if err := h.render(c, 200, data); err != nil {
 		runtime.ServerError(c, err)
 	}
+}
+
+func (h *Handler) loadTikTok(c *gin.Context, eventID string, data *Bootstrap) error {
+	err := h.DB.QueryRow(c.Request.Context(), `SELECT e.ad_platform,
+		COALESCE($2::boolean AND e.ad_platform='tiktok' AND p.enabled AND c.enabled AND e.tiktok_pixel_code<>'',false) AS enabled,
+		COALESCE(CASE WHEN $2::boolean AND e.ad_platform='tiktok' AND p.enabled AND c.enabled THEN e.tiktok_pixel_code ELSE '' END,'')
+		FROM click_events e LEFT JOIN tiktok_pixels p ON p.id=e.tiktok_pixel_id AND p.pixel_code=e.tiktok_pixel_code
+		LEFT JOIN tiktok_connections c ON c.id=p.connection_id WHERE e.id=$1`, eventID, h.Config.TikTokEnabled).
+		Scan(&data.AdPlatform, &data.TikTokEnabled, &data.TikTokPixelCode)
+	if err == nil && data.TikTokEnabled && data.TikTokPixelCode != "" {
+		// IDs are public deduplication keys only; attribution and matching data remain server-side.
+		data.TikTokStartEventID = tiktok.VisitEventID(eventID, "StartReading")
+		data.TikTokQualifiedID = tiktok.VisitEventID(eventID, "ViewContent")
+	}
+	return err
 }
 func (h *Handler) Unavailable(c *gin.Context, status int, message string) {
 	if err := h.render(c, status, Bootstrap{Surface: "novel", CookieEnabled: h.Config.CookieMode == "all", Locale: "en", AvailableLocales: []string{"en"}, Error: &PageError{Status: status, Message: message}}); err != nil {
@@ -100,8 +129,8 @@ func (h *Handler) render(c *gin.Context, status int, data Bootstrap) error {
 	script = append(script, []byte("</script>")...)
 	page = bytes.Replace(page, marker, script, 1)
 	page = novelMetadata(page)
-	// 小说正文来自白名单 Markdown；CSP 继续限制页面只加载自身资源和 Meta Pixel。
-	c.Header("Content-Security-Policy", "default-src 'none'; script-src 'self' 'nonce-"+nonce+"' https://connect.facebook.net; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://www.facebook.com; font-src 'self'; connect-src 'self' https://www.facebook.com; base-uri 'none'; frame-ancestors 'none'")
+	// 小说正文来自白名单 Markdown；广告脚本和请求只允许两个平台的官方精确域名。
+	c.Header("Content-Security-Policy", novelContentSecurityPolicy(nonce))
 	c.Header("Referrer-Policy", "same-origin")
 	c.Header("Content-Type", "text/html; charset=utf-8")
 	if c.Request.Method == "HEAD" {
@@ -110,6 +139,12 @@ func (h *Handler) render(c *gin.Context, status int, data Bootstrap) error {
 	}
 	c.Data(status, "text/html; charset=utf-8", page)
 	return nil
+}
+
+func novelContentSecurityPolicy(nonce string) string {
+	return "default-src 'none'; script-src 'self' 'nonce-" + nonce + "' https://connect.facebook.net https://analytics.tiktok.com; " +
+		"style-src 'self' 'unsafe-inline'; img-src 'self' data: https://www.facebook.com https://analytics.tiktok.com https://business-api.tiktok.com; " +
+		"font-src 'self'; connect-src 'self' https://www.facebook.com https://analytics.tiktok.com https://business-api.tiktok.com; base-uri 'none'; frame-ancestors 'none'"
 }
 
 var titleTag = regexp.MustCompile(`(?is)<title>.*?</title>`)

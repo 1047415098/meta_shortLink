@@ -151,6 +151,12 @@ export const statusLabels = {
   skipped: "已跳过",
 };
 export function metaEventLabel(event = {}) {
+  // Audio events keep the raw Meta name visible while identifying the product funnel.
+  if (event.audio_novel_id) {
+    if (event.event_name === "PageView") return "语音小说 · 浏览";
+    if (event.event_name === "StartListening") return "语音小说 · 开始收听";
+    if (event.event_name === "ViewContent") return "语音小说 · 播放达标";
+  }
   // Historical names remain readable after the live funnel switches to the
   // standard AddToCart event.
   if (event.event_name === "PageView") return "浏览事件";

@@ -57,6 +57,26 @@ const router = createRouter({
           },
         },
         {
+          path: "audio-novels/:id/links",
+          name: "audio-novel-links",
+          component: () => import("../views/AudioNovelLinkListView.vue"),
+          meta: {
+            title: "语音小说投放链接",
+            requiresAuth: true,
+            activeMenu: "audio-novels",
+          },
+        },
+        {
+          path: "audio-novel-links/:id/stats",
+          name: "audio-novel-link-stats",
+          component: () => import("../views/AudioNovelLinkStatsView.vue"),
+          meta: {
+            title: "语音小说投放统计",
+            requiresAuth: true,
+            activeMenu: "audio-novels",
+          },
+        },
+        {
           path: "novels",
           name: "novels",
           component: () => import("../views/NovelListView.vue"),
@@ -146,6 +166,24 @@ const router = createRouter({
           name: "meta-source",
           component: () => import("../views/MetaSourceView.vue"),
           meta: { title: "Meta 来源诊断", requiresAuth: true },
+        },
+        {
+          path: "tiktok/pixels",
+          name: "tiktok-pixels",
+          component: () => import("../views/TikTokPixelsView.vue"),
+          meta: { title: "TikTok Pixel", requiresAuth: true },
+        },
+        {
+          path: "tiktok/connections",
+          name: "tiktok-connections",
+          component: () => import("../views/TikTokConnectionsView.vue"),
+          meta: { title: "TikTok 凭证", requiresAuth: true },
+        },
+        {
+          path: "tiktok/events",
+          name: "tiktok-events",
+          component: () => import("../views/TikTokEventsView.vue"),
+          meta: { title: "TikTok 事件记录", requiresAuth: true },
         },
         {
           path: "logs",

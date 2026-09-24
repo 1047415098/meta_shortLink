@@ -26,12 +26,18 @@
             <div class="url">{{ row.public_url }}</div></template
           ></el-table-column
         >
-        <el-table-column label="访问" prop="visit_count" width="90" />
-        <el-table-column label="广告 ID" prop="ad_id" min-width="140"
-          ><template #default="{ row }">{{
-            row.ad_id || "动态读取"
-          }}</template></el-table-column
-        >
+        <el-table-column label="平台 / Pixel" min-width="210"
+          ><template #default="{ row }"
+            ><el-tag
+              :type="row.ad_platform === 'tiktok' ? 'danger' : 'primary'"
+            >
+              {{ row.ad_platform === "tiktok" ? "TikTok" : "Meta" }}
+            </el-tag>
+            <div class="muted pixel-name">
+              {{ selectedPixelName(row) }}
+            </div></template
+          ></el-table-column
+        ><el-table-column label="访问" prop="visit_count" width="90" />
         <el-table-column label="状态" width="90"
           ><template #default="{ row }"
             ><el-tag :type="row.enabled ? 'success' : 'info'">{{
@@ -41,10 +47,17 @@
         >
         <el-table-column
           label="操作"
-          min-width="280"
+          min-width="390"
           :fixed="isMobile ? false : 'right'"
           ><template #default="{ row }">
-            <el-button link type="primary" @click="copy(row)">复制</el-button
+            <el-button link type="primary" @click="copyURL(row.public_url)"
+              >复制普通短链</el-button
+            ><el-button
+              v-if="row.ad_platform === 'tiktok'"
+              link
+              type="primary"
+              @click="copyTikTokTemplate(row)"
+              >复制 TikTok 投放模板</el-button
             ><el-button
               link
               type="primary"
@@ -104,12 +117,29 @@
             >已有访问，小说绑定不可再修改；需要换小说时请新建链接。</small
           ></el-form-item
         >
-        <el-form-item label="Meta Pixel" required
+        <el-form-item label="广告平台" required>
+          <el-radio-group
+            v-model="form.ad_platform"
+            :disabled="Boolean(editing?.first_visited_at)"
+            @change="switchPlatform"
+          >
+            <el-radio-button value="meta">Meta</el-radio-button>
+            <el-radio-button value="tiktok">TikTok</el-radio-button>
+          </el-radio-group>
+          <small v-if="editing?.first_visited_at" class="muted">
+            已有访问，广告平台和 Pixel 不可再修改；需要更换时请新建链接。
+          </small>
+        </el-form-item>
+        <el-form-item
+          v-if="form.ad_platform === 'meta'"
+          label="Meta Pixel"
+          required
           ><el-select
             v-model="form.meta_pixel_id"
             style="width: 100%"
             placeholder="选择回传 Pixel"
-            @change="selectPixel"
+            :disabled="Boolean(editing?.first_visited_at)"
+            @change="selectMetaPixel"
             ><el-option
               v-for="pixel in pixels"
               :key="pixel.id"
@@ -117,14 +147,34 @@
               :label="pixelLabel(pixel)"
               :disabled="!pixelSelectable(pixel)" /></el-select
         ></el-form-item>
+        <el-form-item v-else label="TikTok Pixel" required>
+          <el-select
+            v-model="form.tiktok_pixel_id"
+            style="width: 100%"
+            placeholder="选择回传 TikTok Pixel"
+            :disabled="Boolean(editing?.first_visited_at)"
+          >
+            <el-option
+              v-for="pixel in tiktokPixels"
+              :key="pixel.id"
+              :value="pixel.id"
+              :label="tiktokPixelLabel(pixel)"
+              :disabled="!tiktokPixelSelectable(pixel)"
+            />
+          </el-select>
+        </el-form-item>
         <el-form-item label="停留时长回传（秒）"
           ><el-input-number
             v-model="form.time_spent_threshold"
             :min="0"
             :max="3600"
             :step="1"
-          /><small class="muted"
-            >达到设置的前台可见时长后才回传一次 Meta TimeSpent；0 表示关闭此回传。</small
+          /><small v-if="form.ad_platform === 'meta'" class="muted"
+            >达到设置的前台可见时长后才回传一次 Meta TimeSpent；0
+            表示关闭此回传。</small
+          ><small v-else class="muted"
+            >达到设置的前台可见时长后才回传一次 TikTok ViewContent；0
+            表示关闭此回传。</small
           ></el-form-item
         >
       </el-form>
@@ -152,7 +202,9 @@ import {
   updateNovelLink,
 } from "../api/novelLinks.js";
 import { listConnections, listPixels } from "../api/meta.js";
+import { listTikTokConnections, listTikTokPixels } from "../api/tiktok.js";
 import { connectionIDForPixel, pixelSelectable } from "../utils/meta.js";
+import { tiktokTemplateURL } from "../utils/tiktok.js";
 const route = useRoute(),
   router = useRouter(),
   loading = ref(false),
@@ -162,7 +214,9 @@ const route = useRoute(),
   links = ref([]),
   novels = ref([]),
   connections = ref([]),
-  pixels = ref([]);
+  pixels = ref([]),
+  tiktokConnections = ref([]),
+  tiktokPixels = ref([]);
 const selectedNovelID = computed(() => Number(route.params.id)),
   novel = computed(() =>
     novels.value.find((item) => item.id === selectedNovelID.value),
@@ -176,12 +230,14 @@ const blank = () => ({
   code: "",
   novel_id: selectedNovelID.value,
   enabled: true,
+  ad_platform: "meta",
   channel: "facebook",
   campaign_id: "",
   adset_id: "",
   ad_id: "",
   meta_connection_id: null,
   meta_pixel_id: null,
+  tiktok_pixel_id: null,
   attribution_mode: "dynamic",
   // 新投放默认以 10 秒前台可见时间作为 Meta 回传门槛。
   time_spent_threshold: 10,
@@ -189,10 +245,21 @@ const blank = () => ({
 const form = reactive(blank());
 function open(row) {
   editing.value = row || null;
-  Object.assign(form, blank(), row || {});
+  Object.assign(form, blank(), row || {}, {
+    // 迁移前的小说链接没有平台字段，后台兼容为 Meta。
+    ad_platform: row?.ad_platform === "tiktok" ? "tiktok" : "meta",
+  });
   dialog.value = true;
 }
-function selectPixel(id) {
+function switchPlatform(platform) {
+  if (platform === "tiktok") {
+    form.meta_connection_id = null;
+    form.meta_pixel_id = null;
+  } else {
+    form.tiktok_pixel_id = null;
+  }
+}
+function selectMetaPixel(id) {
   form.meta_connection_id = connectionIDForPixel(pixels.value, id);
 }
 function pixelLabel(pixel) {
@@ -201,20 +268,55 @@ function pixelLabel(pixel) {
   );
   return `${account?.name || "未知账户"} · ${pixel.name} · ${pixel.pixel_id}`;
 }
+function tiktokPixelLabel(pixel) {
+  const connection = tiktokConnections.value.find(
+    (item) => Number(item.id) === Number(pixel.connection_id),
+  );
+  return `${connection?.name || "未知凭证"} · ${pixel.name} · ${pixel.pixel_code}`;
+}
+function tiktokPixelSelectable(pixel) {
+  const connection = tiktokConnections.value.find(
+    (item) => Number(item.id) === Number(pixel.connection_id),
+  );
+  return Boolean(
+    pixel?.enabled &&
+    connection?.enabled &&
+    connection?.has_access_token &&
+    connection?.credential_status !== "invalid",
+  );
+}
+function selectedPixelName(row) {
+  if (row.ad_platform === "tiktok")
+    return row.tiktok_pixel_name || row.tiktok_pixel_code || "未绑定";
+  return (
+    pixels.value.find((pixel) => Number(pixel.id) === Number(row.meta_pixel_id))
+      ?.name || "Meta Pixel"
+  );
+}
 async function load() {
   loading.value = true;
   try {
-    const [linkResult, novelResult, accountResult, pixelResult] =
-      await Promise.all([
-        listNovelLinks(selectedNovelID.value),
-        listNovels({ page_size: 100 }),
-        listConnections(),
-        listPixels(),
-      ]);
+    const [
+      linkResult,
+      novelResult,
+      accountResult,
+      pixelResult,
+      tiktokConnectionResult,
+      tiktokPixelResult,
+    ] = await Promise.all([
+      listNovelLinks(selectedNovelID.value),
+      listNovels({ page_size: 100 }),
+      listConnections(),
+      listPixels(),
+      listTikTokConnections(),
+      listTikTokPixels(),
+    ]);
     links.value = linkResult.items;
     novels.value = novelResult.items;
     connections.value = accountResult;
     pixels.value = pixelResult;
+    tiktokConnections.value = tiktokConnectionResult;
+    tiktokPixels.value = tiktokPixelResult;
   } catch (error) {
     ElMessage.error(error.message);
   } finally {
@@ -222,11 +324,15 @@ async function load() {
   }
 }
 async function save() {
-  if (!form.name.trim() || !form.novel_id || !form.meta_pixel_id) {
-    ElMessage.warning("请填写链接名称、绑定小说并选择 Meta Pixel");
+  const selectedPixel =
+    form.ad_platform === "tiktok" ? form.tiktok_pixel_id : form.meta_pixel_id;
+  if (!form.name.trim() || !form.novel_id || !selectedPixel) {
+    ElMessage.warning(
+      `请填写链接名称、绑定小说并选择 ${form.ad_platform === "tiktok" ? "TikTok" : "Meta"} Pixel`,
+    );
     return;
   }
-  selectPixel(form.meta_pixel_id);
+  if (form.ad_platform === "meta") selectMetaPixel(form.meta_pixel_id);
   saving.value = true;
   try {
     if (editing.value) await updateNovelLink(editing.value.id, form);
@@ -262,13 +368,20 @@ async function remove(row) {
       ElMessage.error(error.message || "删除失败");
   }
 }
-async function copy(row) {
+async function copyURL(value) {
   try {
-    await navigator.clipboard.writeText(row.public_url);
-    ElMessage.success("投放链接已复制");
+    await navigator.clipboard.writeText(value);
+    ElMessage.success("链接已复制");
   } catch {
     ElMessage.warning("无法访问剪贴板，请手动复制");
   }
+}
+function copyTikTokTemplate(row) {
+  // 优先使用服务端模板，旧响应则按同一套参数规则即时生成。
+  const origin = new URL(row.public_url).origin;
+  return copyURL(
+    row.tiktok_template_url || tiktokTemplateURL(origin, row.code),
+  );
 }
 onMounted(() => {
   mobileQuery.addEventListener("change", syncMobile);
@@ -283,6 +396,9 @@ onBeforeUnmount(() => mobileQuery.removeEventListener("change", syncMobile));
   color: #409eff;
   margin-top: 5px;
   overflow-wrap: anywhere;
+}
+.pixel-name {
+  margin-top: 5px;
 }
 .form-grid {
   display: grid;

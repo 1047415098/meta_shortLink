@@ -3,7 +3,7 @@
     <PageHeader
       title="Meta 事件记录"
       context="广告咨询回传"
-      description="核对浏览、手动咨询、自动跳转和测试事件的发送结果。"
+      description="核对短链接、文字小说和语音小说网页事件的发送结果。"
     >
       <el-button @click="router.push({ name: 'meta-connections' })"
         >管理连接</el-button
@@ -111,6 +111,9 @@
               <div>
                 <b>访问编号</b
                 ><span>{{ row.visit_id || "测试事件，无访问编号" }}</span>
+              </div>
+              <div>
+                <b>语音小说编号</b><span>{{ row.audio_novel_id || "—" }}</span>
               </div>
               <div>
                 <b>Meta 接收数</b><span>{{ row.events_received ?? "—" }}</span>
@@ -226,6 +229,8 @@ const eventStatuses = [
 // 查询选项与后端真实、测试事件白名单保持一致。
 const eventNames = [
   "PageView",
+  "StartListening",
+  "ViewContent",
   META_CONSULT_EVENT,
   // Legacy names stay filterable for immutable historical event records.
   "WhatsAppConsultClick",

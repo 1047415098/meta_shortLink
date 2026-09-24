@@ -20,6 +20,7 @@ import (
 	"whatsapp-analytics/internal/modules/meta"
 	"whatsapp-analytics/internal/modules/novel"
 	"whatsapp-analytics/internal/modules/requestlogs"
+	"whatsapp-analytics/internal/modules/tiktok"
 	"whatsapp-analytics/internal/modules/tracking"
 	"whatsapp-analytics/internal/platform/database"
 	"whatsapp-analytics/internal/platform/runtime"
@@ -30,6 +31,7 @@ type App struct {
 	*runtime.Core
 	Router            *gin.Engine
 	Meta              *meta.Service
+	TikTok            *tiktok.Service
 	NovelTranslations *novel.TranslationService
 }
 
@@ -52,9 +54,14 @@ func New(c config.Config, db *pgxpool.Pool) (*App, error) {
 	}
 	landingHandler := &landing.Handler{Core: core}
 	metaService := meta.New(core)
+	// Tracking receives the TikTok crypto service even while delivery is disabled;
+	// this keeps the first attributed visit snapshot complete for a later rollout.
+	tiktokService := tiktok.New(core)
 	landingHandler.Meta = metaService
-	// The standalone audio novel app reuses the shared link, tracking and Meta services.
-	audioNovelHandler := &audionovel.Handler{Core: core, Meta: metaService}
+	// The standalone audio novel app reuses the selected platform queues while
+	// keeping playback state and event confirmation inside its own module.
+	playbackService := &audionovel.PlaybackService{Core: core, Meta: metaService, TikTok: tiktokService}
+	audioNovelHandler := &audionovel.Handler{Core: core, Meta: metaService, Playback: playbackService}
 	// Vietnamese uses DeepL because APIHZ currently advertises etype=48 but its live engine rejects vi.
 	translator := novel.RoutedTranslator{
 		APIHZ: &novel.TranslationClient{Endpoint: c.APIHZTranslationURL, DeveloperID: c.APIHZTranslationID, DeveloperKey: c.APIHZTranslationKey},
@@ -62,8 +69,8 @@ func New(c config.Config, db *pgxpool.Pool) (*App, error) {
 	}
 	// APIHZ 请求起点已由共享限速器保护，8 个 worker 可覆盖两个供应商的等待和重试时间。
 	novelTranslations := novel.NewTranslationService(db, translator, 8)
-	novelHandler := &novel.Handler{Core: core, Meta: metaService, Translations: novelTranslations}
-	trackingHandler := &tracking.Handler{Core: core, Landing: landingHandler, AudioNovelPage: audioNovelHandler, NovelPage: novelHandler}
+	novelHandler := &novel.Handler{Core: core, Meta: metaService, TikTok: tiktokService, Translations: novelTranslations}
+	trackingHandler := &tracking.Handler{Core: core, TikTok: tiktokService, Landing: landingHandler, AudioNovelPage: audioNovelHandler, NovelPage: novelHandler}
 	router, err := httptransport.New(core, httptransport.Handlers{
 		Auth:       &auth.Handler{Core: core, Password: hash},
 		Links:      &links.Handler{Core: core},
@@ -75,6 +82,7 @@ func New(c config.Config, db *pgxpool.Pool) (*App, error) {
 		Novel:      novelHandler,
 		Tracking:   trackingHandler,
 		Meta:       &meta.Handler{Service: metaService},
+		TikTok:     &tiktok.Handler{Service: tiktokService},
 	})
 	if err != nil {
 		novelTranslations.Close()
@@ -83,10 +91,12 @@ func New(c config.Config, db *pgxpool.Pool) (*App, error) {
 		}
 		return nil, err
 	}
-	return &App{Core: core, Router: router, Meta: metaService, NovelTranslations: novelTranslations}, nil
+	return &App{Core: core, Router: router, Meta: metaService, TikTok: tiktokService, NovelTranslations: novelTranslations}, nil
 }
 func (a *App) Close() {
+	// Stop producers and TikTok delivery before Meta so every queue shuts down cleanly.
 	a.NovelTranslations.Close()
+	a.TikTok.Close()
 	a.Meta.Close()
 	if a.Geo != nil {
 		a.Geo.Close()

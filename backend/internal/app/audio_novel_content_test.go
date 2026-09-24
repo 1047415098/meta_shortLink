@@ -91,7 +91,8 @@ func TestAudioNovelAudioLifecycle(t *testing.T) {
 		}
 	}
 	payload := func(title, slug, name string) string {
-		return fmt.Sprintf(`{"title":%q,"slug":%q,"category":"Fantasy","excerpt":"Audio lifecycle.","body_markdown":"Story.","cover_path":"","audio_path":%q,"audio_duration":"01:05","audio_size_bytes":7,"published_at":"2026-09-22","enabled":true,"featured":false}`, title, slug, "/audio-novel-audio/"+name)
+		// Keep the machine-readable duration aligned with the formatted MP3 duration.
+		return fmt.Sprintf(`{"title":%q,"slug":%q,"category":"Fantasy","excerpt":"Audio lifecycle.","body_markdown":"Story.","cover_path":"","audio_path":%q,"audio_duration":"01:05","audio_duration_seconds":65,"audio_size_bytes":7,"published_at":"2026-09-22","enabled":true,"featured":false}`, title, slug, "/audio-novel-audio/"+name)
 	}
 	created := call(a, "POST", "/api/v1/audio-novels", payload("Audio Story", "audio-story", firstName), admin)
 	if created.Code != 200 || !strings.Contains(created.Body.String(), firstName) {

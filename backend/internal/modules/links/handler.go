@@ -62,7 +62,9 @@ func (a *Handler) Update(c *gin.Context) {
 		runtime.ServerError(c, e)
 		return
 	}
-	if l.ProductType == "novel" {
+	// The generic editor owns only ordinary links. Product-specific links keep
+	// their binding and first-visit lock rules behind their dedicated APIs.
+	if l.ProductType != "legacy" && l.ProductType != "short_link" {
 		c.Status(404)
 		return
 	}

@@ -158,6 +158,7 @@ const today = new Date().toISOString().slice(0, 10),
     cover_path: "",
     audio_path: "",
     audio_duration: "",
+    audio_duration_seconds: 0,
     audio_size_bytes: 0,
     published_at: today,
     enabled: true,
@@ -201,9 +202,13 @@ function readAudioDuration(file) {
     audio.preload = "metadata";
     audio.onloadedmetadata = () => {
       URL.revokeObjectURL(objectURL);
-      Number.isFinite(audio.duration) && audio.duration > 0
-        ? resolve(formatAudioDuration(audio.duration))
-        : reject(new Error("无法读取 MP3 时长"));
+      const seconds = Math.floor(audio.duration);
+      Number.isFinite(audio.duration) && seconds >= 1 && seconds <= 86400
+        ? resolve({
+            display: formatAudioDuration(seconds),
+            seconds,
+          })
+        : reject(new Error("MP3 时长必须在 1 秒到 24 小时之间"));
     };
     audio.onerror = () => {
       URL.revokeObjectURL(objectURL);
@@ -221,7 +226,8 @@ async function uploadAudio({ file }) {
     // 新文件上传成功后才替换表单元数据；旧文件在文章保存成功后由后端清理。
     const uploaded = await uploadAudioNovelAudio(file);
     form.audio_path = uploaded.path;
-    form.audio_duration = duration;
+    form.audio_duration = duration.display;
+    form.audio_duration_seconds = duration.seconds;
     form.audio_size_bytes = uploaded.size_bytes;
     ElMessage.success("MP3 上传成功，请试听后保存");
   } catch (error) {
@@ -243,6 +249,7 @@ async function removeAudio() {
     }
     form.audio_path = "";
     form.audio_duration = "";
+    form.audio_duration_seconds = 0;
     form.audio_size_bytes = 0;
     ElMessage.success("音频已移除");
   } catch (error) {

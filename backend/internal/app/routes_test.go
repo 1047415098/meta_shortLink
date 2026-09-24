@@ -118,3 +118,26 @@ func TestBrowserMetadataDoesNotCreateVisitorLogs(t *testing.T) {
 		t.Fatalf("browser metadata created visitor logs: count=%d err=%v", count, err)
 	}
 }
+
+func TestTikTokServiceAndAdminRoutesAreWiredWithoutChangingMeta(t *testing.T) {
+	a := setup(t)
+	if a.TikTok == nil {
+		t.Fatal("TikTok service is not owned by the application")
+	}
+	for _, path := range []string{"/api/v1/tiktok-connections", "/api/v1/tiktok-pixels", "/api/v1/tiktok-events", "/api/v1/meta/connections"} {
+		if response := call(a, "GET", path, "", nil); response.Code != 401 {
+			t.Fatalf("anonymous admin route %s status=%d", path, response.Code)
+		}
+	}
+	admin := login(t, a)
+	for _, path := range []string{"/api/v1/tiktok-connections", "/api/v1/tiktok-pixels", "/api/v1/tiktok-events", "/api/v1/meta/connections"} {
+		if response := call(a, "GET", path, "", admin); response.Code != 200 {
+			t.Fatalf("authenticated admin route %s status=%d body=%s", path, response.Code, response.Body.String())
+		}
+	}
+	// Application shutdown remains safe even when disabled workers never started.
+	a.TikTok.Start(context.Background())
+	a.TikTok.Start(context.Background())
+	a.TikTok.Close()
+	a.TikTok.Close()
+}

@@ -4,7 +4,12 @@ const fallback = {
   ticket: "",
   surface: "audio_novel",
   cookie_enabled: false,
+  entry_audio_slug: "",
+  playback_ticket: "",
+  playback_threshold_seconds: null,
+  ad_platform: "",
   meta_measurement: false,
+  tiktok_enabled: false,
   error: null
 };
 

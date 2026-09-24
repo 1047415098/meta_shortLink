@@ -13,6 +13,19 @@ test("admin navigation separates each frontend, Meta and system into submenus", 
   assert.match(source, /label: "语音小说项目"[\s\S]*name: "audio-novels"/);
   assert.match(source, /label: "免费小说项目"[\s\S]*name: "novels"/);
   assert.match(source, /label: "Meta 管理"[\s\S]*name: "meta-events"/);
+  assert.match(
+    source,
+    /label: "TikTok 管理"[\s\S]*name: "tiktok-pixels"[\s\S]*name: "tiktok-connections"[\s\S]*name: "tiktok-events"/,
+  );
   assert.match(source, /label: "系统"[\s\S]*name: "settings"/);
   assert.match(source, /:default-openeds="openGroups"/);
+});
+
+test("admin router exposes all three TikTok management pages", async () => {
+  const source = await readFile(
+    new URL("../src/router/index.js", import.meta.url),
+    "utf8",
+  );
+  for (const route of ["tiktok-pixels", "tiktok-connections", "tiktok-events"])
+    assert.match(source, new RegExp(`name: "${route}"`));
 });

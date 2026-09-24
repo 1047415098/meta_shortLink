@@ -1,5 +1,5 @@
 <script setup>
-import { nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { inject, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { useI18n } from "vue-i18n";
 import AppHeader from "../components/AppHeader.vue";
@@ -7,8 +7,11 @@ import ChapterDrawer from "../components/ChapterDrawer.vue";
 import { fetchNovelChapter, fetchNovelStory } from "../lib/api.js";
 import { readProgress, saveProgress } from "../lib/progress.js";
 import { createRequestGate } from "../lib/request.js";
+import { reportStartReading } from "../lib/timeSpent.js";
+import { readTikTokTTP, trackTikTokEvent } from "../lib/tiktok.js";
 
 const route=useRoute(),router=useRouter(),story=ref(),chapters=ref([]),chapter=ref(),previous=ref(),next=ref(),loading=ref(true),error=ref(""),drawer=ref(false);
+const bootstrap=inject("bootstrap");
 const { locale, t } = useI18n({ useScope:"global" });
 const requestGate=createRequestGate();
 let scrollTimer;
@@ -44,6 +47,10 @@ async function load(){
     if(!requestGate.isCurrent(version))return;
     window.scrollTo({ top:scrollY, behavior:"auto" });
     saveProgress(route.params.slug,chapterData.chapter.chapter_number,scrollY);
+    if(chapterData.chapter.chapter_number===1&&bootstrap.ad_platform==="tiktok"&&bootstrap.tiktok_enabled&&bootstrap.ticket){
+      const result=await reportStartReading({code:bootstrap.link.code,ticket:bootstrap.ticket,ttp:readTikTokTTP()});
+      if(requestGate.isCurrent(version)&&result.tiktokEvent)trackTikTokEvent({name:result.tiktokEvent.name,eventId:result.tiktokEvent.event_id});
+    }
   }catch(e){
     if(requestGate.isCurrent(version)){error.value=e.message;story.value=undefined;chapter.value=undefined;}
   }finally{

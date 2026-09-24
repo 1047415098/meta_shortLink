@@ -70,8 +70,19 @@
             ><span v-else>—</span></template
           ></el-table-column
         >
-        <el-table-column label="操作" width="280" fixed="right"
+        <el-table-column label="操作" width="350" fixed="right"
           ><template #default="{ row }">
+            <el-button
+              link
+              type="primary"
+              @click="
+                router.push({
+                  name: 'audio-novel-links',
+                  params: { id: row.id },
+                })
+              "
+              >投放链接</el-button
+            >
             <el-button
               link
               type="primary"

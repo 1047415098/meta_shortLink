@@ -59,3 +59,34 @@ test("public audio pages use safe native players and complete navigation", async
   assert.match(story, /story\.audio_path/);
   assert.match(header, /Audio Fiction/);
 });
+
+test("audio detail wires truthful playback lifecycle and ten-second reporting", async () => {
+  const detail = await readFile(new URL("../src/views/AudioDetailView.vue", import.meta.url), "utf8");
+  const app = await readFile(new URL("../src/App.vue", import.meta.url), "utf8");
+  assert.match(detail, /createPlaybackTracker/);
+  assert.match(detail, /@playing="onPlaying"/);
+  assert.match(detail, /@pause="onPause"/);
+  assert.match(detail, /@waiting="onWaiting"/);
+  assert.match(detail, /@stalled="onStalled"/);
+  assert.match(detail, /@seeking="onSeeking"/);
+  assert.match(detail, /@seeked="onSeeked"/);
+  assert.match(detail, /@ratechange="onRateChange"/);
+  assert.match(detail, /@ended="onEnded"/);
+  assert.match(detail, /setInterval\([^,]+,\s*10_000\)/);
+  assert.doesNotMatch(detail, /!playbackTracker\.state\.active/);
+  assert.match(detail, /pagehide/);
+  assert.doesNotMatch(detail, /visibilitychange/);
+  assert.match(detail, /route\.params\.slug\s*===\s*bootstrap\.entry_audio_slug/);
+  assert.match(detail, /clearInterval\(reportTimer\)/);
+  assert.match(detail, /onBeforeRouteUpdate/);
+  assert.match(detail, /version\s*===\s*loadVersion/);
+  assert.match(app, /bootstrap\.ad_platform\s*===\s*"meta"/);
+  assert.match(app, /else if \(bootstrap\.ad_platform\s*===\s*"tiktok"/);
+  // A disabled TikTok backend must not authorize the browser SDK branch,
+  // while the preceding Meta branch remains independent of that flag.
+  assert.match(app, /bootstrap\.ad_platform\s*===\s*"tiktok"\s*&&\s*bootstrap\.tiktok_enabled/);
+  assert.match(app, /!bootstrap\.playback_ticket/);
+  // Campaign Meta PageView must wait for the server's frozen-attribution gate;
+  // only the legacy archive may emit its bootstrap event immediately.
+  assert.match(app, /if \(!bootstrap\.playback_ticket\)\s*trackMetaAudioEvent/);
+});

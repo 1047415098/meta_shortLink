@@ -36,6 +36,7 @@ func (h *Handler) CreateDistributionLink(c *gin.Context) {
 	if input.Code == "" {
 		input.Code = runtime.Token()[:8]
 	}
+	NormalizeDistributionInput(&input)
 	if err := ValidateDistributionInput(input, true); err != nil {
 		runtime.Bad(c, err.Error())
 		return
@@ -56,6 +57,7 @@ func (h *Handler) UpdateDistributionLink(c *gin.Context) {
 		runtime.Bad(c, "投放链接数据格式无效")
 		return
 	}
+	NormalizeDistributionInput(&input)
 	if err := ValidateDistributionInput(input, false); err != nil {
 		runtime.Bad(c, err.Error())
 		return
@@ -76,6 +78,8 @@ func (h *Handler) DeleteDistributionLink(c *gin.Context) {
 	err := (Repository{DB: h.DB}).DeleteDistributionLink(ctx, id, h.Config.AdminUser)
 	if errors.Is(err, ErrDistributionHasVisits) {
 		c.JSON(409, gin.H{"error": "该链接已有访问记录，只能停用，不能删除"})
+	} else if errors.Is(err, ErrDistributionPixelInvalid) {
+		runtime.Bad(c, "广告平台或 Pixel 配置无效")
 	} else if errors.Is(err, pgx.ErrNoRows) {
 		c.Status(404)
 	} else if err != nil {
@@ -94,7 +98,7 @@ func (h *Handler) writeDistributionLink(c *gin.Context, item DistributionLink, e
 		if strings.Contains(err.Error(), "23505") {
 			c.JSON(409, gin.H{"error": "短码已存在"})
 		} else if strings.Contains(err.Error(), "23503") || strings.Contains(err.Error(), "23514") {
-			runtime.Bad(c, "小说或 Meta Pixel 配置无效")
+			runtime.Bad(c, "小说、广告平台或 Pixel 配置无效")
 		} else {
 			runtime.ServerError(c, err)
 		}
@@ -106,4 +110,7 @@ func (h *Handler) writeDistributionLink(c *gin.Context, item DistributionLink, e
 
 func (h *Handler) setDistributionPublicURL(item *DistributionLink) {
 	item.PublicURL = strings.TrimRight(h.Config.PublicURL, "/") + "/novel/" + item.Code
+	if item.AdPlatform == "tiktok" {
+		item.TikTokTemplateURL = TikTokTemplate(h.Config.PublicURL, item.Code)
+	}
 }

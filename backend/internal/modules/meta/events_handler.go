@@ -43,7 +43,7 @@ func (h *Handler) listEvents(c *gin.Context) {
 	name := c.Query("event_name")
 	// Automatic redirects are a separate custom event in both tests and event logs.
 	// Current standard events and immutable historical names are both valid log filters.
-	if name != "" && name != "PageView" && name != EventName && name != LegacyManualEventName && name != LegacyAutoRedirectEventName {
+	if name != "" && name != "PageView" && name != "StartListening" && name != "ViewContent" && name != EventName && name != LegacyManualEventName && name != LegacyAutoRedirectEventName {
 		runtime.Bad(c, "事件名称无效")
 		return
 	}
@@ -55,7 +55,7 @@ func (h *Handler) listEvents(c *gin.Context) {
 		runtime.ServerError(c, e)
 		return
 	}
-	rows, e := h.Service.Core.DB.Query(ctx, `SELECT e.id,e.connection_id,c.name,e.visit_id,e.event_name,e.event_time,e.is_test,e.status,e.attempts,e.last_error,e.events_received,e.fbtrace_id,e.created_at,e.updated_at,e.pixel_id,e.pixel_record_id FROM meta_events e JOIN meta_connections c ON c.id=e.connection_id`+where+" ORDER BY e.created_at DESC,e.id DESC LIMIT 50 OFFSET $5", append(args, (page-1)*50)...)
+	rows, e := h.Service.Core.DB.Query(ctx, `SELECT e.id,e.connection_id,c.name,e.visit_id,e.event_name,e.event_time,e.is_test,e.status,e.attempts,e.last_error,e.events_received,e.fbtrace_id,e.created_at,e.updated_at,e.pixel_id,e.pixel_record_id,e.audio_novel_id FROM meta_events e JOIN meta_connections c ON c.id=e.connection_id`+where+" ORDER BY e.created_at DESC,e.id DESC LIMIT 50 OFFSET $5", append(args, (page-1)*50)...)
 	if e != nil {
 		runtime.ServerError(c, e)
 		return
@@ -64,7 +64,7 @@ func (h *Handler) listEvents(c *gin.Context) {
 	items := []EventRecord{}
 	for rows.Next() {
 		var v EventRecord
-		e = rows.Scan(&v.ID, &v.ConnectionID, &v.ConnectionName, &v.VisitID, &v.EventName, &v.EventTime, &v.IsTest, &v.Status, &v.Attempts, &v.LastError, &v.EventsReceived, &v.Trace, &v.CreatedAt, &v.UpdatedAt, &v.PixelID, &v.PixelRecordID)
+		e = rows.Scan(&v.ID, &v.ConnectionID, &v.ConnectionName, &v.VisitID, &v.EventName, &v.EventTime, &v.IsTest, &v.Status, &v.Attempts, &v.LastError, &v.EventsReceived, &v.Trace, &v.CreatedAt, &v.UpdatedAt, &v.PixelID, &v.PixelRecordID, &v.AudioNovelID)
 		if e != nil {
 			runtime.ServerError(c, e)
 			return

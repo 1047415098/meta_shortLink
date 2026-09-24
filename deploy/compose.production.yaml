@@ -38,6 +38,9 @@ services:
       APP_SECRET: ${APP_SECRET:?Set the server application secret}
       META_ENCRYPTION_KEYS: ${META_ENCRYPTION_KEYS:-}
       META_ENCRYPTION_KEY_ID: ${META_ENCRYPTION_KEY_ID:-}
+      # 首次部署保持关闭，仅在 Test Events 验证通过后逐步打开。
+      TIKTOK_ENABLED: ${TIKTOK_ENABLED:-false}
+      TIKTOK_EVENTS_URL: ${TIKTOK_EVENTS_URL:-https://business-api.tiktok.com/open_api/v1.3/event/track/}
       # 翻译密钥仅传给后端容器，不能使用 VITE_ 前缀或打入静态资源。
       APIHZ_TRANSLATION_ID: ${APIHZ_TRANSLATION_ID:-}
       APIHZ_TRANSLATION_KEY: ${APIHZ_TRANSLATION_KEY:-}

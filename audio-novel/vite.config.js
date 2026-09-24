@@ -13,7 +13,7 @@ export default defineConfig({
       "/audio-novel-api": { target: "http://127.0.0.1:8080", changeOrigin: false },
       "/audio-novel-uploads": { target: "http://127.0.0.1:8080", changeOrigin: false },
       // 开发环境的统计动作仍由本地 Gin 服务处理。
-      "^/audio-novel/[a-zA-Z0-9_-]{3,40}/(contact|view|time-spent)$": {
+      "^/audio-novel/[a-zA-Z0-9_-]{3,40}/(contact|view|time-spent|start-listening|playback-time|complete)$": {
         target: "http://127.0.0.1:8080",
         changeOrigin: false
       }

@@ -47,3 +47,41 @@ func TestAudioNovelDirectoriesUseDedicatedEnvironmentVariables(t *testing.T) {
 		t.Fatalf("AudioNovelUploadDir = %q", c.AudioNovelUploadDir)
 	}
 }
+
+func TestTikTokConfigDefaultsDisabledAndUsesOfficialEndpoint(t *testing.T) {
+	t.Setenv("DATABASE_URL", "postgres://test")
+	t.Setenv("APP_SECRET", strings.Repeat("s", 32))
+	t.Setenv("ADMIN_PASSWORD", "test-password")
+	t.Setenv("TIKTOK_ENABLED", "")
+	t.Setenv("TIKTOK_EVENTS_URL", "")
+	c, err := LoadConfig()
+	if err != nil {
+		t.Fatalf("load config: %v", err)
+	}
+	if c.TikTokEnabled {
+		t.Fatal("TikTok must remain disabled until operators explicitly enable it")
+	}
+	if c.TikTokEventsURL != "https://business-api.tiktok.com/open_api/v1.3/event/track/" {
+		t.Fatalf("TikTokEventsURL = %q", c.TikTokEventsURL)
+	}
+}
+
+func TestTikTokConfigRejectsUnsafeEndpointAndInvalidBoolean(t *testing.T) {
+	for _, testCase := range []struct {
+		name, enabled, endpoint string
+	}{
+		{"invalid boolean", "yes", ""},
+		{"plain HTTP remote endpoint", "true", "http://example.com/events"},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Setenv("DATABASE_URL", "postgres://test")
+			t.Setenv("APP_SECRET", strings.Repeat("s", 32))
+			t.Setenv("ADMIN_PASSWORD", "test-password")
+			t.Setenv("TIKTOK_ENABLED", testCase.enabled)
+			t.Setenv("TIKTOK_EVENTS_URL", testCase.endpoint)
+			if _, err := LoadConfig(); err == nil {
+				t.Fatal("unsafe TikTok configuration was accepted")
+			}
+		})
+	}
+}

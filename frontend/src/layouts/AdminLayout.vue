@@ -157,6 +157,17 @@ const nav = [
     ],
   },
   {
+    name: "tiktok-management",
+    icon: TrendCharts,
+    label: "TikTok 管理",
+    // 按运营顺序排列：先配置 Pixel 与凭证，再核对事件记录。
+    children: [
+      { name: "tiktok-pixels", label: "TikTok Pixel" },
+      { name: "tiktok-connections", label: "TikTok 凭证" },
+      { name: "tiktok-events", label: "TikTok 事件记录" },
+    ],
+  },
+  {
     name: "system-management",
     icon: Setting,
     label: "系统",

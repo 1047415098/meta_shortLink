@@ -57,10 +57,22 @@
         ><el-table-column label="入口" width="90"
           ><template #default="{ row }"
             ><el-tag
-              :type="row.surface === 'audio_novel' ? 'warning' : row.surface === 'novel' ? 'success' : 'info'"
+              :type="
+                row.surface === 'audio_novel'
+                  ? 'warning'
+                  : row.surface === 'novel'
+                    ? 'success'
+                    : 'info'
+              "
               effect="plain"
             >
-              {{ row.surface === "audio_novel" ? "语音小说站" : row.surface === "novel" ? "免费小说站" : "短链接" }}
+              {{
+                row.surface === "audio_novel"
+                  ? "语音小说站"
+                  : row.surface === "novel"
+                    ? "免费小说站"
+                    : "短链接"
+              }}
             </el-tag></template
           ></el-table-column
         ><el-table-column label="设备" min-width="135"

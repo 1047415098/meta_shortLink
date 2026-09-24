@@ -41,6 +41,95 @@ export function createVisibleTimeTracker({ threshold = 0, onTick, onThreshold, d
   };
 }
 
+export function createCampaignVisibleTracker({
+  report,
+  documentRef = document,
+  windowRef = window,
+  now = () => performance.now(),
+  schedule = (fn) => setInterval(fn, 10_000),
+  cancel = clearInterval,
+} = {}) {
+  let visibleStartedAt = documentRef.visibilityState === "visible" ? now() : null;
+  let elapsedMilliseconds = 0;
+  let confirmedSeconds = 0;
+  let requestInFlight = false;
+  let pendingSeconds = 0;
+  let activeRequest = Promise.resolve(false);
+
+  function snapshot() {
+    const active = visibleStartedAt === null ? 0 : Math.max(0, now() - visibleStartedAt);
+    return Math.max(0, Math.floor((elapsedMilliseconds + active) / 1000));
+  }
+
+  function submit(seconds) {
+    requestInFlight = true;
+    activeRequest = Promise.resolve()
+      .then(() => report?.(seconds, { useBeacon: false }))
+      .then((result) => {
+        const accepted = Number(result?.visible_seconds);
+        if (Number.isFinite(accepted)) confirmedSeconds = Math.max(confirmedSeconds, accepted);
+        return result;
+      })
+      .catch(() => false)
+      .finally(() => {
+        requestInFlight = false;
+        const pending = pendingSeconds;
+        pendingSeconds = 0;
+        if (pending > confirmedSeconds) submit(pending);
+      });
+    return activeRequest;
+  }
+
+  function flush({ useBeacon = false } = {}) {
+    const seconds = snapshot();
+    if (seconds < 1 || seconds <= confirmedSeconds) return Promise.resolve(false);
+    if (useBeacon) {
+      // Lifecycle Beacon is sent immediately even when a normal report is pending.
+      return Promise.resolve(report?.(seconds, { useBeacon: true }))
+        .then((result) => {
+          if (result?.ok !== false) confirmedSeconds = Math.max(confirmedSeconds, seconds);
+          return result;
+        })
+        .catch(() => false);
+    }
+    if (requestInFlight) {
+      pendingSeconds = Math.max(pendingSeconds, seconds);
+      return activeRequest;
+    }
+    return submit(seconds);
+  }
+
+  function visibilityChanged() {
+    if (documentRef.visibilityState === "visible") {
+      if (visibleStartedAt === null) visibleStartedAt = now();
+      return;
+    }
+    if (visibleStartedAt !== null) {
+      elapsedMilliseconds += Math.max(0, now() - visibleStartedAt);
+      visibleStartedAt = null;
+    }
+    void flush({ useBeacon: true });
+  }
+
+  function pageHidden() { void flush({ useBeacon: true }); }
+  documentRef.addEventListener("visibilitychange", visibilityChanged);
+  windowRef.addEventListener("pagehide", pageHidden);
+  const timer = schedule(() => flush());
+
+  return {
+    snapshot,
+    flush,
+    async whenIdle() {
+      while (requestInFlight || pendingSeconds > 0) await activeRequest;
+    },
+    cleanup() {
+      cancel(timer);
+      documentRef.removeEventListener("visibilitychange", visibilityChanged);
+      windowRef.removeEventListener("pagehide", pageHidden);
+    },
+  };
+}
+
 export function trackMetaTimeSpent({ eventId, scope = window, documentRef = document } = {}) {
   const event = String(eventId || "");
   const state = documentRef.documentElement.dataset;

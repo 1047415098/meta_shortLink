@@ -33,6 +33,7 @@ test("audio novel payload whitelists complete podcast metadata", () => {
     enabled: true,
     audio_path: "/audio-novel-audio/0123456789abcdef0123456789abcdef.mp3",
     audio_duration: "32:05",
+    audio_duration_seconds: 1925,
     audio_size_bytes: 23100419,
   });
   assert.equal(payload.author, undefined);
@@ -43,6 +44,7 @@ test("audio novel payload whitelists complete podcast metadata", () => {
     "/audio-novel-audio/0123456789abcdef0123456789abcdef.mp3",
   );
   assert.equal(payload.audio_duration, "32:05");
+  assert.equal(payload.audio_duration_seconds, 1925);
   assert.equal(payload.audio_size_bytes, 23100419);
   assert.deepEqual(Object.keys(payload), [
     "title",
@@ -53,6 +55,7 @@ test("audio novel payload whitelists complete podcast metadata", () => {
     "cover_path",
     "audio_path",
     "audio_duration",
+    "audio_duration_seconds",
     "audio_size_bytes",
     "published_at",
     "enabled",
@@ -118,6 +121,7 @@ test("audio novel admin renders safe podcast controls and list status", async ()
   assert.doesNotMatch(form, /autoplay/);
   assert.match(form, /替换 MP3/);
   assert.match(form, /移除音频/);
+  assert.match(form, /audio_duration_seconds/);
   assert.match(list, /已上传/);
   assert.match(list, /无音频/);
   assert.doesNotMatch(list, /<audio/);

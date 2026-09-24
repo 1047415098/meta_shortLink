@@ -179,6 +179,62 @@ func TestMetaDeliveryRetriesStablePayloadAndClearsMatchingData(t *testing.T) {
 		t.Fatalf("unsafe event listing: %d %s", w.Code, w.Body.String())
 	}
 }
+
+func TestMetaEventListReturnsFrozenAudioNovelBinding(t *testing.T) {
+	a := setup(t)
+	admin := login(t, a)
+	connectionID := metaConnection(t, a, "880001", "880002", true)
+	var pixelID, audioNovelID int64
+	if err := a.DB.QueryRow(context.Background(), "SELECT id FROM meta_pixels WHERE connection_id=$1 ORDER BY id LIMIT 1", connectionID).Scan(&pixelID); err != nil {
+		t.Fatal(err)
+	}
+	if err := a.DB.QueryRow(context.Background(), `INSERT INTO audio_novels(
+		title,slug,category,excerpt,body_markdown,audio_path,audio_duration,audio_duration_seconds,audio_size_bytes,published_at,enabled)
+		VALUES('Meta event list audio','meta-event-list-audio','Drama','Excerpt','# Body','/audio-novel-audio/0123456789abcdef0123456789abcdef.mp3','00:10',10,100,'2026-09-24',true)
+		RETURNING id`).Scan(&audioNovelID); err != nil {
+		t.Fatal(err)
+	}
+	// The event list must retain the explicit audio owner without requiring a
+	// join back to visit details, which may already have expired.
+	if _, err := a.DB.Exec(context.Background(), `INSERT INTO meta_events(
+		id,connection_id,pixel_record_id,visit_id,event_name,event_time,pixel_id,audio_novel_id)
+		VALUES('audio-event-list',$1,$2,'expired-visit','StartListening',now(),'880002',$3),
+		('generic-event-list',$1,$2,'','PageView',now(),'880002',NULL)`, connectionID, pixelID, audioNovelID); err != nil {
+		t.Fatal(err)
+	}
+
+	response := call(a, "GET", "/api/v1/meta/events", "", admin)
+	if response.Code != 200 {
+		t.Fatalf("list Meta events: %d %s", response.Code, response.Body.String())
+	}
+	var body struct {
+		Items []struct {
+			ID           string `json:"id"`
+			AudioNovelID *int64 `json:"audio_novel_id"`
+		} `json:"items"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	bindings := map[string]*int64{}
+	for _, item := range body.Items {
+		bindings[item.ID] = item.AudioNovelID
+	}
+	if bindings["audio-event-list"] == nil || *bindings["audio-event-list"] != audioNovelID {
+		t.Fatalf("audio event binding missing from list: %s", response.Body.String())
+	}
+	if bindings["generic-event-list"] != nil {
+		t.Fatalf("generic Meta event unexpectedly received an audio binding: %s", response.Body.String())
+	}
+	// Audio events must be filterable in the same diagnostic endpoint as the
+	// existing standard events.
+	for _, eventName := range []string{"StartListening", "ViewContent"} {
+		filtered := call(a, "GET", "/api/v1/meta/events?event_name="+eventName, "", admin)
+		if filtered.Code != 200 {
+			t.Fatalf("filter %s Meta events: %d %s", eventName, filtered.Code, filtered.Body.String())
+		}
+	}
+}
 func TestMetaEventExpiredLeaseCanRecover(t *testing.T) {
 	a := setup(t)
 	id := metaConnection(t, a, "12345", "98765", true)

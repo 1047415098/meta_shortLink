@@ -1,3 +1,14 @@
+const sentAudioEventIDs = new WeakMap();
+
+function documentEvents(documentRef) {
+  let events = sentAudioEventIDs.get(documentRef);
+  if (!events) {
+    events = new Set();
+    sentAudioEventIDs.set(documentRef, events);
+  }
+  return events;
+}
+
 export function installMetaPixel({ pixelId, eventId, scope = window, documentRef = document } = {}) {
   const pixel = String(pixelId || "").trim();
   if (!/^\d{5,30}$/.test(pixel)) return false;
@@ -18,11 +29,29 @@ export function installMetaPixel({ pixelId, eventId, scope = window, documentRef
     scope.fbq("init", pixel);
     state.audioNovelMetaPixel = pixel;
   }
-  if (eventId && state.audioNovelMetaPageView !== eventId) {
-    scope.fbq("track", "PageView", {}, { eventID: eventId });
-    state.audioNovelMetaPageView = eventId;
-  }
+  if (eventId) trackMetaAudioEvent({ name: "PageView", eventId, scope, documentRef });
   return true;
+}
+
+export function trackMetaAudioEvent({ name, eventId, content, scope = window, documentRef = document } = {}) {
+  const event = String(name || "").trim();
+  const id = String(eventId || "").trim();
+  const sent = documentEvents(documentRef);
+  if (!/^(PageView|StartListening|ViewContent)$/.test(event) || !/^[^\s\r\n]{1,160}$/.test(id) || typeof scope.fbq !== "function" || sent.has(id)) return false;
+  try {
+    // Match the server payload exactly so browser/server event deduplication
+    // describes the same audio content type on both delivery channels.
+    const parameters = { content_type: "audio_novel" };
+    if (content?.id) {
+      parameters.content_ids = [`audio_novel:${content.id}`];
+      parameters.content_name = content.title || "";
+    }
+    scope.fbq(event === "StartListening" ? "trackCustom" : "track", event, parameters, { eventID: id });
+    sent.add(id);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 export function trackMetaConsult(eventId, scope = window, documentRef = document) {
