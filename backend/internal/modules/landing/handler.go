@@ -14,19 +14,21 @@ import (
 
 	"whatsapp-analytics/internal/modules/links"
 	"whatsapp-analytics/internal/modules/meta"
+	"whatsapp-analytics/internal/modules/tiktok"
 	"whatsapp-analytics/internal/platform/runtime"
 )
 
 type Handler struct {
 	*runtime.Core
-	Meta *meta.Service
+	Meta   *meta.Service
+	TikTok *tiktok.Service
 }
 
 // RecordDirect marks the server-issued handoff before the minimal script is
 // returned. It shares the same frozen Pixel rules and Meta matching data as a
 // landing-page action without exposing a browser action endpoint.
 func (a *Handler) RecordDirect(ctx context.Context, eventID string, linkID int64, input meta.ContactContext) error {
-	return (Repository{DB: a.DB, Meta: a.Meta}).MarkDirect(ctx, eventID, linkID, input)
+	return (Repository{DB: a.DB, Meta: a.Meta, TikTok: a.TikTok}).MarkDirect(ctx, eventID, linkID, input)
 }
 
 // Contact accepts a manual or timer-triggered form submission; these are stored separately. Signed visit tickets bind attribution
@@ -76,7 +78,9 @@ func (a *Handler) timeSpent(c *gin.Context, surface, signaturePrefix string) {
 	}
 	fbc, _ := c.Cookie("_fbc")
 	fbp, _ := c.Cookie("_fbp")
-	err = (Repository{DB: a.DB, Meta: a.Meta}).MarkTimeSpent(ctx, parts[0], link.ID, surface, meta.ContactContext{IP: c.ClientIP(), UserAgent: c.GetHeader("User-Agent"), FBC: fbc, FBP: fbp})
+	ttp, _ := c.Cookie("_ttp")
+	a.refreshTikTokTTP(ctx, parts[0], link.ID, ttp)
+	event, err := (Repository{DB: a.DB, Meta: a.Meta, TikTok: a.TikTok}).MarkTimeSpent(ctx, parts[0], link.ID, surface, meta.ContactContext{IP: c.ClientIP(), UserAgent: c.GetHeader("User-Agent"), FBC: fbc, FBP: fbp})
 	if errors.Is(err, ErrTimeSpentTooEarly) {
 		c.Status(409)
 		return
@@ -88,6 +92,10 @@ func (a *Handler) timeSpent(c *gin.Context, surface, signaturePrefix string) {
 	if err != nil {
 		a.WriteFailures.Add(1)
 		landingError(c, err)
+		return
+	}
+	if event.EventID != "" {
+		c.JSON(200, gin.H{"tiktok_event": event})
 		return
 	}
 	c.Status(204)
@@ -134,10 +142,13 @@ func (a *Handler) contact(c *gin.Context, view bool) {
 		}
 	}
 	var target string
+	var event tiktok.BrowserEvent
 	fbc, _ := c.Cookie("_fbc")
 	fbp, _ := c.Cookie("_fbp")
+	ttp, _ := c.Cookie("_ttp")
+	a.refreshTikTokTTP(ctx, parts[0], l.ID, ttp)
 	if view {
-		err = (Repository{DB: a.DB, Meta: a.Meta}).MarkView(ctx, parts[0], l.ID, "short_link", meta.ContactContext{IP: c.ClientIP(), UserAgent: c.GetHeader("User-Agent"), FBC: fbc, FBP: fbp})
+		event, err = (Repository{DB: a.DB, Meta: a.Meta, TikTok: a.TikTok}).MarkView(ctx, parts[0], l.ID, "short_link", meta.ContactContext{IP: c.ClientIP(), UserAgent: c.GetHeader("User-Agent"), FBC: fbc, FBP: fbp})
 		if err != nil {
 			if err == pgx.ErrNoRows {
 				c.Status(400)
@@ -146,10 +157,14 @@ func (a *Handler) contact(c *gin.Context, view bool) {
 			}
 			return
 		}
+		if event.EventID != "" {
+			c.JSON(200, gin.H{"tiktok_event": event})
+			return
+		}
 		c.Status(204)
 		return
 	}
-	target, err = (Repository{DB: a.DB, Meta: a.Meta}).MarkContact(ctx, parts[0], l.ID, "short_link", trigger == "auto", meta.ContactContext{IP: c.ClientIP(), UserAgent: c.GetHeader("User-Agent"), FBC: fbc, FBP: fbp})
+	target, event, err = (Repository{DB: a.DB, Meta: a.Meta, TikTok: a.TikTok}).MarkContact(ctx, parts[0], l.ID, "short_link", trigger == "auto", meta.ContactContext{IP: c.ClientIP(), UserAgent: c.GetHeader("User-Agent"), FBC: fbc, FBP: fbp})
 	if err == pgx.ErrNoRows {
 		c.String(400, "This page has expired. Refresh the original page and try again.")
 		return
@@ -161,11 +176,32 @@ func (a *Handler) contact(c *gin.Context, view bool) {
 	}
 	// Fetch clients navigate only after receiving confirmation that the signed visit was updated.
 	if strings.Contains(c.GetHeader("Accept"), "application/json") {
-		c.JSON(200, gin.H{"target_url": target})
+		payload := gin.H{"target_url": target}
+		if event.EventID != "" {
+			payload["tiktok_event"] = event
+		}
+		c.JSON(200, payload)
 		return
 	}
 	// Native forms remain a no-JavaScript fallback and preserve the historical redirect contract.
 	c.Redirect(303, target)
+}
+
+// refreshTikTokTTP captures the first-party TikTok cookie that may be created
+// only after the initial HTML response loads the Pixel SDK. It never changes a
+// non-TikTok visit and measurement failure never blocks the visitor action.
+func (a *Handler) refreshTikTokTTP(ctx context.Context, visitID string, linkID int64, value string) {
+	value = strings.TrimSpace(value)
+	unresolved := strings.Contains(value, "{{") || strings.Contains(value, "}}") ||
+		(len(value) > 4 && strings.HasPrefix(value, "__") && strings.HasSuffix(value, "__"))
+	if value == "" || len(value) > 512 || strings.ContainsAny(value, "\r\n") || unresolved {
+		return
+	}
+	var err error
+	if _, err = a.DB.Exec(ctx, `UPDATE click_events SET tiktok_ttp=$3
+		WHERE id=$1 AND link_id=$2 AND ad_platform='tiktok' AND tiktok_ttp=''`, visitID, linkID, value); err != nil {
+		slog.Error("TIKTOK_TTP_REFRESH_FAILED", "visit_id", visitID, "error", err)
+	}
 }
 
 func landingError(c *gin.Context, err error) {

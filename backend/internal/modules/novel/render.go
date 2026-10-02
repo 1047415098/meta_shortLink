@@ -37,6 +37,7 @@ type Bootstrap struct {
 type PublicLink struct {
 	Code               string `json:"code"`
 	EntryStorySlug     string `json:"entry_story_slug,omitempty"`
+	EntryChapterNumber *int   `json:"entry_chapter_number,omitempty"`
 	TimeSpentThreshold int    `json:"time_spent_threshold"`
 }
 type PageError struct {
@@ -52,9 +53,20 @@ func (h *Handler) Render(c *gin.Context, link links.Link, eventID string, record
 		if item, err := (Repository{DB: h.DB}).ByID(c.Request.Context(), *link.NovelID); err == nil {
 			publicLink.EntryStorySlug = item.Slug
 		}
-		if locales, err := (Repository{DB: h.DB}).PublishedLocales(c.Request.Context(), *link.NovelID); err == nil {
+		repository := Repository{DB: h.DB}
+		locales, err := repository.PublishedLocales(c.Request.Context(), *link.NovelID)
+		if link.EntryChapterID != nil {
+			locales, err = repository.PublishedLocalesForEntry(c.Request.Context(), *link.NovelID, *link.EntryChapterID)
+		}
+		if err == nil {
 			available = locales
 		}
+	}
+	if recorded {
+		// Route from the immutable visit snapshot, not mutable chapter metadata.
+		_ = h.DB.QueryRow(c.Request.Context(), "SELECT entry_chapter_number FROM click_events WHERE id=$1", eventID).Scan(&publicLink.EntryChapterNumber)
+	} else if link.EntryChapterID != nil {
+		_ = h.DB.QueryRow(c.Request.Context(), "SELECT chapter_number FROM novel_chapters WHERE id=$1", link.EntryChapterID).Scan(&publicLink.EntryChapterNumber)
 	}
 	remembered, _ := c.Cookie(LanguageCookieName)
 	locale := ResolveLocale(c.Query("lang"), remembered, country, available)

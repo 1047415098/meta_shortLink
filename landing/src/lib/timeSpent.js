@@ -15,19 +15,26 @@ export function createVisibleTimeTracker({
   schedule = (fn) => setInterval(fn, 250),
   cancel = clearInterval,
 } = {}) {
-  let visibleStartedAt = documentRef.visibilityState === "visible" ? now() : null;
+  let visibleStartedAt =
+    documentRef.visibilityState === "visible" ? now() : null;
   let elapsed = 0;
   let lastSecond = -1;
   let thresholdSent = false;
   const emit = () => {
-    const current = elapsed + (visibleStartedAt === null ? 0 : now() - visibleStartedAt);
+    const current =
+      elapsed + (visibleStartedAt === null ? 0 : now() - visibleStartedAt);
     const seconds = Math.max(0, Math.floor(current / 1000));
     if (seconds !== lastSecond) {
       lastSecond = seconds;
       onTick?.(seconds);
     }
     const target = Number(threshold);
-    if (!thresholdSent && Number.isInteger(target) && target > 0 && seconds >= target) {
+    if (
+      !thresholdSent &&
+      Number.isInteger(target) &&
+      target > 0 &&
+      seconds >= target
+    ) {
       thresholdSent = true;
       onThreshold?.();
     }
@@ -51,9 +58,18 @@ export function createVisibleTimeTracker({
 }
 
 // Browser and server use the same custom-event ID so Meta can deduplicate them.
-export function trackMetaTimeSpent({ eventId, scope = window, state = document.documentElement.dataset } = {}) {
+export function trackMetaTimeSpent({
+  eventId,
+  scope = window,
+  state = document.documentElement.dataset,
+} = {}) {
   const event = String(eventId || "");
-  if (!event || typeof scope.fbq !== "function" || state.metaTimeSpent === event) return false;
+  if (
+    !event ||
+    typeof scope.fbq !== "function" ||
+    state.metaTimeSpent === event
+  )
+    return false;
   state.metaTimeSpent = event;
   try {
     scope.fbq("trackCustom", "TimeSpent", {}, { eventID: event });
@@ -64,16 +80,30 @@ export function trackMetaTimeSpent({ eventId, scope = window, state = document.d
 }
 
 // The signed request carries no client-provided duration; Gin verifies elapsed wall time itself.
-export async function reportTimeSpent({ code, ticket, request = fetch, state = document.documentElement.dataset } = {}) {
+export async function reportTimeSpent({
+  code,
+  ticket,
+  request = fetch,
+  state = document.documentElement.dataset,
+  onTikTokEvent,
+} = {}) {
   if (!ticket || state.timeSpentSent === "true") return false;
   state.timeSpentSent = "true";
   try {
-    await request(`/${encodeURIComponent(code)}/time-spent`, {
+    const response = await request(`/${encodeURIComponent(code)}/time-spent`, {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
       body: new URLSearchParams({ ticket }).toString(),
       keepalive: true,
     });
+    if (
+      response?.ok &&
+      response.status !== 204 &&
+      typeof response.json === "function"
+    ) {
+      const payload = await response.json();
+      if (payload?.tiktok_event) onTikTokEvent?.(payload.tiktok_event);
+    }
     return true;
   } catch {
     return false;

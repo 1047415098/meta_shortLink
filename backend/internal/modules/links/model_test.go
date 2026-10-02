@@ -33,3 +33,11 @@ func TestValidLinkTimeSpentThreshold(t *testing.T) {
 		}
 	}
 }
+
+func TestValidLinkRejectsNovelEntryChapterBinding(t *testing.T) {
+	chapterID := int64(7)
+	link := Link{Code: "ordinary", Name: "Ordinary", TargetURL: "https://wa.me/13365661092", AttributionMode: "dynamic", EntryChapterID: &chapterID}
+	if ValidLink(link) {
+		t.Fatal("ordinary short link accepted a novel entry chapter")
+	}
+}

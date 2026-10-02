@@ -57,6 +57,7 @@ type LinkStatsResponse struct {
 		Mode            string `json:"mode"`
 		AttributionMode string `json:"attribution_mode"`
 		AdID            string `json:"ad_id"`
+		AdPlatform      string `json:"ad_platform"`
 	} `json:"link"`
 	Items    []LinkStatsRow   `json:"items"`
 	Summary  LinkStatsMetrics `json:"summary"`
@@ -84,16 +85,39 @@ const linkStatsRealAdClickPredicate = `(jsonb_typeof(e.parameters->'fbclid')='st
 
 // Historical values are trimmed in the query so Meta URL fields that previously
 // contained spaces still join to the same ad without a destructive data migration.
-const linkStatsSource = `WITH filtered AS (
+const linkStatsMetaSource = `WITH filtered AS (
  SELECT e.*,COALESCE(e.meta_connection_id,0) AS connection_id,
  -- The public row remains an ad_id row because source_value is the resolved advertising ID.
  'ad_id'::text AS source_kind,` + linkStatsResolvedAdID + ` AS source_value
  FROM click_events e WHERE e.link_id=$3 AND e.occurred_at >= $1 AND e.occurred_at < $2
  AND e.classification='normal' AND e.event_type IN ('landing','redirect')
+ AND e.ad_platform='meta'
  AND ` + linkStatsRealAdClickPredicate + `
  AND ($4::text='' OR ` + linkStatsResolvedAdID + `=btrim($4::text))
  AND ($5::text='' OR e.surface=$5)
 ) `
+
+// TikTok reports use the frozen ad_id_v2 hierarchy and require TikTok's click
+// identifier. This mirrors the Meta real-click rule without mixing identifiers.
+const linkStatsTikTokSource = `WITH filtered AS (
+ SELECT e.*,COALESCE(e.tiktok_pixel_id,0) AS connection_id,
+ 'ad_id_v2'::text AS source_kind,btrim(e.tiktok_ad_id_v2) AS source_value
+ FROM click_events e WHERE e.link_id=$3 AND e.occurred_at >= $1 AND e.occurred_at < $2
+ AND e.classification='normal' AND e.event_type IN ('landing','redirect')
+ AND e.ad_platform='tiktok' AND btrim(e.tiktok_ttclid)<>''
+ AND e.tiktok_ttclid NOT LIKE '%{{%' AND e.tiktok_ttclid NOT LIKE '%}}%'
+ AND btrim(e.tiktok_ad_id_v2)<>''
+ AND e.tiktok_ad_id_v2 NOT LIKE '%{{%' AND e.tiktok_ad_id_v2 NOT LIKE '%}}%'
+ AND ($4::text='' OR btrim(e.tiktok_ad_id_v2)=btrim($4::text))
+ AND ($5::text='' OR e.surface=$5)
+) `
+
+func linkStatsSource(platform string) string {
+	if platform == "tiktok" {
+		return linkStatsTikTokSource
+	}
+	return linkStatsMetaSource
+}
 
 const linkStatsMetricsSQL = `count(*) AS visits,count(DISTINCT NULLIF(visitor_id,'')) AS unique_visitors,
  count(*) FILTER(WHERE whatsapp_clicked_at IS NOT NULL) AS manual_consultations,
@@ -191,19 +215,20 @@ func (r Repository) LinkStats(ctx context.Context, f Filter, page int, sort, ord
 	}
 	defer tx.Rollback(ctx)
 	// Novel links expose their dedicated reading report instead of the WhatsApp funnel report.
-	err = tx.QueryRow(ctx, `SELECT id,name,code,mode,attribution_mode,ad_id FROM short_links WHERE id=$1 AND product_type IN ('legacy','short_link')`, f.LinkID).Scan(&out.Link.ID, &out.Link.Name, &out.Link.Code, &out.Link.Mode, &out.Link.AttributionMode, &out.Link.AdID)
+	err = tx.QueryRow(ctx, `SELECT id,name,code,mode,attribution_mode,ad_id,ad_platform FROM short_links WHERE id=$1 AND product_type IN ('legacy','short_link')`, f.LinkID).Scan(&out.Link.ID, &out.Link.Name, &out.Link.Code, &out.Link.Mode, &out.Link.AttributionMode, &out.Link.AdID, &out.Link.AdPlatform)
 	if err != nil {
 		return out, err
 	}
 	args := f.args()
+	source := linkStatsSource(out.Link.AdPlatform)
 	// Compute the overall UV from raw visits, never by summing each ad's distinct visitors.
-	if err = tx.QueryRow(ctx, linkStatsSource+`SELECT `+linkStatsMetricsSQL+` FROM filtered`, args...).Scan(linkStatsTargets(&out.Summary)...); err != nil {
+	if err = tx.QueryRow(ctx, source+`SELECT `+linkStatsMetricsSQL+` FROM filtered`, args...).Scan(linkStatsTargets(&out.Summary)...); err != nil {
 		return out, err
 	}
-	if err = tx.QueryRow(ctx, linkStatsSource+`SELECT count(*) FROM (SELECT 1 FROM filtered GROUP BY connection_id,meta_account_id,source_kind,source_value) groups`, args...).Scan(&out.Total); err != nil {
+	if err = tx.QueryRow(ctx, source+`SELECT count(*) FROM (SELECT 1 FROM filtered GROUP BY connection_id,meta_account_id,source_kind,source_value) groups`, args...).Scan(&out.Total); err != nil {
 		return out, err
 	}
-	query := linkStatsSource + `, groups AS (
+	query := source + `, groups AS (
  SELECT connection_id,meta_account_id,source_kind,source_value,
  -- Every row is already grouped by its resolved ID, so its captured ad name is safe as a fallback.
  min(NULLIF(btrim(parameters->>'ad_name'),'')) AS captured_name,
@@ -219,8 +244,8 @@ func (r Repository) LinkStats(ctx context.Context, f Filter, page int, sort, ord
  ORDER BY visits DESC,(country='' AND region='' AND city=''),country,region,city)::text AS locations
  FROM location_counts GROUP BY connection_id,meta_account_id,source_kind,source_value
  ) SELECT g.connection_id,g.meta_account_id,g.source_kind,g.source_value,
- CASE WHEN g.source_kind='ad_id' THEN COALESCE(NULLIF(e.ad_name,''),g.captured_name,'') ELSE '' END,
- CASE WHEN g.source_kind<>'ad_id' THEN '' WHEN NULLIF(e.ad_name,'') IS NOT NULL THEN 'meta' WHEN g.captured_name IS NOT NULL THEN 'parameter' ELSE '' END,
+ CASE WHEN g.source_kind IN ('ad_id','ad_id_v2') THEN COALESCE(NULLIF(e.ad_name,''),g.captured_name,'') ELSE '' END,
+ CASE WHEN g.source_kind NOT IN ('ad_id','ad_id_v2') THEN '' WHEN NULLIF(e.ad_name,'') IS NOT NULL THEN 'meta' WHEN g.captured_name IS NOT NULL THEN 'parameter' ELSE '' END,
  -- Keep real-click row metrics in the same order as linkStatsTargets.
  g.visits,g.unique_visitors,g.manual_consultations,g.auto_redirects,g.no_cookie,
  g.short_link_views,g.audio_novel_views,g.novel_views,g.short_link_whatsapp_clicks,g.audio_novel_whatsapp_clicks,

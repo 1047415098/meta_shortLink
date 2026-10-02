@@ -1,9 +1,10 @@
 import { request } from "./http";
+import { shortLinkPayload } from "../utils/index.js";
 export const listLinks = () => request("/links");
 export const saveLink = (id, data) =>
   request("/links" + (id ? "/" + id : ""), {
     method: id ? "PATCH" : "POST",
-    body: JSON.stringify(data),
+    body: JSON.stringify(shortLinkPayload(data)),
   });
 export const updateLink = (id, data) =>
   request("/links/" + id, { method: "PATCH", body: JSON.stringify(data) });

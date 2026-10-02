@@ -434,6 +434,34 @@ func (r Repository) PublishedLocales(ctx context.Context, novelID int64) ([]stri
 	return result, rows.Err()
 }
 
+// PublishedLocalesForEntry limits direct-entry links to complete, current
+// translations of the bound chapter; otherwise the entire page falls back to English.
+func (r Repository) PublishedLocalesForEntry(ctx context.Context, novelID, chapterID int64) ([]string, error) {
+	rows, err := r.DB.Query(ctx, `SELECT v.locale FROM novel_translation_versions v
+		JOIN novels n ON n.id=v.novel_id AND n.source_revision=v.source_revision
+		JOIN novel_chapter_translations ct ON ct.version_id=v.id AND ct.chapter_id=$2
+		WHERE v.novel_id=$1 AND v.status='published' AND v.enabled`, novelID, chapterID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	available := map[string]bool{"en": true}
+	for rows.Next() {
+		var locale string
+		if err = rows.Scan(&locale); err != nil {
+			return nil, err
+		}
+		available[locale] = true
+	}
+	result := []string{}
+	for _, locale := range SupportedLocaleCodes() {
+		if available[locale] {
+			result = append(result, locale)
+		}
+	}
+	return result, rows.Err()
+}
+
 func audit(ctx context.Context, tx pgx.Tx, actor, action string, id int64, label string) error {
 	detail, _ := json.Marshal(map[string]any{"id": id, "label": label})
 	_, err := tx.Exec(ctx, "INSERT INTO audit_logs(actor,action,detail) VALUES($1,$2,$3)", actor, action, detail)

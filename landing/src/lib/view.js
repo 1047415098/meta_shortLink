@@ -76,6 +76,125 @@ export function trackMetaConsult({
   }
 }
 
+const TIKTOK_PIXEL_CODE = /^[A-Za-z0-9_-]{5,64}$/;
+const TIKTOK_EVENT_ID = /^[^\s\r\n]{1,160}$/;
+
+// Install TikTok's queue-compatible loader without sending a PageView. The
+// browser event is emitted only after the signed server endpoint authorizes it.
+export function installTikTokPixel({
+  pixelCode,
+  scope = window,
+  document = window.document,
+} = {}) {
+  const pixel = String(pixelCode || "").trim();
+  const state = document.documentElement?.dataset || {};
+  if (!TIKTOK_PIXEL_CODE.test(pixel)) return false;
+  if (state.shortTikTokPixel === pixel)
+    return state.shortTikTokLoadFailed !== "true";
+  if (state.shortTikTokPixel && state.shortTikTokPixel !== pixel) return false;
+  try {
+    if (!scope.ttq) {
+      const queue = [];
+      scope.TiktokAnalyticsObject = "ttq";
+      queue.methods = [
+        "page",
+        "track",
+        "identify",
+        "instances",
+        "debug",
+        "on",
+        "off",
+        "once",
+        "ready",
+        "alias",
+        "group",
+        "enableCookie",
+        "disableCookie",
+      ];
+      queue.setAndDefer = (target, method) => {
+        target[method] = (...args) => target.push([method, ...args]);
+      };
+      for (const method of queue.methods) queue.setAndDefer(queue, method);
+      queue.instance = (code) => {
+        const instance = queue._i?.[code] || [];
+        for (const method of queue.methods) queue.setAndDefer(instance, method);
+        return instance;
+      };
+      queue.load = (code, options = {}) => {
+        const base = "https://analytics.tiktok.com/i18n/pixel/events.js";
+        // TikTok's SDK reads these official queue fields before replaying any
+        // events produced while the remote script is still downloading.
+        queue._i ||= {};
+        queue._i[code] = [];
+        queue._i[code]._u = base;
+        queue._t ||= {};
+        queue._t[code] = Date.now();
+        queue._o ||= {};
+        queue._o[code] = options;
+        const script = document.createElement("script");
+        script.id = "short-link-tiktok-pixel";
+        script.async = true;
+        script.src = `${base}?sdkid=${encodeURIComponent(code)}&lib=ttq`;
+        script.onerror = () => {
+          state.shortTikTokLoadFailed = "true";
+        };
+        document.head.appendChild(script);
+      };
+      scope.ttq = queue;
+    }
+    scope.ttq.load(pixel);
+    state.shortTikTokPixel = pixel;
+    return true;
+  } catch {
+    state.shortTikTokLoadFailed = "true";
+    return false;
+  }
+}
+
+// PageView, Contact and ViewContent reuse the event ID created by the server,
+// allowing TikTok to deduplicate Pixel and Events API deliveries.
+export function trackTikTokEvent({
+  name,
+  eventId,
+  content,
+  trigger,
+  scope = window,
+  document = window.document,
+} = {}) {
+  const event = String(name || "").trim();
+  const id = String(eventId || "").trim();
+  const state = document.documentElement?.dataset || {};
+  const deliveryKey = `shortTikTok${event}`;
+  if (
+    !/^(PageView|Contact|ViewContent)$/.test(event) ||
+    !TIKTOK_EVENT_ID.test(id) ||
+    state.shortTikTokLoadFailed === "true" ||
+    state[deliveryKey] === id
+  )
+    return false;
+  try {
+    const properties = {
+      content_type: "product",
+      content_name: content?.name || "",
+      contents: content?.id
+        ? [{ content_id: `short_link:${content.id}`, quantity: 1 }]
+        : [],
+    };
+    if (trigger) properties.trigger = trigger;
+    if (event === "PageView") {
+      if (typeof scope.ttq?.page !== "function") return false;
+      scope.ttq.page(properties, { event_id: id });
+    } else {
+      if (typeof scope.ttq?.track !== "function") return false;
+      scope.ttq.track(event, properties, { event_id: id });
+    }
+    state[deliveryKey] = id;
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export async function reportLandingView({
   code,
   ticket,
@@ -83,10 +202,10 @@ export async function reportLandingView({
   state = document.documentElement.dataset,
   attributionHeaders = {},
 }) {
-  if (!ticket || state.metaViewSent === "true") return;
+  if (!ticket || state.metaViewSent === "true") return null;
   state.metaViewSent = "true";
   try {
-    await request(`/${encodeURIComponent(code)}/view`, {
+    const response = await request(`/${encodeURIComponent(code)}/view`, {
       method: "POST",
       // Mirror the trusted entry parameters for request-log correlation without changing attribution.
       headers: {
@@ -96,7 +215,16 @@ export async function reportLandingView({
       body: new URLSearchParams({ ticket }).toString(),
       keepalive: true,
     });
+    if (
+      !response?.ok ||
+      response.status === 204 ||
+      typeof response.json !== "function"
+    )
+      return null;
+    const payload = await response.json();
+    return payload?.tiktok_event || null;
   } catch {
     // Measurement must never interrupt the visitor flow.
+    return null;
   }
 }

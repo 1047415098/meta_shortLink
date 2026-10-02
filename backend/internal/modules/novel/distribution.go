@@ -13,9 +13,10 @@ import (
 )
 
 var (
-	ErrDistributionBindingLocked = errors.New("novel binding is locked after the first visit")
-	ErrDistributionHasVisits     = errors.New("visited distribution links cannot be deleted")
-	ErrDistributionPixelInvalid  = errors.New("advertising pixel is invalid or disabled")
+	ErrDistributionBindingLocked  = errors.New("novel binding is locked after the first visit")
+	ErrDistributionHasVisits      = errors.New("visited distribution links cannot be deleted")
+	ErrDistributionPixelInvalid   = errors.New("advertising pixel is invalid or disabled")
+	ErrDistributionChapterInvalid = errors.New("entry chapter is invalid or disabled")
 )
 
 // DistributionInput is the editable configuration of one independently attributed novel link.
@@ -23,6 +24,7 @@ type DistributionInput struct {
 	Name               string `json:"name"`
 	Code               string `json:"code,omitempty"`
 	NovelID            int64  `json:"novel_id"`
+	EntryChapterID     *int64 `json:"entry_chapter_id"`
 	Enabled            bool   `json:"enabled"`
 	Channel            string `json:"channel"`
 	CampaignID         string `json:"campaign_id"`
@@ -45,6 +47,9 @@ type DistributionLink struct {
 	NovelID            int64      `json:"novel_id"`
 	NovelTitle         string     `json:"novel_title"`
 	NovelSlug          string     `json:"novel_slug"`
+	EntryChapterID     *int64     `json:"entry_chapter_id,omitempty"`
+	EntryChapterNumber *int       `json:"entry_chapter_number,omitempty"`
+	EntryChapterTitle  string     `json:"entry_chapter_title,omitempty"`
 	Channel            string     `json:"channel"`
 	CampaignID         string     `json:"campaign_id"`
 	AdsetID            string     `json:"adset_id"`
@@ -89,6 +94,9 @@ func ValidateDistributionInput(input DistributionInput, requireCode bool) error 
 	if input.NovelID < 1 || len(input.Channel) > 60 || len(input.CampaignID) > 120 || len(input.AdsetID) > 120 || len(input.AdID) > 120 {
 		return errors.New("小说或渠道参数无效")
 	}
+	if input.EntryChapterID != nil && *input.EntryChapterID < 1 {
+		return errors.New("入口章节无效")
+	}
 	if input.AttributionMode != "bound" && input.AttributionMode != "dynamic" {
 		return errors.New("归因方式无效")
 	}
@@ -118,6 +126,7 @@ func ValidateDistributionInput(input DistributionInput, requireCode bool) error 
 }
 
 const distributionColumns = `l.id,l.code,l.name,l.enabled,l.product_type,l.novel_id,n.title,n.slug,
+	l.entry_chapter_id,ec.chapter_number,COALESCE(ec.title,''),
 	l.channel,l.campaign_id,l.adset_id,l.ad_id,l.meta_connection_id,l.meta_pixel_id,l.tiktok_pixel_id,
 	COALESCE(tp.pixel_code,''),COALESCE(tp.name,''),l.ad_platform,l.attribution_mode,
 	l.time_spent_threshold,(SELECT count(*) FROM click_events e WHERE e.link_id=l.id),l.created_at,l.first_visited_at`
@@ -125,6 +134,7 @@ const distributionColumns = `l.id,l.code,l.name,l.enabled,l.product_type,l.novel
 func scanDistribution(row pgx.Row) (DistributionLink, error) {
 	var item DistributionLink
 	err := row.Scan(&item.ID, &item.Code, &item.Name, &item.Enabled, &item.ProductType, &item.NovelID, &item.NovelTitle, &item.NovelSlug,
+		&item.EntryChapterID, &item.EntryChapterNumber, &item.EntryChapterTitle,
 		&item.Channel, &item.CampaignID, &item.AdsetID, &item.AdID, &item.MetaConnectionID, &item.MetaPixelID, &item.TikTokPixelID,
 		&item.TikTokPixelCode, &item.TikTokPixelName, &item.AdPlatform, &item.AttributionMode,
 		&item.TimeSpentThreshold, &item.VisitCount, &item.CreatedAt, &item.FirstVisitedAt)
@@ -132,7 +142,7 @@ func scanDistribution(row pgx.Row) (DistributionLink, error) {
 }
 
 func (r Repository) ListDistributionLinks(ctx context.Context, novelID int64) ([]DistributionLink, error) {
-	query := "SELECT " + distributionColumns + " FROM short_links l JOIN novels n ON n.id=l.novel_id LEFT JOIN tiktok_pixels tp ON tp.id=l.tiktok_pixel_id WHERE l.product_type='novel'"
+	query := "SELECT " + distributionColumns + " FROM short_links l JOIN novels n ON n.id=l.novel_id LEFT JOIN novel_chapters ec ON ec.id=l.entry_chapter_id LEFT JOIN tiktok_pixels tp ON tp.id=l.tiktok_pixel_id WHERE l.product_type='novel'"
 	args := []any{}
 	if novelID > 0 {
 		query += " AND l.novel_id=$1"
@@ -165,10 +175,13 @@ func (r Repository) CreateDistributionLink(ctx context.Context, input Distributi
 	if err = validateDistributionPixel(ctx, tx, input, false); err != nil {
 		return DistributionLink{}, err
 	}
+	if err = validateDistributionChapter(ctx, tx, input.NovelID, input.EntryChapterID, false); err != nil {
+		return DistributionLink{}, err
+	}
 	item, err := scanDistribution(tx.QueryRow(ctx, `INSERT INTO short_links
-		(code,name,target_url,enabled,campaign_id,adset_id,ad_id,channel,mode,meta_connection_id,attribution_mode,meta_pixel_id,tiktok_pixel_id,ad_platform,time_spent_threshold,product_type,novel_id)
-		SELECT $1,$2,'',$3,$4,$5,$6,$7,'',$8,$9,$10,$11,$12,$13,'novel',n.id FROM novels n WHERE n.id=$14 AND n.deleted_at IS NULL
-		RETURNING `+distributionColumnsForReturn(), input.Code, strings.TrimSpace(input.Name), input.Enabled, input.CampaignID, input.AdsetID, input.AdID, input.Channel, input.MetaConnectionID, input.AttributionMode, input.MetaPixelID, input.TikTokPixelID, input.AdPlatform, input.TimeSpentThreshold, input.NovelID))
+		(code,name,target_url,enabled,campaign_id,adset_id,ad_id,channel,mode,meta_connection_id,attribution_mode,meta_pixel_id,tiktok_pixel_id,ad_platform,time_spent_threshold,product_type,novel_id,entry_chapter_id)
+		SELECT $1,$2,'',$3,$4,$5,$6,$7,'',$8,$9,$10,$11,$12,$13,'novel',n.id,$15 FROM novels n WHERE n.id=$14 AND n.deleted_at IS NULL
+		RETURNING `+distributionColumnsForReturn(), input.Code, strings.TrimSpace(input.Name), input.Enabled, input.CampaignID, input.AdsetID, input.AdID, input.Channel, input.MetaConnectionID, input.AttributionMode, input.MetaPixelID, input.TikTokPixelID, input.AdPlatform, input.TimeSpentThreshold, input.NovelID, input.EntryChapterID))
 	if err != nil {
 		return DistributionLink{}, err
 	}
@@ -182,6 +195,8 @@ func distributionColumnsForReturn() string {
 	// INSERT/UPDATE RETURNING cannot use the source aliases from the list query.
 	return `id,code,name,enabled,product_type,novel_id,
 		(SELECT title FROM novels WHERE id=novel_id),(SELECT slug FROM novels WHERE id=novel_id),
+		entry_chapter_id,(SELECT chapter_number FROM novel_chapters WHERE id=entry_chapter_id),
+		COALESCE((SELECT title FROM novel_chapters WHERE id=entry_chapter_id),''),
 		channel,campaign_id,adset_id,ad_id,meta_connection_id,meta_pixel_id,tiktok_pixel_id,
 		COALESCE((SELECT pixel_code FROM tiktok_pixels WHERE id=tiktok_pixel_id),''),
 		COALESCE((SELECT name FROM tiktok_pixels WHERE id=tiktok_pixel_id),''),ad_platform,attribution_mode,time_spent_threshold,
@@ -196,14 +211,15 @@ func (r Repository) UpdateDistributionLink(ctx context.Context, id int64, input 
 	}
 	defer tx.Rollback(ctx)
 	var currentNovelID int64
+	var currentEntryChapterID *int64
 	var currentPlatform string
 	var currentMetaConnectionID, currentMetaPixelID, currentTikTokPixelID *int64
 	var firstVisitedAt *time.Time
-	if err = tx.QueryRow(ctx, `SELECT novel_id,ad_platform,meta_connection_id,meta_pixel_id,tiktok_pixel_id,first_visited_at
-		FROM short_links WHERE id=$1 AND product_type='novel' FOR UPDATE`, id).Scan(&currentNovelID, &currentPlatform, &currentMetaConnectionID, &currentMetaPixelID, &currentTikTokPixelID, &firstVisitedAt); err != nil {
+	if err = tx.QueryRow(ctx, `SELECT novel_id,entry_chapter_id,ad_platform,meta_connection_id,meta_pixel_id,tiktok_pixel_id,first_visited_at
+		FROM short_links WHERE id=$1 AND product_type='novel' FOR UPDATE`, id).Scan(&currentNovelID, &currentEntryChapterID, &currentPlatform, &currentMetaConnectionID, &currentMetaPixelID, &currentTikTokPixelID, &firstVisitedAt); err != nil {
 		return DistributionLink{}, err
 	}
-	if firstVisitedAt != nil && (currentNovelID != input.NovelID || currentPlatform != input.AdPlatform ||
+	if firstVisitedAt != nil && (currentNovelID != input.NovelID || !sameDistributionID(currentEntryChapterID, input.EntryChapterID) || currentPlatform != input.AdPlatform ||
 		!sameDistributionID(currentMetaConnectionID, input.MetaConnectionID) || !sameDistributionID(currentMetaPixelID, input.MetaPixelID) ||
 		!sameDistributionID(currentTikTokPixelID, input.TikTokPixelID)) {
 		return DistributionLink{}, ErrDistributionBindingLocked
@@ -213,10 +229,19 @@ func (r Repository) UpdateDistributionLink(ctx context.Context, id int64, input 
 	if err = validateDistributionPixel(ctx, tx, input, unchangedPixel); err != nil {
 		return DistributionLink{}, err
 	}
+	// Keeping the exact novel/chapter binding is a settings edit even if content
+	// was disabled after the link was created; only a real rebind needs a readable chapter.
+	allowUnavailableChapter := currentNovelID == input.NovelID && sameDistributionID(currentEntryChapterID, input.EntryChapterID)
+	keepLegacyIntroduction := currentEntryChapterID == nil && input.EntryChapterID == nil
+	if keepLegacyIntroduction {
+		// Migration-era links deliberately retain the introduction-page behavior.
+	} else if err = validateDistributionChapter(ctx, tx, input.NovelID, input.EntryChapterID, allowUnavailableChapter); err != nil {
+		return DistributionLink{}, err
+	}
 	item, err := scanDistribution(tx.QueryRow(ctx, `UPDATE short_links SET name=$2,enabled=$3,campaign_id=$4,adset_id=$5,ad_id=$6,
-		channel=$7,meta_connection_id=$8,attribution_mode=$9,meta_pixel_id=$10,tiktok_pixel_id=$11,ad_platform=$12,time_spent_threshold=$13,novel_id=$14
+		channel=$7,meta_connection_id=$8,attribution_mode=$9,meta_pixel_id=$10,tiktok_pixel_id=$11,ad_platform=$12,time_spent_threshold=$13,novel_id=$14,entry_chapter_id=$15
 		WHERE id=$1 AND product_type='novel' AND EXISTS(SELECT 1 FROM novels WHERE id=$14 AND deleted_at IS NULL)
-		RETURNING `+distributionColumnsForReturn(), id, strings.TrimSpace(input.Name), input.Enabled, input.CampaignID, input.AdsetID, input.AdID, input.Channel, input.MetaConnectionID, input.AttributionMode, input.MetaPixelID, input.TikTokPixelID, input.AdPlatform, input.TimeSpentThreshold, input.NovelID))
+		RETURNING `+distributionColumnsForReturn(), id, strings.TrimSpace(input.Name), input.Enabled, input.CampaignID, input.AdsetID, input.AdID, input.Channel, input.MetaConnectionID, input.AttributionMode, input.MetaPixelID, input.TikTokPixelID, input.AdPlatform, input.TimeSpentThreshold, input.NovelID, input.EntryChapterID))
 	if err != nil {
 		return DistributionLink{}, err
 	}
@@ -232,7 +257,7 @@ func (r Repository) DeleteDistributionLink(ctx context.Context, id int64, actor 
 		return err
 	}
 	defer tx.Rollback(ctx)
-	item, err := scanDistribution(tx.QueryRow(ctx, "SELECT "+distributionColumns+" FROM short_links l JOIN novels n ON n.id=l.novel_id LEFT JOIN tiktok_pixels tp ON tp.id=l.tiktok_pixel_id WHERE l.id=$1 AND l.product_type='novel' FOR UPDATE OF l", id))
+	item, err := scanDistribution(tx.QueryRow(ctx, "SELECT "+distributionColumns+" FROM short_links l JOIN novels n ON n.id=l.novel_id LEFT JOIN novel_chapters ec ON ec.id=l.entry_chapter_id LEFT JOIN tiktok_pixels tp ON tp.id=l.tiktok_pixel_id WHERE l.id=$1 AND l.product_type='novel' FOR UPDATE OF l", id))
 	if err != nil {
 		return err
 	}
@@ -281,6 +306,24 @@ func validateDistributionPixel(ctx context.Context, tx pgx.Tx, input Distributio
 	return nil
 }
 
+func validateDistributionChapter(ctx context.Context, tx pgx.Tx, novelID int64, chapterID *int64, allowUnavailable bool) error {
+	if chapterID == nil {
+		return ErrDistributionChapterInvalid
+	}
+	if allowUnavailable {
+		return nil
+	}
+	var valid bool
+	if err := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM novel_chapters
+		WHERE id=$1 AND novel_id=$2 AND enabled AND deleted_at IS NULL)`, chapterID, novelID).Scan(&valid); err != nil {
+		return err
+	}
+	if !valid {
+		return ErrDistributionChapterInvalid
+	}
+	return nil
+}
+
 // TikTokTemplate returns the copy-ready URL used in TikTok Ads dynamic macros.
 func TikTokTemplate(publicURL, code string) string {
 	return strings.TrimRight(publicURL, "/") + "/novel/" + url.PathEscape(code) +
@@ -289,7 +332,7 @@ func TikTokTemplate(publicURL, code string) string {
 }
 
 func auditDistribution(ctx context.Context, tx pgx.Tx, actor, action string, item DistributionLink) error {
-	detail, _ := json.Marshal(map[string]any{"id": item.ID, "code": item.Code, "novel_id": item.NovelID})
+	detail, _ := json.Marshal(map[string]any{"id": item.ID, "code": item.Code, "novel_id": item.NovelID, "entry_chapter_id": item.EntryChapterID})
 	_, err := tx.Exec(ctx, "INSERT INTO audit_logs(actor,action,detail) VALUES($1,$2,$3)", actor, action, detail)
 	return err
 }

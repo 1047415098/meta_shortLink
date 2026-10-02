@@ -30,6 +30,25 @@ func TestAdminRouteReload(t *testing.T) {
 	}
 }
 
+func TestNovelRiskControlAssetsAllowSameOriginEmbedding(t *testing.T) {
+	a := setup(t)
+	dir := filepath.Join(a.Config.NovelDir, "gooll")
+	if err := os.MkdirAll(dir, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "gooll.html"), []byte("risk control fixture"), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	response := call(a, "GET", "/gooll/gooll.html", "", nil)
+	if response.Code != 200 || response.Body.String() != "risk control fixture" {
+		t.Fatalf("risk asset response: %d %q", response.Code, response.Body.String())
+	}
+	if response.Header().Get("X-Frame-Options") != "SAMEORIGIN" {
+		t.Fatalf("risk asset frame policy = %q", response.Header().Get("X-Frame-Options"))
+	}
+}
+
 func TestVueUnavailableRoutesDoNotCountVisits(t *testing.T) {
 	a := setup(t)
 	for _, tc := range []struct {

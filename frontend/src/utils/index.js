@@ -51,15 +51,24 @@ export function validateLink(link) {
   )
     return "请填写落地页品牌、标题和产品简介";
   if (!link.name?.trim()) return "请输入链接名称";
-  // Every saved link needs one concrete CAPI destination and one explicit
-  // attribution rule so visits and consultations use the same business scope.
-  if (
-    !Number.isInteger(Number(link.meta_pixel_id)) ||
-    Number(link.meta_pixel_id) <= 0
-  )
-    return "请选择 Meta Pixel";
+  // Every saved link targets exactly one platform so one visit can never be
+  // delivered to both Meta and TikTok by accident.
+  const platform = link.ad_platform || "meta";
+  const hasMeta =
+    Number.isInteger(Number(link.meta_pixel_id)) &&
+    Number(link.meta_pixel_id) > 0;
+  const hasTikTok =
+    Number.isInteger(Number(link.tiktok_pixel_id)) &&
+    Number(link.tiktok_pixel_id) > 0;
+  if ((platform === "meta" && hasTikTok) || (platform === "tiktok" && hasMeta))
+    return "一个短链接只能绑定一个广告平台";
+  if (platform === "meta" && !hasMeta) return "请选择 Meta Pixel";
+  if (platform === "tiktok" && !hasTikTok) return "请选择 TikTok Pixel";
+  if (!["meta", "tiktok"].includes(platform)) return "请选择广告平台";
   if (!["bound", "dynamic"].includes(link.attribution_mode))
     return "请选择广告归因方式";
+  if (platform === "tiktok" && link.attribution_mode !== "dynamic")
+    return "TikTok 短链接仅支持动态归因";
   try {
     const url = new URL(link.target_url);
     if (
@@ -75,6 +84,23 @@ export function validateLink(link) {
     return "请输入合法的 WhatsApp 地址";
   }
   return "";
+}
+
+// Normalize the admin form at the API boundary so stale hidden fields cannot
+// create a mixed Meta/TikTok binding.
+export function shortLinkPayload(form = {}) {
+  const payload = { ...form };
+  payload.name = String(payload.name || "").trim();
+  payload.target_url = String(payload.target_url || "").trim();
+  payload.ad_platform = payload.ad_platform === "tiktok" ? "tiktok" : "meta";
+  if (payload.ad_platform === "tiktok") {
+    payload.meta_connection_id = null;
+    payload.meta_pixel_id = null;
+    payload.attribution_mode = "dynamic";
+  } else {
+    payload.tiktok_pixel_id = null;
+  }
+  return payload;
 }
 export function fillTrend(rows, { start, end, tz }) {
   const found = new Map(rows.map((row) => [row.date, row]));

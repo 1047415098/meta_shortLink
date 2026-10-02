@@ -2,8 +2,8 @@
   <section>
     <PageHeader
       title="TikTok 事件记录"
-      context="小说网页事件回传"
-      description="查看文字与语音小说事件的保存、发送和接口接收状态。"
+      context="网页事件回传"
+      description="集中查看短链接、文字小说与语音小说事件的保存、发送和接口接收状态。"
     >
       <el-button :icon="Refresh" :loading="busy" @click="load()"
         >刷新</el-button
@@ -196,6 +196,7 @@
 
 <script setup>
 import { onMounted, reactive, ref } from "vue";
+import { useRoute } from "vue-router";
 import { ElMessage } from "element-plus/es/components/message/index";
 import { Refresh } from "@element-plus/icons-vue";
 
@@ -217,6 +218,7 @@ const eventNames = [
   "StartListening",
   "ViewContent",
   "PageView",
+  "Contact",
 ];
 const filters = reactive({
   status: "",
@@ -224,6 +226,7 @@ const filters = reactive({
   pixel_record_id: "",
   link_id: "",
 });
+const route = useRoute();
 const page = ref(1);
 const data = ref({ items: [], total: 0, page_size: 50 });
 const pixels = ref([]);
@@ -233,7 +236,9 @@ const retrying = ref(null);
 
 function contentLabel(row) {
   // The durable content ID keeps this label accurate after visit retention cleanup.
-  return row.audio_novel_id ? "语音小说事件" : "免费小说事件";
+  if (row.audio_novel_id) return "语音小说事件";
+  if (row.novel_id) return "免费小说事件";
+  return "短链接事件";
 }
 
 async function load(resetPage = false) {
@@ -273,6 +278,10 @@ async function retry(row) {
 }
 
 onMounted(async () => {
+  // Statistics pages can deep-link into the centralized log for one campaign.
+  filters.link_id = /^\d+$/.test(String(route.query.link_id || ""))
+    ? String(route.query.link_id)
+    : "";
   try {
     pixels.value = await listTikTokPixels();
   } catch (pixelError) {

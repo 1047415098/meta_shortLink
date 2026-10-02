@@ -129,6 +129,7 @@ test("history restoration with a fresh document never restarts auto", () => {
 test("consultation posts attribution headers before navigating to WhatsApp", async () => {
   const calls = [];
   const navigations = [];
+  const tiktokEvents = [];
   await submitLandingContact({
     code: "hello world",
     ticket: "signed-ticket",
@@ -138,9 +139,16 @@ test("consultation posts attribution headers before navigating to WhatsApp", asy
       calls.push(args);
       return {
         ok: true,
-        json: async () => ({ target_url: "https://wa.me/13365661092" }),
+        json: async () => ({
+          target_url: "https://wa.me/13365661092",
+          tiktok_event: {
+            name: "Contact",
+            event_id: "short_visit_manual",
+          },
+        }),
       };
     },
+    onTikTokEvent: (event) => tiktokEvents.push(event),
     navigate: (target) => navigations.push(target),
   });
   assert.deepEqual(calls, [
@@ -157,6 +165,9 @@ test("consultation posts attribution headers before navigating to WhatsApp", asy
         body: "ticket=signed-ticket&trigger=manual",
       },
     ],
+  ]);
+  assert.deepEqual(tiktokEvents, [
+    { name: "Contact", event_id: "short_visit_manual" },
   ]);
   assert.deepEqual(navigations, ["https://wa.me/13365661092"]);
 });

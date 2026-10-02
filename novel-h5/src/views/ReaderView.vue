@@ -9,6 +9,7 @@ import { readProgress, saveProgress } from "../lib/progress.js";
 import { createRequestGate } from "../lib/request.js";
 import { reportStartReading } from "../lib/timeSpent.js";
 import { readTikTokTTP, trackTikTokEvent } from "../lib/tiktok.js";
+import { shouldReportStartReading } from "../lib/entry.js";
 
 const route=useRoute(),router=useRouter(),story=ref(),chapters=ref([]),chapter=ref(),previous=ref(),next=ref(),loading=ref(true),error=ref(""),drawer=ref(false);
 const bootstrap=inject("bootstrap");
@@ -47,9 +48,15 @@ async function load(){
     if(!requestGate.isCurrent(version))return;
     window.scrollTo({ top:scrollY, behavior:"auto" });
     saveProgress(route.params.slug,chapterData.chapter.chapter_number,scrollY);
-    if(chapterData.chapter.chapter_number===1&&bootstrap.ad_platform==="tiktok"&&bootstrap.tiktok_enabled&&bootstrap.ticket){
-      const result=await reportStartReading({code:bootstrap.link.code,ticket:bootstrap.ticket,ttp:readTikTokTTP()});
-      if(requestGate.isCurrent(version)&&result.tiktokEvent)trackTikTokEvent({name:result.tiktokEvent.name,eventId:result.tiktokEvent.event_id});
+    const isCampaignEntry=shouldReportStartReading({
+      entryChapterNumber:bootstrap.link?.entry_chapter_number,
+      currentChapterNumber:chapterData.chapter.chapter_number,
+      firstReadableChapterNumber:storyData.chapters[0]?.chapter_number,
+    });
+    if(isCampaignEntry&&bootstrap.ad_platform==="tiktok"&&bootstrap.tiktok_enabled&&bootstrap.ticket){
+      const result=await reportStartReading({code:bootstrap.link.code,ticket:bootstrap.ticket,novelId:storyData.story.id,chapterId:chapterData.chapter.id,chapter:chapterData.chapter.chapter_number,ttp:readTikTokTTP()});
+      // 事件属于整个访问会话，即使请求期间切换语言也应完成一次浏览器回传。
+      if(result.tiktokEvent)trackTikTokEvent({name:result.tiktokEvent.name,eventId:result.tiktokEvent.event_id});
     }
   }catch(e){
     if(requestGate.isCurrent(version)){error.value=e.message;story.value=undefined;chapter.value=undefined;}

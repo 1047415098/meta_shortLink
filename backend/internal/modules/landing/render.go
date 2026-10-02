@@ -18,15 +18,16 @@ import (
 // Bootstrap is the only data contract between the visitor HTTP request and Vue.
 // encoding/json escapes HTML-sensitive characters, including closing script tags.
 type Bootstrap struct {
-	Link                 *links.Link `json:"link"`
-	Ticket               string      `json:"ticket"`
-	CookieEnabled        bool        `json:"cookie_enabled"`
-	MetaMeasurement      bool        `json:"meta_measurement"`
-	MetaBrowserPixelID   string      `json:"meta_browser_pixel_id,omitempty"`
-	MetaPageViewEventID  string      `json:"meta_pageview_event_id,omitempty"`
-	MetaManualEventID    string      `json:"meta_manual_event_id,omitempty"`
-	MetaTimeSpentEventID string      `json:"meta_time_spent_event_id,omitempty"`
-	Error                *PageError  `json:"error,omitempty"`
+	Link                   *links.Link `json:"link"`
+	Ticket                 string      `json:"ticket"`
+	CookieEnabled          bool        `json:"cookie_enabled"`
+	MetaMeasurement        bool        `json:"meta_measurement"`
+	MetaBrowserPixelID     string      `json:"meta_browser_pixel_id,omitempty"`
+	MetaPageViewEventID    string      `json:"meta_pageview_event_id,omitempty"`
+	MetaManualEventID      string      `json:"meta_manual_event_id,omitempty"`
+	MetaTimeSpentEventID   string      `json:"meta_time_spent_event_id,omitempty"`
+	TikTokBrowserPixelCode string      `json:"tiktok_browser_pixel_code,omitempty"`
+	Error                  *PageError  `json:"error,omitempty"`
 }
 type PageError struct {
 	Status  int    `json:"status"`
@@ -65,7 +66,17 @@ func (a *Handler) Render(c *gin.Context, l links.Link, eventID string, recorded 
 		// Browser Pixel and CAPI share this ID for custom-event deduplication.
 		timeSpentEventID = "wa_" + eventID + "_time_spent"
 	}
-	if err := a.render(c, 200, Bootstrap{Link: &l, Ticket: ticket, CookieEnabled: a.Config.CookieMode == "all", MetaMeasurement: measurement, MetaBrowserPixelID: browserPixelID, MetaPageViewEventID: pageViewEventID, MetaManualEventID: manualEventID, MetaTimeSpentEventID: timeSpentEventID}); err != nil {
+	tikTokPixelCode := ""
+	if recorded && l.AdPlatform == "tiktok" && a.Config.TikTokEnabled {
+		// The public loader receives only the frozen Pixel code. Credentials and
+		// encrypted request context remain server-side.
+		_ = a.DB.QueryRow(c.Request.Context(), `SELECT COALESCE(CASE WHEN p.enabled AND tc.enabled
+			AND tc.access_token_cipher<>'' AND tc.credential_status NOT IN ('invalid','error')
+			THEN e.tiktok_pixel_code ELSE '' END,'')
+			FROM click_events e LEFT JOIN tiktok_pixels p ON p.id=e.tiktok_pixel_id
+			LEFT JOIN tiktok_connections tc ON tc.id=p.connection_id WHERE e.id=$1`, eventID).Scan(&tikTokPixelCode)
+	}
+	if err := a.render(c, 200, Bootstrap{Link: &l, Ticket: ticket, CookieEnabled: a.Config.CookieMode == "all", MetaMeasurement: measurement, MetaBrowserPixelID: browserPixelID, MetaPageViewEventID: pageViewEventID, MetaManualEventID: manualEventID, MetaTimeSpentEventID: timeSpentEventID, TikTokBrowserPixelCode: tikTokPixelCode}); err != nil {
 		landingError(c, err)
 	}
 }
@@ -101,9 +112,9 @@ func (a *Handler) render(c *gin.Context, status int, data Bootstrap) error {
 		fallback := []byte(`<noscript><img height="1" width="1" style="display:none" alt="" src="https://www.facebook.com/tr?id=` + pixel + `&amp;ev=PageView&amp;noscript=1" /></noscript>`)
 		page = bytes.Replace(page, []byte("</body>"), append(fallback, []byte("</body>")...), 1)
 	}
-	// Permit the exact Meta and AnyTrack loader/collection hosts while retaining
+	// Permit the exact Meta, TikTok and AnyTrack loader/collection hosts while retaining
 	// the landing page's deny-by-default policy.
-	c.Header("Content-Security-Policy", "default-src 'none'; script-src 'self' 'nonce-"+nonce+"' https://connect.facebook.net https://assets.anytrack.io; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://www.facebook.com; font-src 'self'; connect-src 'self' https://www.facebook.com https://t1.anytrack.io; form-action 'self' https://wa.me https://*.whatsapp.com whatsapp:; base-uri 'none'; frame-ancestors 'none'")
+	c.Header("Content-Security-Policy", "default-src 'none'; script-src 'self' 'nonce-"+nonce+"' https://connect.facebook.net https://analytics.tiktok.com https://assets.anytrack.io; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://www.facebook.com https://analytics.tiktok.com; font-src 'self'; connect-src 'self' https://www.facebook.com https://analytics.tiktok.com https://business-api.tiktok.com https://t1.anytrack.io; form-action 'self' https://wa.me https://*.whatsapp.com whatsapp:; base-uri 'none'; frame-ancestors 'none'")
 	c.Header("Referrer-Policy", "same-origin")
 	c.Header("Content-Type", "text/html; charset=utf-8")
 	if c.Request.Method == "HEAD" {

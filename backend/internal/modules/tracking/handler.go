@@ -101,7 +101,9 @@ func (a *Handler) track(c *gin.Context, surface string) {
 			return
 		}
 		var available bool
-		if a.DB.QueryRow(ctx, "SELECT EXISTS(SELECT 1 FROM novels WHERE id=$1 AND enabled AND deleted_at IS NULL)", l.NovelID).Scan(&available) != nil {
+		if a.DB.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM novels n WHERE n.id=$1 AND n.enabled AND n.deleted_at IS NULL
+			AND ($2::bigint IS NULL OR EXISTS(SELECT 1 FROM novel_chapters c
+				WHERE c.id=$2 AND c.novel_id=n.id AND c.enabled AND c.deleted_at IS NULL)))`, l.NovelID, l.EntryChapterID).Scan(&available) != nil {
 			c.String(503, "This link is temporarily unavailable. Please try again later.")
 			return
 		}
@@ -246,7 +248,7 @@ func (a *Handler) track(c *gin.Context, surface string) {
 	}
 	var tiktokPixelID *int64
 	tiktokTTP, tiktokContextCipher := "", ""
-	if (surface == "novel" || surface == "audio_novel") && c.Request.Method == "GET" && class == "normal" && adPlatform == "tiktok" {
+	if (surface == "novel" || surface == "audio_novel" || surface == "short_link") && c.Request.Method == "GET" && class == "normal" && adPlatform == "tiktok" {
 		tiktokPixelID = l.TikTokPixelID
 		if cookie, cookieErr := c.Cookie("_ttp"); cookieErr == nil {
 			tiktokTTP = safeCookieValue(cookie, 512)
@@ -265,7 +267,7 @@ func (a *Handler) track(c *gin.Context, surface string) {
 			}
 		}
 	} else {
-		// Non-reader traffic never receives a reusable TikTok attribution snapshot.
+		// Ineligible traffic never receives a reusable TikTok attribution snapshot.
 		ttclid, tiktokAdgroupID, tiktokCreativeID, tiktokAdIDV2, tiktokPlacement = "", "", "", "", ""
 	}
 	// Direct mode returns a measured handoff page, so the stored status matches
@@ -275,7 +277,7 @@ func (a *Handler) track(c *gin.Context, surface string) {
 		eventType, status = "landing", 200
 	}
 	// Store before emitting the Redirect. No raw IP, full URL query or raw User-Agent is persisted.
-	e = (Repository{DB: a.DB}).Record(ctx, Event{ID: eventID, LinkID: l.ID, NovelID: l.NovelID, AudioNovelID: l.AudioNovelID, VisitorID: vid, CookieStatus: cookieStatus, Method: c.Request.Method, TargetURL: l.TargetURL, Device: device, OS: osName, Browser: browser, Country: country, Region: region, City: city, Source: source, CampaignID: campaign, AdsetID: adset, AdID: ad, Referrer: ref, Parameters: b, AttributionConflict: conflict, Classification: class, Reason: reason, Type: eventType, Surface: surface, Status: status, MetaConnectionID: l.MetaConnectionID, MetaPixelID: l.MetaPixelID, TikTokPixelID: tiktokPixelID, AdPlatform: adPlatform, TikTokTTCLID: ttclid, TikTokTTP: tiktokTTP, TikTokAdgroupID: tiktokAdgroupID, TikTokCreativeID: tiktokCreativeID, TikTokAdIDV2: tiktokAdIDV2, TikTokPlacement: tiktokPlacement, TikTokContextCipher: tiktokContextCipher, TimeSpentThreshold: l.TimeSpentThreshold})
+	e = (Repository{DB: a.DB}).Record(ctx, Event{ID: eventID, LinkID: l.ID, NovelID: l.NovelID, EntryChapterID: l.EntryChapterID, AudioNovelID: l.AudioNovelID, VisitorID: vid, CookieStatus: cookieStatus, Method: c.Request.Method, TargetURL: l.TargetURL, Device: device, OS: osName, Browser: browser, Country: country, Region: region, City: city, Source: source, CampaignID: campaign, AdsetID: adset, AdID: ad, Referrer: ref, Parameters: b, AttributionConflict: conflict, Classification: class, Reason: reason, Type: eventType, Surface: surface, Status: status, MetaConnectionID: l.MetaConnectionID, MetaPixelID: l.MetaPixelID, TikTokPixelID: tiktokPixelID, AdPlatform: adPlatform, TikTokTTCLID: ttclid, TikTokTTP: tiktokTTP, TikTokAdgroupID: tiktokAdgroupID, TikTokCreativeID: tiktokCreativeID, TikTokAdIDV2: tiktokAdIDV2, TikTokPlacement: tiktokPlacement, TikTokContextCipher: tiktokContextCipher, TimeSpentThreshold: l.TimeSpentThreshold})
 	if e != nil {
 		a.WriteFailures.Add(1)
 		slog.Error("CLICK_WRITE_FAILED: redirect continues; analytics gap", "link_id", l.ID, "error", e)

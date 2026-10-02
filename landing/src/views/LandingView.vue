@@ -3,7 +3,12 @@
     <header class="site-header">
       <div class="wrap header-inner">
         <a class="brand" href="#top" aria-label="Back to the top">
-          <img src="/landing-assets/images/mark.svg" alt="" width="42" height="42" />
+          <img
+            src="/landing-assets/images/mark.svg"
+            alt=""
+            width="42"
+            height="42"
+          />
           <span class="brand-copy">
             <strong>{{ link.landing_brand }}</strong>
             <small>Research materials</small>
@@ -11,11 +16,23 @@
         </a>
 
         <!-- All visible consultation entries share the signed contact form below. -->
-        <button v-if="ticket" class="header-contact" type="submit" form="contact-form" aria-label="Chat on WhatsApp">
+        <button
+          v-if="ticket"
+          class="header-contact"
+          type="submit"
+          form="contact-form"
+          aria-label="Chat on WhatsApp"
+        >
           <WhatsAppIcon />
           <span>WhatsApp</span>
         </button>
-        <a v-else class="header-contact" :href="link.target_url" rel="noreferrer" aria-label="Chat on WhatsApp">
+        <a
+          v-else
+          class="header-contact"
+          :href="link.target_url"
+          rel="noreferrer"
+          aria-label="Chat on WhatsApp"
+        >
           <WhatsAppIcon />
           <span>WhatsApp</span>
         </a>
@@ -41,8 +58,20 @@
 
         <template v-if="ticket">
           <!-- AnyTrack receives one explicit event after the signed endpoint succeeds. -->
-          <form id="contact-form" ref="contactForm" class="at-do-not-track" method="post" :action="`/${encodeURIComponent(link.code)}/contact`">
-            <input id="contact-trigger" ref="contactTrigger" type="hidden" name="trigger" value="manual" />
+          <form
+            id="contact-form"
+            ref="contactForm"
+            class="at-do-not-track"
+            method="post"
+            :action="`/${encodeURIComponent(link.code)}/contact`"
+          >
+            <input
+              id="contact-trigger"
+              ref="contactTrigger"
+              type="hidden"
+              name="trigger"
+              value="manual"
+            />
             <input type="hidden" name="ticket" :value="ticket" />
             <button class="primary-contact" type="submit">
               <WhatsAppIcon />
@@ -53,7 +82,12 @@
             </button>
           </form>
         </template>
-        <a v-else class="primary-contact" :href="link.target_url" rel="noreferrer">
+        <a
+          v-else
+          class="primary-contact"
+          :href="link.target_url"
+          rel="noreferrer"
+        >
           <WhatsAppIcon />
           <span>
             <strong>Chat on WhatsApp</strong>
@@ -61,8 +95,19 @@
           </span>
         </a>
 
-        <small v-if="landingData.meta_measurement === true" class="measurement-notice">
-          By clicking, you will be redirected to WhatsApp. Meta ads tracking applies.
+        <small
+          v-if="landingData.meta_measurement === true"
+          class="measurement-notice"
+        >
+          By clicking, you will be redirected to WhatsApp. Meta ads tracking
+          applies.
+        </small>
+        <small
+          v-else-if="landingData.tiktok_browser_pixel_code"
+          class="measurement-notice"
+        >
+          By clicking, you will be redirected to WhatsApp. TikTok ads tracking
+          applies.
         </small>
         <small v-if="ticket && remaining !== null" class="countdown-notice">
           Continuing to WhatsApp in <strong>{{ remaining }}</strong> seconds.
@@ -82,15 +127,31 @@
             <h2>Selected research products</h2>
             <p>A closer look at the PEPLYRA product catalog.</p>
           </div>
-          <a class="catalog-link" href="https://peplyra.com/products" target="_blank" rel="noopener noreferrer">
+          <a
+            class="catalog-link"
+            href="https://peplyra.com/products"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
             View the full catalog ↗
           </a>
         </div>
 
         <div class="products-grid">
-          <article v-for="product in products" :key="product.name" class="product-card">
+          <article
+            v-for="product in products"
+            :key="product.name"
+            class="product-card"
+          >
             <div class="product-image">
-              <img :src="product.image" :alt="`${product.name} research product`" width="640" height="640" loading="lazy" decoding="async" />
+              <img
+                :src="product.image"
+                :alt="`${product.name} research product`"
+                width="640"
+                height="640"
+                loading="lazy"
+                decoding="async"
+              />
             </div>
             <div class="product-copy">
               <span class="badge">RESEARCH USE ONLY</span>
@@ -98,11 +159,23 @@
               <p>{{ product.description }}</p>
 
               <!-- Product enquiries use the same manual consultation counter as the hero CTA. -->
-              <button v-if="ticket" class="product-contact" type="submit" form="contact-form" :aria-label="`Enquire about ${product.name} on WhatsApp`">
+              <button
+                v-if="ticket"
+                class="product-contact"
+                type="submit"
+                form="contact-form"
+                :aria-label="`Enquire about ${product.name} on WhatsApp`"
+              >
                 <WhatsAppIcon />
                 <span>Enquire now</span>
               </button>
-              <a v-else class="product-contact" :href="link.target_url" rel="noreferrer" :aria-label="`Enquire about ${product.name} on WhatsApp`">
+              <a
+                v-else
+                class="product-contact"
+                :href="link.target_url"
+                rel="noreferrer"
+                :aria-label="`Enquire about ${product.name} on WhatsApp`"
+              >
                 <WhatsAppIcon />
                 <span>Enquire now</span>
               </a>
@@ -127,8 +200,17 @@
           <small>Online now</small>
         </span>
       </div>
-      <button v-if="ticket" class="floating-button" type="submit" form="contact-form">Chat Now</button>
-      <a v-else class="floating-button" :href="link.target_url" rel="noreferrer">Chat Now</a>
+      <button
+        v-if="ticket"
+        class="floating-button"
+        type="submit"
+        form="contact-form"
+      >
+        Chat Now
+      </button>
+      <a v-else class="floating-button" :href="link.target_url" rel="noreferrer"
+        >Chat Now</a
+      >
     </aside>
   </div>
 </template>
@@ -137,10 +219,24 @@
 import { onBeforeUnmount, onMounted, ref } from "vue";
 import WhatsAppIcon from "./components/WhatsAppIcon.vue";
 import { landingData } from "../bootstrap.js";
-import { createContactCountdown, submitLandingContact } from "../lib/contact.js";
+import {
+  createContactCountdown,
+  submitLandingContact,
+} from "../lib/contact.js";
 import { buildMetaAttributionHeaders } from "../lib/attribution.js";
-import { installMetaPixel, reportLandingView, trackMetaConsult } from "../lib/view.js";
-import { createVisibleTimeTracker, formatVisibleTime, reportTimeSpent, trackMetaTimeSpent } from "../lib/timeSpent.js";
+import {
+  installMetaPixel,
+  installTikTokPixel,
+  reportLandingView,
+  trackMetaConsult,
+  trackTikTokEvent,
+} from "../lib/view.js";
+import {
+  createVisibleTimeTracker,
+  formatVisibleTime,
+  reportTimeSpent,
+  trackMetaTimeSpent,
+} from "../lib/timeSpent.js";
 
 const link = landingData.link;
 const ticket = landingData.ticket || "";
@@ -153,12 +249,14 @@ const visibleTime = ref("00:00");
 const products = [
   {
     name: "Tirzepatide 10mg",
-    description: "Product specifications and batch information available on enquiry.",
+    description:
+      "Product specifications and batch information available on enquiry.",
     image: "/landing-assets/images/tirzepatide.webp",
   },
   {
     name: "Semaglutide 5mg",
-    description: "Research material details and documentation available on enquiry.",
+    description:
+      "Research material details and documentation available on enquiry.",
     image: "/landing-assets/images/semaglutide.webp",
   },
   {
@@ -197,7 +295,19 @@ async function handleContact(trigger) {
     trackMetaConsult({ eventId: landingData.meta_manual_event_id });
   }
   try {
-    await submitLandingContact({ code: link.code, ticket, trigger, attributionHeaders });
+    await submitLandingContact({
+      code: link.code,
+      ticket,
+      trigger,
+      attributionHeaders,
+      onTikTokEvent: (event) =>
+        trackTikTokEvent({
+          name: event.name,
+          eventId: event.event_id,
+          content: { id: link.id, name: link.name },
+          trigger,
+        }),
+    });
   } catch {
     contactForm.value?.submit();
   }
@@ -210,17 +320,38 @@ onMounted(() => {
     pixelId: landingData.meta_browser_pixel_id,
     eventId: landingData.meta_pageview_event_id,
   });
+  installTikTokPixel({ pixelCode: landingData.tiktok_browser_pixel_code });
   // The confirmed page view carries the same Meta attribution mirror as consultation requests.
-  reportLandingView({ code: link.code, ticket, attributionHeaders });
-	// TimeSpent is reported once when this code's frozen threshold is reached.
-	cleanupVisibleTimer = createVisibleTimeTracker({
-	  threshold: Number(link.time_spent_threshold || 0),
-	  onTick: (seconds) => { visibleTime.value = formatVisibleTime(seconds); },
-	  onThreshold: () => {
-		trackMetaTimeSpent({ eventId: landingData.meta_time_spent_event_id });
-		void reportTimeSpent({ code: link.code, ticket });
-	  },
-	});
+  void reportLandingView({ code: link.code, ticket, attributionHeaders }).then(
+    (event) => {
+      if (event)
+        trackTikTokEvent({
+          name: event.name,
+          eventId: event.event_id,
+          content: { id: link.id, name: link.name },
+        });
+    },
+  );
+  // TimeSpent is reported once when this code's frozen threshold is reached.
+  cleanupVisibleTimer = createVisibleTimeTracker({
+    threshold: Number(link.time_spent_threshold || 0),
+    onTick: (seconds) => {
+      visibleTime.value = formatVisibleTime(seconds);
+    },
+    onThreshold: () => {
+      trackMetaTimeSpent({ eventId: landingData.meta_time_spent_event_id });
+      void reportTimeSpent({
+        code: link.code,
+        ticket,
+        onTikTokEvent: (event) =>
+          trackTikTokEvent({
+            name: event.name,
+            eventId: event.event_id,
+            content: { id: link.id, name: link.name },
+          }),
+      });
+    },
+  });
   document.title = `${link.landing_title} | ${link.landing_brand}`;
   for (const [selector, content] of [
     ['meta[name="description"]', link.landing_description],
@@ -234,7 +365,8 @@ onMounted(() => {
     form: contactForm.value,
     trigger: contactTrigger.value,
     delay: link.landing_delay,
-    restored: performance.getEntriesByType("navigation")[0]?.type === "back_forward",
+    restored:
+      performance.getEntriesByType("navigation")[0]?.type === "back_forward",
     onRemaining: (value) => {
       remaining.value = value;
     },
@@ -362,8 +494,14 @@ onBeforeUnmount(() => {
   position: relative;
   overflow: hidden;
   background:
-    linear-gradient(90deg, rgba(238, 247, 252, 0.98) 0%, rgba(238, 247, 252, 0.88) 44%, rgba(238, 247, 252, 0.48) 100%),
-    url("/landing-assets/images/hero-79e77a51693b3249.webp") center / cover no-repeat;
+    linear-gradient(
+      90deg,
+      rgba(238, 247, 252, 0.98) 0%,
+      rgba(238, 247, 252, 0.88) 44%,
+      rgba(238, 247, 252, 0.48) 100%
+    ),
+    url("/landing-assets/images/hero-79e77a51693b3249.webp") center / cover
+      no-repeat;
 }
 .hero-content {
   position: relative;
@@ -694,60 +832,197 @@ button:focus-visible {
 }
 
 @media (max-width: 760px) {
-  .landing-page { padding-bottom: 94px; }
-  .wrap { padding-right: 24px; padding-left: 24px; }
-  .header-inner { min-height: 86px; }
-  .brand { gap: 9px; }
-  .brand img { width: 36px; height: 36px; }
-  .brand strong { max-width: 210px; font-size: 15px; }
-  .brand small { font-size: 8px; letter-spacing: 2.5px; }
-  .header-contact { min-height: 38px; padding: 7px 11px; font-size: 12px; }
+  .landing-page {
+    padding-bottom: 94px;
+  }
+  .wrap {
+    padding-right: 24px;
+    padding-left: 24px;
+  }
+  .header-inner {
+    min-height: 86px;
+  }
+  .brand {
+    gap: 9px;
+  }
+  .brand img {
+    width: 36px;
+    height: 36px;
+  }
+  .brand strong {
+    max-width: 210px;
+    font-size: 15px;
+  }
+  .brand small {
+    font-size: 8px;
+    letter-spacing: 2.5px;
+  }
+  .header-contact {
+    min-height: 38px;
+    padding: 7px 11px;
+    font-size: 12px;
+  }
   .hero {
     background:
-      linear-gradient(90deg, rgba(237, 247, 252, 0.97) 0%, rgba(237, 247, 252, 0.78) 100%),
-          url("/landing-assets/images/hero-79e77a51693b3249.webp") center / cover no-repeat;
+      linear-gradient(
+        90deg,
+        rgba(237, 247, 252, 0.97) 0%,
+        rgba(237, 247, 252, 0.78) 100%
+      ),
+      url("/landing-assets/images/hero-79e77a51693b3249.webp") center / cover
+        no-repeat;
   }
-  .hero-content { padding-top: 42px; padding-bottom: 18px; }
-  .eyebrow { font-size: 10px; letter-spacing: 1.7px; }
-  h1 { margin-top: 20px; font-size: clamp(38px, 10.6vw, 48px); line-height: 0.99; letter-spacing: -1.8px; }
-  .description { font-size: 14px; line-height: 1.75; }
-  .reply-status { margin-top: 19px; font-size: 12px; }
-  .primary-contact { min-height: 66px; gap: 13px; padding: 9px 18px; }
-  .primary-contact :deep(svg) { width: 34px; height: 34px; }
-  .primary-contact strong { font-size: 18px; }
-  .primary-contact small { font-size: 12px; }
-  .explore-link { margin-top: 18px; }
-  .products-section { padding-top: 29px; padding-bottom: 38px; }
-  .section-head { display: block; margin-bottom: 17px; }
-  h2 { font-size: 25px; letter-spacing: -0.6px; }
-  .section-head p { margin-top: 6px; font-size: 13px; }
-  .catalog-link { display: inline-block; margin-top: 10px; font-size: 12px; }
-  .products-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 13px; }
-  .product-image { aspect-ratio: 1; }
+  .hero-content {
+    padding-top: 42px;
+    padding-bottom: 18px;
+  }
+  .eyebrow {
+    font-size: 10px;
+    letter-spacing: 1.7px;
+  }
+  h1 {
+    margin-top: 20px;
+    font-size: clamp(38px, 10.6vw, 48px);
+    line-height: 0.99;
+    letter-spacing: -1.8px;
+  }
+  .description {
+    font-size: 14px;
+    line-height: 1.75;
+  }
+  .reply-status {
+    margin-top: 19px;
+    font-size: 12px;
+  }
+  .primary-contact {
+    min-height: 66px;
+    gap: 13px;
+    padding: 9px 18px;
+  }
+  .primary-contact :deep(svg) {
+    width: 34px;
+    height: 34px;
+  }
+  .primary-contact strong {
+    font-size: 18px;
+  }
+  .primary-contact small {
+    font-size: 12px;
+  }
+  .explore-link {
+    margin-top: 18px;
+  }
+  .products-section {
+    padding-top: 29px;
+    padding-bottom: 38px;
+  }
+  .section-head {
+    display: block;
+    margin-bottom: 17px;
+  }
+  h2 {
+    font-size: 25px;
+    letter-spacing: -0.6px;
+  }
+  .section-head p {
+    margin-top: 6px;
+    font-size: 13px;
+  }
+  .catalog-link {
+    display: inline-block;
+    margin-top: 10px;
+    font-size: 12px;
+  }
+  .products-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 13px;
+  }
+  .product-image {
+    aspect-ratio: 1;
+  }
   /* Compact text-first cards match the mobile ad layout and keep more products above the fold. */
-  .product-image { display: none; }
-  .badge { margin-bottom: 9px; padding: 4px 6px; font-size: 6.5px; }
-  .product-copy { min-height: 164px; padding: 11px; }
-  .product-copy h3 { font-size: 15px; }
-  .product-copy p { margin: 7px 0 12px; font-size: 10px; line-height: 1.4; }
-  .product-contact { min-height: 38px; gap: 5px; padding: 7px 8px; font-size: 12px; }
-  .product-contact :deep(svg) { width: 18px; height: 18px; }
-  .research-details { margin-bottom: 16px; padding-top: 28px; padding-bottom: 28px; }
-  .floating-contact { right: 12px; bottom: 10px; left: 12px; width: calc(100% - 24px); min-height: 70px; padding: 9px 10px; border-radius: 16px; }
-  .floating-icon { width: 40px; height: 40px; }
-  .floating-copy { gap: 9px; }
-  .floating-copy strong { max-width: 190px; font-size: 14px; }
-  .floating-copy small { font-size: 11px; }
-  .floating-button { min-width: 88px; min-height: 40px; padding: 8px 11px; font-size: 13px; }
+  .product-image {
+    display: none;
+  }
+  .badge {
+    margin-bottom: 9px;
+    padding: 4px 6px;
+    font-size: 6.5px;
+  }
+  .product-copy {
+    min-height: 164px;
+    padding: 11px;
+  }
+  .product-copy h3 {
+    font-size: 15px;
+  }
+  .product-copy p {
+    margin: 7px 0 12px;
+    font-size: 10px;
+    line-height: 1.4;
+  }
+  .product-contact {
+    min-height: 38px;
+    gap: 5px;
+    padding: 7px 8px;
+    font-size: 12px;
+  }
+  .product-contact :deep(svg) {
+    width: 18px;
+    height: 18px;
+  }
+  .research-details {
+    margin-bottom: 16px;
+    padding-top: 28px;
+    padding-bottom: 28px;
+  }
+  .floating-contact {
+    right: 12px;
+    bottom: 10px;
+    left: 12px;
+    width: calc(100% - 24px);
+    min-height: 70px;
+    padding: 9px 10px;
+    border-radius: 16px;
+  }
+  .floating-icon {
+    width: 40px;
+    height: 40px;
+  }
+  .floating-copy {
+    gap: 9px;
+  }
+  .floating-copy strong {
+    max-width: 190px;
+    font-size: 14px;
+  }
+  .floating-copy small {
+    font-size: 11px;
+  }
+  .floating-button {
+    min-width: 88px;
+    min-height: 40px;
+    padding: 8px 11px;
+    font-size: 13px;
+  }
 }
 
 @media (max-width: 390px) {
-  .wrap { padding-right: 18px; padding-left: 18px; }
-  .brand strong { max-width: 150px; }
-  .floating-copy strong { max-width: 150px; }
+  .wrap {
+    padding-right: 18px;
+    padding-left: 18px;
+  }
+  .brand strong {
+    max-width: 150px;
+  }
+  .floating-copy strong {
+    max-width: 150px;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .product-image img { transition: none; }
+  .product-image img {
+    transition: none;
+  }
 }
 </style>

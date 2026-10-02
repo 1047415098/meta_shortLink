@@ -39,13 +39,61 @@ test("reading time reports cumulative seconds with keepalive", async () => {
   assert.equal(calls[0][1].keepalive,true);
 });
 
-test("start reading posts chapter one and returns only a confirmed browser event", async () => {
+test("start reading posts the frozen novel and chapter identity with the actual entry chapter", async () => {
   const calls=[];
-  const result=await reportStartReading({code:"wife-a",ticket:"signed",ttp:"cookie-1",request:async(url,options)=>{calls.push([url,options]);return {ok:true,json:async()=>({ok:true,tiktok_event:{name:"StartReading",event_id:"event-start"}})};}});
+  const result=await reportStartReading({code:"wife-a",ticket:"signed",novelId:12,chapterId:34,chapter:7,ttp:"cookie-1",request:async(url,options)=>{calls.push([url,options]);return {ok:true,json:async()=>({ok:true,tiktok_event:{name:"StartReading",event_id:"event-start"}})};}});
   assert.deepEqual(result,{ok:true,tiktokEvent:{name:"StartReading",event_id:"event-start"}});
   assert.equal(calls[0][0],"/novel/wife-a/start-reading");
-  assert.match(String(calls[0][1].body),/chapter=1/);
+  assert.match(String(calls[0][1].body),/chapter=7/);
+  assert.match(String(calls[0][1].body),/novel_id=12/);
+  assert.match(String(calls[0][1].body),/chapter_id=34/);
   assert.match(String(calls[0][1].body),/_ttp=cookie-1/);
+});
+
+test("start reading does not send without both novel and chapter ids", async () => {
+  const calls=[];
+  const request=async()=>{calls.push(true);return {ok:true,json:async()=>({ok:true})};};
+  assert.equal((await reportStartReading({code:"wife-a",ticket:"signed",chapterId:34,chapter:7,state:{},request})).ok,false);
+  assert.equal((await reportStartReading({code:"wife-a",ticket:"signed",novelId:12,chapter:7,state:{},request})).ok,false);
+  assert.equal(calls.length,0);
+});
+
+test("start reading is reported only once in the same SPA document", async () => {
+  const calls=[],state={};
+  const request=async()=>{calls.push(true);return {ok:true,json:async()=>({ok:true})};};
+  assert.equal((await reportStartReading({code:"wife-a",ticket:"signed",novelId:12,chapterId:34,chapter:3,state,request})).ok,true);
+  assert.equal((await reportStartReading({code:"wife-a",ticket:"signed",novelId:12,chapterId:34,chapter:3,state,request})).ok,false);
+  assert.equal(calls.length,1);
+});
+
+test("start reading retries transient failures without allowing concurrent duplicates", async () => {
+  const state={};
+  let releaseFirst;
+  const calls=[];
+  const request=async()=>{
+    calls.push(true);
+    if(calls.length===1)await new Promise((resolve)=>{releaseFirst=resolve;});
+    if(calls.length===1)return {ok:false,status:503};
+    return {ok:true,json:async()=>({ok:true,tiktok_event:{name:"StartReading",event_id:"retry-ok"}})};
+  };
+  const first=reportStartReading({code:"wife-a",ticket:"signed",novelId:12,chapterId:34,chapter:3,state,request,retryDelays:[0],wait:async()=>{}});
+  const concurrent=await reportStartReading({code:"wife-a",ticket:"signed",novelId:12,chapterId:34,chapter:3,state,request,retryDelays:[0],wait:async()=>{}});
+  assert.equal(concurrent.ok,false);
+  releaseFirst();
+  assert.deepEqual(await first,{ok:true,tiktokEvent:{name:"StartReading",event_id:"retry-ok"}});
+  assert.equal(calls.length,2);
+  assert.equal(state.novelStartReadingSent,"true");
+});
+
+test("start reading does not retry a rejected client request", async () => {
+  const state={},calls=[];
+  const result=await reportStartReading({
+    code:"wife-a",ticket:"signed",novelId:12,chapterId:34,chapter:3,state,retryDelays:[0,0],wait:async()=>{},
+    request:async()=>{calls.push(true);return {ok:false,status:400};},
+  });
+  assert.equal(result.ok,false);
+  assert.equal(calls.length,1);
+  assert.equal(state.novelStartReadingSent,undefined);
 });
 
 test("story introduction shows an explicit empty state when no chapters are enabled", async () => {
@@ -89,6 +137,14 @@ test("reader renders chapter content before restoring saved scroll position", as
   const restoreIndex=reader.indexOf("await nextTick()");
   assert.notEqual(renderIndex,-1);
   assert.ok(renderIndex<restoreIndex);
+});
+
+test("reader reports StartReading for the resolved campaign entry chapter", async () => {
+  const reader=await readFile(new URL("../src/views/ReaderView.vue",import.meta.url),"utf8");
+  assert.match(reader,/shouldReportStartReading\s*\(/);
+  assert.match(reader,/novelId:\s*storyData\.story\.id/);
+  assert.match(reader,/chapterId:\s*chapterData\.chapter\.id/);
+  assert.match(reader,/chapter:\s*chapterData\.chapter\.chapter_number/);
 });
 
 test("active carousel indicator remains a circle", async () => {

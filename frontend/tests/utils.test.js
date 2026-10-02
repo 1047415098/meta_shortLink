@@ -35,6 +35,7 @@ test("WhatsApp destination rejects arbitrary URLs", () => {
   const valid = {
     name: "Test",
     target_url: "https://wa.me/13365661092",
+    ad_platform: "meta",
     meta_pixel_id: 7,
     attribution_mode: "dynamic",
   };
@@ -45,6 +46,7 @@ test("short links require a Pixel and an explicit attribution mode", () => {
   const valid = {
     name: "Test",
     target_url: "https://wa.me/13365661092",
+    ad_platform: "meta",
     meta_pixel_id: 7,
     attribution_mode: "dynamic",
   };
@@ -62,6 +64,7 @@ test("TimeSpent accepts off or a bounded whole-second threshold", () => {
   const valid = {
     name: "Test",
     target_url: "https://wa.me/13365661092",
+    ad_platform: "meta",
     meta_pixel_id: 7,
     attribution_mode: "dynamic",
   };

@@ -5,6 +5,7 @@ import (
 	"crypto/hmac"
 	"errors"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -37,7 +38,7 @@ func (h *Handler) View(c *gin.Context) {
 	defer cancel()
 	fbc, _ := c.Cookie("_fbc")
 	fbp, _ := c.Cookie("_fbp")
-	err := (landing.Repository{DB: h.DB, Meta: h.Meta}).MarkView(ctx, eventID, link.ID, "novel", meta.ContactContext{IP: c.ClientIP(), UserAgent: c.GetHeader("User-Agent"), FBC: fbc, FBP: fbp})
+	_, err := (landing.Repository{DB: h.DB, Meta: h.Meta}).MarkView(ctx, eventID, link.ID, "novel", meta.ContactContext{IP: c.ClientIP(), UserAgent: c.GetHeader("User-Agent"), FBC: fbc, FBP: fbp})
 	if err == nil {
 		// Novel H5 consumes JSON for every signed action, including Meta-only visits.
 		c.JSON(200, gin.H{"ok": true})
@@ -50,7 +51,7 @@ func (h *Handler) View(c *gin.Context) {
 	runtime.ServerError(c, err)
 }
 
-// StartReading promotes only chapter-one interaction from the original normal GET visit.
+// StartReading promotes only the entry chapter frozen by the original normal GET visit.
 func (h *Handler) StartReading(c *gin.Context) {
 	if !h.validActionOrigin(c) {
 		return
@@ -59,8 +60,11 @@ func (h *Handler) StartReading(c *gin.Context) {
 	if !ok {
 		return
 	}
-	if c.PostForm("chapter") != "1" {
-		runtime.Bad(c, "开始阅读事件只接受第一章")
+	novelID, novelErr := strconv.ParseInt(c.PostForm("novel_id"), 10, 64)
+	chapterID, chapterErr := strconv.ParseInt(c.PostForm("chapter_id"), 10, 64)
+	chapterNumber, chapterNumberErr := strconv.Atoi(c.PostForm("chapter"))
+	if novelErr != nil || novelID < 1 || chapterErr != nil || chapterID < 1 || chapterNumberErr != nil || chapterNumber < 1 {
+		runtime.Bad(c, "入口章节无效")
 		return
 	}
 	ttp, err := actionTikTokTTP(c)
@@ -77,17 +81,47 @@ func (h *Handler) StartReading(c *gin.Context) {
 	}
 	defer tx.Rollback(ctx)
 	var platform string
+	var frozenNovelID *int64
+	var entryChapterID *int64
+	var entryChapterNumber *int
 	var startAt *time.Time
-	err = tx.QueryRow(ctx, `SELECT ad_platform,tiktok_start_reading_at FROM click_events
+	err = tx.QueryRow(ctx, `SELECT ad_platform,novel_id,entry_chapter_id,entry_chapter_number,tiktok_start_reading_at FROM click_events
 		WHERE id=$1 AND link_id=$2 AND surface='novel' AND event_type='landing' AND method='GET'
 		AND classification='normal' AND occurred_at>=now()-interval '2 hours 5 minutes' FOR UPDATE`, eventID, link.ID).
-		Scan(&platform, &startAt)
+		Scan(&platform, &frozenNovelID, &entryChapterID, &entryChapterNumber, &startAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		runtime.Bad(c, "访问票据无效或已过期")
 		return
 	}
 	if err != nil {
 		runtime.ServerError(c, err)
+		return
+	}
+	if frozenNovelID == nil || novelID != *frozenNovelID {
+		runtime.Bad(c, "开始阅读事件只接受该投放链接的入口章节")
+		return
+	}
+	expectedChapterID := entryChapterID
+	expectedChapterNumber := entryChapterNumber
+	if expectedChapterID == nil && expectedChapterNumber == nil {
+		// Historical links entered the introduction page and may start only at the
+		// first currently readable chapter.
+		var firstID int64
+		var firstNumber int
+		if err = tx.QueryRow(ctx, `SELECT id,chapter_number FROM novel_chapters
+			WHERE novel_id=$1 AND enabled AND deleted_at IS NULL ORDER BY chapter_number,id LIMIT 1`, frozenNovelID).Scan(&firstID, &firstNumber); err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				runtime.Bad(c, "小说暂无可读章节")
+				return
+			}
+			runtime.ServerError(c, err)
+			return
+		}
+		expectedChapterID = &firstID
+		expectedChapterNumber = &firstNumber
+	}
+	if expectedChapterID == nil || expectedChapterNumber == nil || chapterID != *expectedChapterID || chapterNumber != *expectedChapterNumber {
+		runtime.Bad(c, "开始阅读事件只接受该投放链接的入口章节")
 		return
 	}
 	if platform != "tiktok" {
@@ -132,7 +166,7 @@ func (h *Handler) StartReading(c *gin.Context) {
 
 // TimeSpent reuses the shared, signed stay-event implementation for the novel surface.
 func (h *Handler) TimeSpent(c *gin.Context) {
-	proxy := landing.Handler{Core: h.Core, Meta: h.Meta}
+	proxy := landing.Handler{Core: h.Core, Meta: h.Meta, TikTok: h.TikTok}
 	proxy.TimeSpentForSurface(c, "novel", "contact:novel:")
 }
 

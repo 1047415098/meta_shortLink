@@ -266,6 +266,115 @@ func (s *Service) QueueVisitEventTx(ctx context.Context, tx pgx.Tx, visitID stri
 	return BrowserEvent{Name: eventName, EventID: eventID}, tag.RowsAffected() == 1, nil
 }
 
+type ShortLinkEventInput struct {
+	LinkID  int64
+	EventAt time.Time
+	Trigger string
+}
+
+// EnqueueShortLinkEventTx stores one server-side event with the exact event ID
+// returned to the landing page. TikTok can therefore deduplicate browser Pixel
+// and Events API deliveries without coupling WhatsApp navigation to delivery.
+func (s *Service) EnqueueShortLinkEventTx(ctx context.Context, tx pgx.Tx, visitID, eventName, eventID string, input ShortLinkEventInput) (BrowserEvent, bool, error) {
+	if eventName != "PageView" && eventName != "Contact" && eventName != "ViewContent" {
+		return BrowserEvent{}, false, errors.New("不支持的 TikTok 短链接事件")
+	}
+	if input.EventAt.IsZero() || eventID == "" {
+		return BrowserEvent{}, false, errors.New("TikTok 短链接事件信息缺失")
+	}
+	var visit frozenVisit
+	var title, contextCipher, classification, method, surface string
+	var pixelEnabled, connectionEnabled, hasCredential bool
+	var credentialStatus string
+	err := tx.QueryRow(ctx, `SELECT e.ad_platform,COALESCE(e.tiktok_pixel_id,0),e.tiktok_pixel_code,
+		COALESCE(p.connection_id,0),l.name,e.tiktok_ttclid,e.tiktok_ttp,e.tiktok_context_cipher,
+		e.classification,e.method,e.surface,COALESCE(p.enabled,false),COALESCE(c.enabled,false),
+		COALESCE(c.access_token_cipher,'')<>'',COALESCE(c.credential_status,'')
+		FROM click_events e JOIN short_links l ON l.id=e.link_id
+		LEFT JOIN tiktok_pixels p ON p.id=e.tiktok_pixel_id
+		LEFT JOIN tiktok_connections c ON c.id=p.connection_id
+		WHERE e.id=$1 AND e.link_id=$2`, visitID, input.LinkID).
+		Scan(&visit.Platform, &visit.PixelID, &visit.PixelCode, &visit.ConnectionID, &title,
+			&visit.TTCLID, &visit.TTP, &contextCipher, &classification, &method, &surface,
+			&pixelEnabled, &connectionEnabled, &hasCredential, &credentialStatus)
+	if err != nil {
+		return BrowserEvent{}, false, err
+	}
+	if visit.Platform != "tiktok" || classification != "normal" || method != "GET" || surface != "short_link" {
+		return BrowserEvent{}, false, nil
+	}
+	if visit.PixelID < 1 || visit.PixelCode == "" || visit.ConnectionID < 1 {
+		return BrowserEvent{}, false, nil
+	}
+	blockedReason := ""
+	switch {
+	case !s.Core.Config.TikTokEnabled:
+		blockedReason = "TikTok 服务器回传总开关未启用"
+	case !pixelEnabled:
+		blockedReason = "TikTok Pixel 已停用"
+	case !connectionEnabled:
+		blockedReason = "TikTok 凭证已停用"
+	case !hasCredential:
+		blockedReason = "TikTok Access Token 未配置"
+	case credentialStatus == "invalid":
+		blockedReason = "TikTok Access Token 无效"
+	case credentialStatus == "error":
+		blockedReason = "TikTok Access Token 状态异常"
+	case contextCipher == "":
+		blockedReason = "TikTok 访问归因快照不可用"
+	}
+	if blockedReason != "" {
+		// Failed rows remain visible in the centralized event log, but no browser
+		// event is authorized because server/browser deduplication is unavailable.
+		tag, insertErr := tx.Exec(ctx, `INSERT INTO tiktok_events(
+			id,visit_id,link_id,connection_id,pixel_record_id,pixel_code,event_name,event_id,event_time,
+			payload_cipher,status,attempts,last_error)
+			VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,'','failed',1,$10)
+			ON CONFLICT(pixel_code,event_name,event_id) DO NOTHING`, eventID, visitID, input.LinkID,
+			visit.ConnectionID, visit.PixelID, visit.PixelCode, eventName, eventID, input.EventAt, blockedReason)
+		if insertErr != nil {
+			return BrowserEvent{}, false, insertErr
+		}
+		return BrowserEvent{}, tag.RowsAffected() == 1, nil
+	}
+	plain, err := s.open(contextCipher, "tiktok:visit:"+visitID)
+	if err != nil || json.Unmarshal([]byte(plain), &visit.Context) != nil {
+		// A damaged encrypted snapshot is a measurement failure, never a reason
+		// to block a confirmed WhatsApp action.
+		return BrowserEvent{}, false, nil
+	}
+	properties := map[string]any{
+		"content_type": "product",
+		"content_name": title,
+		"contents":     []Content{{ContentID: fmt.Sprintf("short_link:%d", input.LinkID), Quantity: 1}},
+	}
+	if input.Trigger != "" {
+		properties["trigger"] = input.Trigger
+	}
+	payload := EventRequest{EventSource: "web", EventSourceID: visit.PixelCode, Data: []EventData{{
+		Event: eventName, EventTime: input.EventAt.Unix(), EventID: eventID,
+		User: UserContext{TTCLID: visit.TTCLID, TTP: visit.TTP, IP: visit.Context.IP, UserAgent: visit.Context.UserAgent},
+		Page: PageContext{URL: visit.Context.PageURL, Referrer: visit.Context.Referrer}, Properties: properties,
+	}}}
+	raw, err := json.Marshal(payload)
+	if err != nil {
+		return BrowserEvent{}, false, err
+	}
+	ciphertext, err := s.sealEvent(string(raw), eventID)
+	if err != nil {
+		return BrowserEvent{}, false, err
+	}
+	tag, err := tx.Exec(ctx, `INSERT INTO tiktok_events(
+		id,visit_id,link_id,connection_id,pixel_record_id,pixel_code,event_name,event_id,event_time,payload_cipher)
+		VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+		ON CONFLICT(pixel_code,event_name,event_id) DO NOTHING`, eventID, visitID, input.LinkID,
+		visit.ConnectionID, visit.PixelID, visit.PixelCode, eventName, eventID, input.EventAt, ciphertext)
+	if err != nil {
+		return BrowserEvent{}, false, err
+	}
+	return BrowserEvent{Name: eventName, EventID: eventID}, tag.RowsAffected() == 1, nil
+}
+
 func (s *Service) RetryEvent(ctx context.Context, id string) error {
 	tag, err := s.Core.DB.Exec(ctx, `UPDATE tiktok_events SET status='pending',attempts=0,next_attempt_at=now(),
 		locked_until=NULL,lock_token='',http_status=0,business_code=0,request_id='',last_error='',updated_at=now()

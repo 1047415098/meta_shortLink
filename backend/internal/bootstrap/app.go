@@ -58,6 +58,7 @@ func New(c config.Config, db *pgxpool.Pool) (*App, error) {
 	// this keeps the first attributed visit snapshot complete for a later rollout.
 	tiktokService := tiktok.New(core)
 	landingHandler.Meta = metaService
+	landingHandler.TikTok = tiktokService
 	// The standalone audio novel app reuses the selected platform queues while
 	// keeping playback state and event confirmation inside its own module.
 	playbackService := &audionovel.PlaybackService{Core: core, Meta: metaService, TikTok: tiktokService}

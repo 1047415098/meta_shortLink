@@ -53,8 +53,11 @@ export function tiktokPixelPayload(form = {}) {
 
 export function tiktokTemplateURL(publicURL, code, productPrefix = "novel") {
   // Both content projects share TikTok macro names while retaining distinct public paths.
-  const prefix = productPrefix === "audio-novel" ? "audio-novel" : "novel";
-  const url = new URL(`/${prefix}/${encodeURIComponent(code)}`, publicURL);
+  const path =
+    productPrefix === "short-link"
+      ? `/${encodeURIComponent(code)}`
+      : `/${productPrefix === "audio-novel" ? "audio-novel" : "novel"}/${encodeURIComponent(code)}`;
+  const url = new URL(path, publicURL);
   // TikTok 宏在广告点击时替换，模板只负责统一参数名称。
   const fields = {
     utm_source: "tiktok",

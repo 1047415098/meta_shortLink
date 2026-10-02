@@ -11,7 +11,7 @@ import (
 )
 
 func Scan(row pgx.Row) (l Link, e error) {
-	e = row.Scan(&l.ID, &l.Code, &l.Name, &l.TargetURL, &l.Enabled, &l.CampaignID, &l.AdsetID, &l.AdID, &l.Channel, &l.CreatedAt, &l.Mode, &l.LandingBrand, &l.LandingTitle, &l.LandingDescription, &l.LandingDetails, &l.LandingDelay, &l.MetaConnectionID, &l.AttributionMode, &l.MetaPixelID, &l.TimeSpentThreshold, &l.ProductType, &l.NovelID, &l.AdPlatform, &l.TikTokPixelID, &l.AudioNovelID)
+	e = row.Scan(&l.ID, &l.Code, &l.Name, &l.TargetURL, &l.Enabled, &l.CampaignID, &l.AdsetID, &l.AdID, &l.Channel, &l.CreatedAt, &l.Mode, &l.LandingBrand, &l.LandingTitle, &l.LandingDescription, &l.LandingDetails, &l.LandingDelay, &l.MetaConnectionID, &l.AttributionMode, &l.MetaPixelID, &l.TimeSpentThreshold, &l.ProductType, &l.NovelID, &l.AdPlatform, &l.TikTokPixelID, &l.AudioNovelID, &l.EntryChapterID)
 	return
 }
 
@@ -20,6 +20,15 @@ type Repository struct{ DB *pgxpool.Pool }
 
 // ErrLinksNotFound keeps stale list selections from producing a partial delete.
 var ErrLinksNotFound = errors.New("one or more links do not exist")
+
+// ErrInvalidAdvertisingBinding is safe to return to the admin UI because it
+// contains no credential or database detail.
+var ErrInvalidAdvertisingBinding = errors.New("所选广告平台的 Pixel 不可用，请检查 Pixel 和凭证状态")
+
+// ErrAdvertisingBindingLocked keeps one report cohort on one advertising
+// platform after the first visit. Pixel changes remain safe because each visit
+// already freezes the Pixel that received its events.
+var ErrAdvertisingBindingLocked = errors.New("该短链接已有访问记录，广告平台已锁定；如需更换平台请新建短链接")
 
 func (r Repository) ByCode(ctx context.Context, code string) (Link, error) {
 	return Scan(r.DB.QueryRow(ctx, "SELECT "+Columns+" FROM short_links WHERE code=$1", code))
@@ -62,15 +71,48 @@ func (r Repository) Save(ctx context.Context, l Link, update bool, actor string)
 		// Historical and ordinary links remain Meta-compatible after the platform split.
 		l.AdPlatform = "meta"
 	}
+	if !HasEditableAdvertisingBinding(l) {
+		return Link{}, ErrInvalidAdvertisingBinding
+	}
+	if l.AdPlatform == "tiktok" {
+		var usable bool
+		// Ordinary links may only freeze a currently enabled Pixel backed by an
+		// enabled credential. Token validity is rechecked again when events fire.
+		if e = tx.QueryRow(ctx, `SELECT EXISTS(
+			SELECT 1 FROM tiktok_pixels p JOIN tiktok_connections c ON c.id=p.connection_id
+			WHERE p.id=$1 AND p.enabled AND c.enabled AND c.access_token_cipher<>''
+			AND c.credential_status NOT IN ('invalid','error'))`, l.TikTokPixelID).Scan(&usable); e != nil {
+			return Link{}, e
+		}
+		if !usable {
+			return Link{}, ErrInvalidAdvertisingBinding
+		}
+	}
+	if update {
+		var currentPlatform string
+		var hasVisits bool
+		if e = tx.QueryRow(ctx, `SELECT ad_platform,
+			EXISTS(SELECT 1 FROM click_events WHERE link_id=short_links.id)
+			FROM short_links WHERE id=$1 FOR UPDATE`, l.ID).
+			Scan(&currentPlatform, &hasVisits); e != nil {
+			return Link{}, e
+		}
+		if currentPlatform == "" {
+			currentPlatform = "meta"
+		}
+		if hasVisits && currentPlatform != l.AdPlatform {
+			return Link{}, ErrAdvertisingBindingLocked
+		}
+	}
 	// Link availability is persisted only as enabled/disabled; scheduled expiry
 	// no longer participates in the repository contract.
-	args := []any{l.Code, l.Name, l.TargetURL, l.Enabled, l.CampaignID, l.AdsetID, l.AdID, l.Channel, l.Mode, l.LandingBrand, l.LandingTitle, l.LandingDescription, l.LandingDetails, l.LandingDelay, l.MetaConnectionID, l.AttributionMode, l.MetaPixelID, l.TimeSpentThreshold, l.ProductType, l.NovelID, l.AdPlatform, l.TikTokPixelID, l.AudioNovelID}
-	query := "INSERT INTO short_links(code,name,target_url,enabled,campaign_id,adset_id,ad_id,channel,mode,landing_brand,landing_title,landing_description,landing_details,landing_delay,meta_connection_id,attribution_mode,meta_pixel_id,time_spent_threshold,product_type,novel_id,ad_platform,tiktok_pixel_id,audio_novel_id) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23) RETURNING " + Columns
+	args := []any{l.Code, l.Name, l.TargetURL, l.Enabled, l.CampaignID, l.AdsetID, l.AdID, l.Channel, l.Mode, l.LandingBrand, l.LandingTitle, l.LandingDescription, l.LandingDetails, l.LandingDelay, l.MetaConnectionID, l.AttributionMode, l.MetaPixelID, l.TimeSpentThreshold, l.ProductType, l.NovelID, l.AdPlatform, l.TikTokPixelID, l.AudioNovelID, l.EntryChapterID}
+	query := "INSERT INTO short_links(code,name,target_url,enabled,campaign_id,adset_id,ad_id,channel,mode,landing_brand,landing_title,landing_description,landing_details,landing_delay,meta_connection_id,attribution_mode,meta_pixel_id,time_spent_threshold,product_type,novel_id,ad_platform,tiktok_pixel_id,audio_novel_id,entry_chapter_id) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24) RETURNING " + Columns
 	action := "link.create"
 	if update {
 		action = "link.update"
 		args = append(args, l.ID)
-		query = "UPDATE short_links SET code=$1,name=$2,target_url=$3,enabled=$4,campaign_id=$5,adset_id=$6,ad_id=$7,channel=$8,mode=$9,landing_brand=$10,landing_title=$11,landing_description=$12,landing_details=$13,landing_delay=$14,meta_connection_id=$15,attribution_mode=$16,meta_pixel_id=$17,time_spent_threshold=$18,product_type=$19,novel_id=$20,ad_platform=$21,tiktok_pixel_id=$22,audio_novel_id=$23 WHERE id=$24 RETURNING " + Columns
+		query = "UPDATE short_links SET code=$1,name=$2,target_url=$3,enabled=$4,campaign_id=$5,adset_id=$6,ad_id=$7,channel=$8,mode=$9,landing_brand=$10,landing_title=$11,landing_description=$12,landing_details=$13,landing_delay=$14,meta_connection_id=$15,attribution_mode=$16,meta_pixel_id=$17,time_spent_threshold=$18,product_type=$19,novel_id=$20,ad_platform=$21,tiktok_pixel_id=$22,audio_novel_id=$23,entry_chapter_id=$24 WHERE id=$25 RETURNING " + Columns
 	}
 
 	saved, e := Scan(tx.QueryRow(ctx, query, args...))
@@ -132,6 +174,9 @@ func (r Repository) DeleteBatch(ctx context.Context, ids []int64, actor string) 
 	// CAPI rows reference visit IDs logically rather than through a foreign key,
 	// so they must be removed before their owning click events disappear.
 	if _, err = tx.Exec(ctx, "DELETE FROM meta_events WHERE visit_id IN (SELECT id FROM click_events WHERE link_id=ANY($1::bigint[]))", orderedIDs); err != nil {
+		return 0, err
+	}
+	if _, err = tx.Exec(ctx, "DELETE FROM tiktok_events WHERE visit_id IN (SELECT id FROM click_events WHERE link_id=ANY($1::bigint[]))", orderedIDs); err != nil {
 		return 0, err
 	}
 	if _, err = tx.Exec(ctx, "DELETE FROM click_events WHERE link_id=ANY($1::bigint[])", orderedIDs); err != nil {

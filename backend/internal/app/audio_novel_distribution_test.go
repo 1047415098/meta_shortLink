@@ -382,7 +382,8 @@ func TestAudioNovelDistributionEntryKeepsProbesEditableAndUnavailableContentUnco
 	}
 
 	textNovelID := createDistributionNovel(t, a, admin, "Wrong Product", "wrong-product")
-	textBody := fmt.Sprintf(`{"name":"Text Buyer","code":"text-on-audio","novel_id":%d,"enabled":true,"meta_connection_id":%d,"meta_pixel_id":%d,"ad_platform":"meta","time_spent_threshold":10}`, textNovelID, metaConnectionID, metaPixelID)
+	textChapterID := createDistributionChapter(t, a, admin, textNovelID, 1, "Wrong Surface Entry", true)
+	textBody := fmt.Sprintf(`{"name":"Text Buyer","code":"text-on-audio","novel_id":%d,"entry_chapter_id":%d,"enabled":true,"meta_connection_id":%d,"meta_pixel_id":%d,"ad_platform":"meta","time_spent_threshold":10}`, textNovelID, textChapterID, metaConnectionID, metaPixelID)
 	if response := call(a, "POST", "/api/v1/novel-links", textBody, admin); response.Code != 200 {
 		t.Fatalf("create text link: %d %s", response.Code, response.Body.String())
 	}

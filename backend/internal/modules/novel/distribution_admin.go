@@ -41,6 +41,10 @@ func (h *Handler) CreateDistributionLink(c *gin.Context) {
 		runtime.Bad(c, err.Error())
 		return
 	}
+	if input.EntryChapterID == nil {
+		runtime.Bad(c, "请选择入口章节")
+		return
+	}
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 5*time.Second)
 	defer cancel()
 	item, err := (Repository{DB: h.DB}).CreateDistributionLink(ctx, input, h.Config.AdminUser)
@@ -91,7 +95,9 @@ func (h *Handler) DeleteDistributionLink(c *gin.Context) {
 
 func (h *Handler) writeDistributionLink(c *gin.Context, item DistributionLink, err error) {
 	if errors.Is(err, ErrDistributionBindingLocked) {
-		c.JSON(409, gin.H{"error": "该链接已有访问记录，小说绑定已锁定；请新建链接"})
+		c.JSON(409, gin.H{"error": "该链接已有访问记录，小说与入口章节绑定已锁定；请新建链接"})
+	} else if errors.Is(err, ErrDistributionChapterInvalid) {
+		runtime.Bad(c, "入口章节必须属于所选小说，且处于启用状态")
 	} else if errors.Is(err, pgx.ErrNoRows) {
 		c.Status(404)
 	} else if err != nil {

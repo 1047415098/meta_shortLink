@@ -16,7 +16,7 @@
       class="notice"
       type="info"
       :closable="false"
-      title="建议每位投手或每次投放创建一条独立链接，并用链接名称标记归属。链接产生访问后，绑定小说将被锁定。"
+      title="建议每位投手或每次投放创建一条独立链接；入口章节会直达阅读页，首次访问后，小说和入口章节均不可修改。"
     />
     <section class="panel" v-loading="loading">
       <el-table :data="links" empty-text="这本小说还没有投放链接">
@@ -37,6 +37,10 @@
               {{ selectedPixelName(row) }}
             </div></template
           ></el-table-column
+        ><el-table-column label="入口章节" min-width="190"
+          ><template #default="{ row }">{{
+            entryChapterLabel(row)
+          }}</template></el-table-column
         ><el-table-column label="访问" prop="visit_count" width="90" />
         <el-table-column label="状态" width="90"
           ><template #default="{ row }"
@@ -108,6 +112,7 @@
             v-model="form.novel_id"
             style="width: 100%"
             :disabled="Boolean(editing?.first_visited_at)"
+            @change="changeNovel"
             ><el-option
               v-for="item in novels"
               :key="item.id"
@@ -117,6 +122,32 @@
             >已有访问，小说绑定不可再修改；需要换小说时请新建链接。</small
           ></el-form-item
         >
+        <el-form-item label="入口章节" required>
+          <el-select
+            v-model="form.entry_chapter_id"
+            style="width: 100%"
+            placeholder="选择进入链接后直接阅读的章节"
+            :loading="chaptersLoading"
+            :disabled="Boolean(editing?.first_visited_at)"
+          >
+            <el-option
+              v-for="chapter in entryChapters"
+              :key="chapter.id"
+              :label="chapterOptionLabel(chapter)"
+              :value="chapter.id"
+              :disabled="!chapter.enabled || chapter.entry_unavailable"
+            />
+          </el-select>
+          <small v-if="editing?.first_visited_at" class="muted">
+            已有访问，入口章节不可再修改；需要更换时请新建链接。
+          </small>
+          <small v-else-if="editing && !editing.entry_chapter_id" class="muted">
+            简介页（兼容旧链接）；保存前请选择入口章节。
+          </small>
+          <small v-else class="muted">
+            用户打开短链后将直接进入所选章节阅读。
+          </small>
+        </el-form-item>
         <el-form-item label="广告平台" required>
           <el-radio-group
             v-model="form.ad_platform"
@@ -194,11 +225,12 @@ import { useRoute, useRouter } from "vue-router";
 import { ElMessage, ElMessageBox } from "element-plus";
 import { Plus, Refresh } from "@element-plus/icons-vue";
 import PageHeader from "../components/PageHeader.vue";
-import { listNovels } from "../api/novels.js";
+import { listChapters, listNovels } from "../api/novels.js";
 import {
   createNovelLink,
   deleteNovelLink,
   listNovelLinks,
+  novelEntryChapterOptions,
   updateNovelLink,
 } from "../api/novelLinks.js";
 import { listConnections, listPixels } from "../api/meta.js";
@@ -213,6 +245,8 @@ const route = useRoute(),
   editing = ref(null),
   links = ref([]),
   novels = ref([]),
+  entryChapters = ref([]),
+  chaptersLoading = ref(false),
   connections = ref([]),
   pixels = ref([]),
   tiktokConnections = ref([]),
@@ -229,6 +263,7 @@ const blank = () => ({
   name: "",
   code: "",
   novel_id: selectedNovelID.value,
+  entry_chapter_id: null,
   enabled: true,
   ad_platform: "meta",
   channel: "facebook",
@@ -243,13 +278,66 @@ const blank = () => ({
   time_spent_threshold: 10,
 });
 const form = reactive(blank());
-function open(row) {
+let chapterLoadRequest = 0;
+async function open(row) {
   editing.value = row || null;
   Object.assign(form, blank(), row || {}, {
     // 迁移前的小说链接没有平台字段，后台兼容为 Meta。
     ad_platform: row?.ad_platform === "tiktok" ? "tiktok" : "meta",
   });
   dialog.value = true;
+  await loadEntryChapters(form.novel_id, form.entry_chapter_id, !row);
+}
+async function loadEntryChapters(novelID, selectedChapterID, defaultFirst) {
+  const requestID = ++chapterLoadRequest;
+  const lockedLink = editing.value?.first_visited_at ? editing.value : null;
+  // 锁定链接先用快照保留章节；可编辑链接切换小说时则立即清空旧选择。
+  entryChapters.value = novelEntryChapterOptions([], lockedLink);
+  form.entry_chapter_id = lockedLink?.entry_chapter_id
+    ? Number(lockedLink.entry_chapter_id)
+    : null;
+  if (!novelID) {
+    chaptersLoading.value = false;
+    return;
+  }
+  chaptersLoading.value = true;
+  try {
+    const result = await listChapters(novelID);
+    if (requestID !== chapterLoadRequest) return;
+    entryChapters.value = novelEntryChapterOptions(
+      result.items || [],
+      lockedLink,
+    );
+    if (
+      selectedChapterID &&
+      entryChapters.value.some(
+        (chapter) => Number(chapter.id) === Number(selectedChapterID),
+      )
+    ) {
+      form.entry_chapter_id = Number(selectedChapterID);
+    } else if (defaultFirst) {
+      form.entry_chapter_id = entryChapters.value[0]?.id || null;
+    }
+  } catch (error) {
+    if (requestID === chapterLoadRequest) ElMessage.error(error.message);
+  } finally {
+    if (requestID === chapterLoadRequest) chaptersLoading.value = false;
+  }
+}
+async function changeNovel(novelID) {
+  await loadEntryChapters(novelID, null, true);
+}
+function chapterOptionLabel(chapter) {
+  const status =
+    chapter.entry_unavailable || !chapter.enabled ? "（当前不可用）" : "";
+  return `第 ${chapter.chapter_number || "-"} 章${chapter.title ? ` · ${chapter.title}` : ""}${status}`;
+}
+function entryChapterLabel(row) {
+  if (!row.entry_chapter_id) return "简介页（兼容旧链接）";
+  const chapter = `第 ${row.entry_chapter_number || "-"} 章`;
+  return row.entry_chapter_title
+    ? `${chapter} · ${row.entry_chapter_title}`
+    : chapter;
 }
 function switchPlatform(platform) {
   if (platform === "tiktok") {
@@ -326,9 +414,16 @@ async function load() {
 async function save() {
   const selectedPixel =
     form.ad_platform === "tiktok" ? form.tiktok_pixel_id : form.meta_pixel_id;
-  if (!form.name.trim() || !form.novel_id || !selectedPixel) {
+  // 只有新建链接强制选择入口章节；历史链接编辑时继续保留简介页兼容行为。
+  const needsEntryChapter = !editing.value;
+  if (
+    !form.name.trim() ||
+    !form.novel_id ||
+    (needsEntryChapter && !form.entry_chapter_id) ||
+    !selectedPixel
+  ) {
     ElMessage.warning(
-      `请填写链接名称、绑定小说并选择 ${form.ad_platform === "tiktok" ? "TikTok" : "Meta"} Pixel`,
+      `请填写链接名称、绑定小说、入口章节并选择 ${form.ad_platform === "tiktok" ? "TikTok" : "Meta"} Pixel`,
     );
     return;
   }

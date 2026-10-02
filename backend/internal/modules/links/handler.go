@@ -38,8 +38,8 @@ func (a *Handler) Create(c *gin.Context) {
 	if l.Code == "" {
 		l.Code = runtime.Token()[:8]
 	}
-	if !ValidLink(l) || !HasMetaBinding(l) {
-		runtime.Bad(c, "请检查链接信息，并选择 Meta Pixel 和广告归因方式")
+	if !ValidLink(l) || !HasAdvertisingBinding(l) {
+		runtime.Bad(c, "请检查链接信息，并为所选平台选择一个可用 Pixel")
 		return
 	}
 	a.saveLink(c, l, false)
@@ -69,9 +69,8 @@ func (a *Handler) Update(c *gin.Context) {
 		return
 	}
 	// Decode over the existing record so PATCH supports enabling without replacing metadata.
-	// Once a link has a Pixel, later edits cannot remove that required binding.
-	hadMetaBinding := HasMetaBinding(l)
-	if c.ShouldBindJSON(&l) != nil || !ValidLink(l) || (hadMetaBinding && !HasMetaBinding(l)) {
+	// Every edit must still leave exactly one complete advertising destination.
+	if c.ShouldBindJSON(&l) != nil || !ValidLink(l) || !HasEditableAdvertisingBinding(l) {
 		runtime.Bad(c, "链接配置无效")
 		return
 	}
@@ -133,6 +132,14 @@ func (a *Handler) saveLink(c *gin.Context, l Link, update bool) {
 	defer cancel()
 	saved, e := (Repository{DB: a.DB}).Save(ctx, l, update, a.Config.AdminUser)
 	if e != nil {
+		if errors.Is(e, ErrInvalidAdvertisingBinding) {
+			runtime.Bad(c, e.Error())
+			return
+		}
+		if errors.Is(e, ErrAdvertisingBindingLocked) {
+			c.JSON(409, gin.H{"error": e.Error()})
+			return
+		}
 		if strings.Contains(e.Error(), "23503") || strings.Contains(e.Error(), "23514") {
 			runtime.Bad(c, "所选 Pixel 必须属于当前广告账户，且配置需要存在")
 			return

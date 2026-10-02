@@ -69,7 +69,7 @@ func (a *Handler) VisibleTime(c *gin.Context) {
 
 // TimeSpent delegates to the shared signed action implementation while retaining the audio novel surface.
 func (a *Handler) TimeSpent(c *gin.Context) {
-	proxy := landing.Handler{Core: a.Core, Meta: a.Meta}
+	proxy := landing.Handler{Core: a.Core, Meta: a.Meta, TikTok: a.Playback.TikTok}
 	proxy.TimeSpentForSurface(c, "audio_novel", "contact:audio_novel:")
 }
 
@@ -125,14 +125,14 @@ func (a *Handler) action(c *gin.Context, view bool) {
 	input := request.Meta
 	repository := landing.Repository{DB: a.DB, Meta: a.Meta}
 	if view {
-		err = repository.MarkView(ctx, parts[0], link.ID, "audio_novel", input)
+		_, err = repository.MarkView(ctx, parts[0], link.ID, "audio_novel", input)
 		if err == nil {
 			c.Status(204)
 			return
 		}
 	} else {
 		var target string
-		target, err = repository.MarkContact(ctx, parts[0], link.ID, "audio_novel", false, input)
+		target, _, err = repository.MarkContact(ctx, parts[0], link.ID, "audio_novel", false, input)
 		if err == nil {
 			c.JSON(200, gin.H{"target_url": target})
 			return

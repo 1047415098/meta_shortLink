@@ -11,6 +11,16 @@
     >
       <el-button @click="router.push({ name: 'links' })">返回列表</el-button>
       <el-button @click="openOverview">数据总览</el-button>
+      <el-button
+        v-if="data?.link.ad_platform === 'tiktok'"
+        @click="
+          router.push({
+            name: 'tiktok-events',
+            query: { link_id: String(route.params.id) },
+          })
+        "
+        >TikTok 事件记录</el-button
+      >
     </PageHeader>
 
     <el-card shadow="never" class="filter-card">
@@ -110,7 +120,7 @@
           <div class="table-heading">
             <div>
               <h2>真实广告表现</h2>
-              <p>仅统计携带有效 fbclid 和明确 ad_id 的正常访客。</p>
+              <p>{{ realClickDescription }}</p>
             </div>
             <el-tag effect="plain">共 {{ number(data.total) }} 条广告</el-tag>
           </div>
@@ -131,7 +141,11 @@
               <template #default="{ row }">
                 <div class="ad-name">{{ rowTitle(row) }}</div>
                 <!-- The normalized ID comes only from the explicit ad_id. -->
-                <div class="source-value">广告 ID：{{ row.source_value }}</div>
+                <div class="source-value">
+                  {{ isTikTok ? "TikTok 广告 ID" : "广告 ID" }}：{{
+                    row.source_value
+                  }}
+                </div>
                 <div class="source-meta">
                   <el-tag
                     v-if="row.name_source === 'parameter'"
@@ -244,7 +258,11 @@
             @current-change="changePage"
           />
           <div class="counting-notes">
-            <p>
+            <p v-if="isTikTok">
+              TikTok 真实广告点击要求入口携带有效 ttclid 和明确的
+              ad_id_v2，同时访问被识别为正常访客；机器人预览、预取、可疑请求和普通帖子点击均不计入。
+            </p>
+            <p v-else>
               真实广告点击要求入口携带有效 fbclid 和明确的
               ad_id，同时访问被识别为正常访客；机器人预览、预取、可疑请求和普通帖子点击均不计入。
             </p>
@@ -285,11 +303,19 @@ const page = ref(1),
 let generation = 0,
   alive = true;
 // Keep the summary aligned with the backend's single real-ad-click cohort.
-const cards = [
+const isTikTok = computed(() => data.value?.link.ad_platform === "tiktok");
+const realClickDescription = computed(() =>
+  isTikTok.value
+    ? "仅统计携带有效 ttclid 和明确 ad_id_v2 的正常访客。"
+    : "仅统计携带有效 fbclid 和明确 ad_id 的正常访客。",
+);
+const cards = computed(() => [
   {
     key: "visits",
     label: "真实广告点击",
-    help: "携带有效 fbclid 和明确 ad_id",
+    help: isTikTok.value
+      ? "携带有效 ttclid 和明确 ad_id_v2"
+      : "携带有效 fbclid 和明确 ad_id",
   },
   {
     key: "unique_visitors",
@@ -302,7 +328,7 @@ const cards = [
     help: "用户主动点击咨询按钮",
   },
   { key: "auto_redirects", label: "自动跳转", help: "倒计时结束后的咨询跳转" },
-];
+]);
 const range = computed({
   get: () => [filters.start, filters.end],
   set: (v) => {

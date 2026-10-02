@@ -12,9 +12,16 @@ function fakeDocument() {
   return {
     visibilityState: "visible",
     documentElement: { dataset: {} },
-    addEventListener(name, fn) { listeners.set(name, fn); },
-    removeEventListener(name) { listeners.delete(name); },
-    change(value) { this.visibilityState = value; listeners.get("visibilitychange")?.(); },
+    addEventListener(name, fn) {
+      listeners.set(name, fn);
+    },
+    removeEventListener(name) {
+      listeners.delete(name);
+    },
+    change(value) {
+      this.visibilityState = value;
+      listeners.get("visibilitychange")?.();
+    },
   };
 }
 
@@ -28,10 +35,15 @@ test("visible timer pauses while the document is hidden and triggers once", () =
     threshold: 5,
     documentRef,
     now: () => now,
-    schedule: (fn) => { tick = fn; return 1; },
+    schedule: (fn) => {
+      tick = fn;
+      return 1;
+    },
     cancel: () => {},
     onTick: (value) => seconds.push(value),
-    onThreshold: () => { reached += 1; },
+    onThreshold: () => {
+      reached += 1;
+    },
   });
   now = 3000;
   tick();
@@ -53,12 +65,55 @@ test("TimeSpent helpers format and deduplicate browser/server delivery", async (
   const calls = [];
   const scope = { fbq: (...args) => calls.push(args) };
   const state = {};
-  assert.equal(trackMetaTimeSpent({ eventId: "wa_visit_time_spent", scope, state }), true);
-  assert.equal(trackMetaTimeSpent({ eventId: "wa_visit_time_spent", scope, state }), false);
+  assert.equal(
+    trackMetaTimeSpent({ eventId: "wa_visit_time_spent", scope, state }),
+    true,
+  );
+  assert.equal(
+    trackMetaTimeSpent({ eventId: "wa_visit_time_spent", scope, state }),
+    false,
+  );
   const requests = [];
-  await reportTimeSpent({ code: "hello", ticket: "signed", state, request: async (...args) => requests.push(args) });
-  await reportTimeSpent({ code: "hello", ticket: "signed", state, request: async (...args) => requests.push(args) });
-  assert.deepEqual(calls, [["trackCustom", "TimeSpent", {}, { eventID: "wa_visit_time_spent" }]]);
+  await reportTimeSpent({
+    code: "hello",
+    ticket: "signed",
+    state,
+    request: async (...args) => requests.push(args),
+  });
+  await reportTimeSpent({
+    code: "hello",
+    ticket: "signed",
+    state,
+    request: async (...args) => requests.push(args),
+  });
+  assert.deepEqual(calls, [
+    ["trackCustom", "TimeSpent", {}, { eventID: "wa_visit_time_spent" }],
+  ]);
   assert.equal(requests.length, 1);
   assert.equal(requests[0][0], "/hello/time-spent");
+});
+
+test("qualified visible time exposes the server-authorized TikTok ViewContent event", async () => {
+  const events = [];
+  const result = await reportTimeSpent({
+    code: "hello",
+    ticket: "signed",
+    state: {},
+    request: async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        ok: true,
+        tiktok_event: {
+          name: "ViewContent",
+          event_id: "short_visit_qualified",
+        },
+      }),
+    }),
+    onTikTokEvent: (event) => events.push(event),
+  });
+  assert.equal(result, true);
+  assert.deepEqual(events, [
+    { name: "ViewContent", event_id: "short_visit_qualified" },
+  ]);
 });

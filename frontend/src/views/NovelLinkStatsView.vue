@@ -78,7 +78,8 @@
             <div>
               <h2>访问明细</h2>
               <p>
-                仅统计正常 GET 小说入口访问；未开始采集的历史记录显示“未采集”。
+                仅统计正常 GET
+                小说入口访问；入口章节按访问发生时冻结，旧访问显示为兼容记录。
               </p>
             </div>
             <el-tag effect="plain">{{ number(data.total) }} 次</el-tag>
@@ -108,7 +109,20 @@
               prop="source"
               label="来源"
               min-width="110"
-            /><el-table-column
+            /><!-- 使用访问快照展示入口章节，避免章节改名后覆盖历史投放数据。 --><el-table-column
+              label="入口章节"
+              min-width="190"
+              ><template #default="{ row }"
+                ><template v-if="row.entry_chapter_number != null"
+                  ><span>第 {{ row.entry_chapter_number }} 章</span>
+                  <div class="muted">
+                    {{ row.entry_chapter_title || "未命名章节" }}
+                  </div></template
+                ><span v-else class="muted"
+                  >未记录（兼容旧链接）</span
+                ></template
+              ></el-table-column
+            ><el-table-column
               v-if="!isTikTok"
               prop="ad_id"
               label="广告 ID"

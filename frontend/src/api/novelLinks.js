@@ -9,6 +9,11 @@ export function novelLinkPayload(source = {}) {
     name: source.name || "",
     code: source.code || "",
     novel_id: Number(source.novel_id) || 0,
+    // 入口章节属于投放配置；历史未绑定链接继续保留 null 兼容简介页。
+    entry_chapter_id:
+      source.entry_chapter_id === "" || source.entry_chapter_id == null
+        ? null
+        : Number(source.entry_chapter_id) || null,
     enabled: Boolean(source.enabled),
     ad_platform: platform,
     channel: platform === "tiktok" ? "tiktok" : "facebook",
@@ -28,6 +33,35 @@ export function novelLinkPayload(source = {}) {
         ? 10
         : requestedThreshold,
   };
+}
+
+export function novelEntryChapterOptions(items = [], link = null) {
+  // 未访问链接只允许选择当前可读章节；已访问链接额外保留冻结的历史章节。
+  const options = items.filter(
+    (chapter) => chapter.enabled && !chapter.deleted_at,
+  );
+  const sortOptions = () =>
+    options.sort(
+      (left, right) =>
+        Number(left.chapter_number || 0) - Number(right.chapter_number || 0),
+    );
+  if (!link?.first_visited_at || !link.entry_chapter_id) return sortOptions();
+
+  const entryID = Number(link.entry_chapter_id);
+  if (options.some((chapter) => Number(chapter.id) === entryID))
+    return sortOptions();
+
+  const unavailable = items.find((chapter) => Number(chapter.id) === entryID);
+  options.push(
+    unavailable || {
+      id: entryID,
+      chapter_number: link.entry_chapter_number,
+      title: link.entry_chapter_title || "原绑定章节",
+      enabled: false,
+      entry_unavailable: true,
+    },
+  );
+  return sortOptions();
 }
 export function listNovelLinks(novelId) {
   const query = new URLSearchParams();

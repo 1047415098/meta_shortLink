@@ -75,6 +75,17 @@
               row.mode === "landing" ? "网站落地页" : "直接跳转"
             }}</el-tag></template
           ></el-table-column
+        ><el-table-column label="广告平台 / Pixel" min-width="190"
+          ><template #default="{ row }"
+            ><div class="platform-cell">
+              <el-tag
+                :type="row.ad_platform === 'tiktok' ? 'danger' : 'primary'"
+              >
+                {{ row.ad_platform === "tiktok" ? "TikTok" : "Meta" }}
+              </el-tag>
+              <span>{{ linkedPixelLabel(row) }}</span>
+            </div></template
+          ></el-table-column
         ><el-table-column
           prop="channel"
           label="渠道"
@@ -100,6 +111,12 @@
         ><el-table-column label="操作" min-width="290" fixed="right"
           ><template #default="{ row }"
             ><el-button link type="primary" @click="copy(row)">复制</el-button
+            ><el-button
+              v-if="row.ad_platform === 'tiktok'"
+              link
+              type="primary"
+              @click="copyTikTokTemplate(row)"
+              >复制投放模板</el-button
             ><el-button link type="primary" @click="detail(row)">统计</el-button
             ><el-button link @click="openLink(row)">编辑</el-button
             ><el-button
@@ -214,64 +231,125 @@
             maxlength="32"
             placeholder="仅字母、数字、短横线或下划线" /></el-form-item
         ><el-divider content-position="left">广告归因</el-divider>
-        <!-- 运营人员只选择最终回传 Pixel，所属账户由 Pixel 关系自动确定。 -->
-        <el-form-item label="Meta Pixel" required>
-          <el-select
-            v-model="form.meta_pixel_id"
-            placeholder="选择回传 Pixel"
-            style="width: 100%"
-            @change="selectMetaPixel"
-          >
-            <el-option
-              v-for="pixel in metaPixels"
-              :key="pixel.id"
-              :value="pixel.id"
-              :label="pixelOptionLabel(pixel)"
-              :disabled="!pixelSelectable(pixel)"
-            />
-          </el-select>
+        <el-form-item label="广告平台" required>
+          <el-radio-group v-model="form.ad_platform" @change="changePlatform">
+            <el-radio-button value="meta">Meta</el-radio-button>
+            <el-radio-button value="tiktok">TikTok</el-radio-button>
+          </el-radio-group>
           <small class="muted"
-            >选择 Pixel 后自动绑定所属账户；CAPI Token 仅在 Pixel
-            页面维护。</small
+            >一个短链接只能绑定一个平台，避免重复回传。</small
           >
-          <small v-if="selectedMetaConnection" class="muted"
-            >所属账户：{{ selectedMetaConnection.name }} ·
-            {{ selectedMetaConnection.account_id }}</small
+          <small v-if="editing" class="muted"
+            >链接产生访问后，广告平台会锁定；Pixel 可以调整，历史访问仍保留原
+            Pixel。</small
           >
-          <el-button
-            link
-            type="primary"
-            @click="router.push({ name: 'meta-pixels' })"
-            >管理 Meta Pixel</el-button
-          >
-          <el-alert
-            v-if="metaError"
-            :title="metaError"
-            type="error"
-            :closable="false"
-          />
         </el-form-item>
-        <el-alert
-          class="meta-binding-notice"
-          :title="metaBindingNotice.title"
-          :type="metaBindingNotice.type"
-          :closable="false"
-          show-icon
-        />
+        <template v-if="form.ad_platform === 'meta'">
+          <!-- 运营人员只选择最终回传 Pixel，所属账户由 Pixel 关系自动确定。 -->
+          <el-form-item label="Meta Pixel" required>
+            <el-select
+              v-model="form.meta_pixel_id"
+              placeholder="选择回传 Pixel"
+              style="width: 100%"
+              @change="selectMetaPixel"
+            >
+              <el-option
+                v-for="pixel in metaPixels"
+                :key="pixel.id"
+                :value="pixel.id"
+                :label="pixelOptionLabel(pixel)"
+                :disabled="!pixelSelectable(pixel)"
+              />
+            </el-select>
+            <small class="muted"
+              >选择 Pixel 后自动绑定所属账户；CAPI Token 仅在 Pixel
+              页面维护。</small
+            >
+            <small v-if="selectedMetaConnection" class="muted"
+              >所属账户：{{ selectedMetaConnection.name }} ·
+              {{ selectedMetaConnection.account_id }}</small
+            >
+            <el-button
+              link
+              type="primary"
+              @click="router.push({ name: 'meta-pixels' })"
+              >管理 Meta Pixel</el-button
+            >
+            <el-alert
+              v-if="metaError"
+              :title="metaError"
+              type="error"
+              :closable="false"
+            />
+          </el-form-item>
+          <el-alert
+            class="meta-binding-notice"
+            :title="metaBindingNotice.title"
+            :type="metaBindingNotice.type"
+            :closable="false"
+            show-icon
+          />
+        </template>
+        <template v-else>
+          <el-form-item label="TikTok Pixel" required>
+            <el-select
+              v-model="form.tiktok_pixel_id"
+              placeholder="选择回传 Pixel"
+              style="width: 100%"
+            >
+              <el-option
+                v-for="pixel in tiktokPixels"
+                :key="pixel.id"
+                :value="pixel.id"
+                :label="tiktokPixelOptionLabel(pixel)"
+                :disabled="!tiktokPixelSelectable(pixel)"
+              />
+            </el-select>
+            <small class="muted"
+              >TikTok Pixel 与 Events API 使用相同事件 ID 自动去重。</small
+            >
+            <el-button
+              link
+              type="primary"
+              @click="router.push({ name: 'tiktok-pixels' })"
+            >
+              管理 TikTok Pixel
+            </el-button>
+            <el-alert
+              v-if="tiktokError"
+              :title="tiktokError"
+              type="error"
+              :closable="false"
+            />
+          </el-form-item>
+          <el-alert
+            class="meta-binding-notice"
+            :title="tiktokBindingNotice.title"
+            :type="tiktokBindingNotice.type"
+            :closable="false"
+            show-icon
+          />
+        </template>
         <el-form-item label="广告归因方式" required>
-          <el-select v-model="form.attribution_mode" style="width: 100%">
+          <el-select
+            v-if="form.ad_platform === 'meta'"
+            v-model="form.attribution_mode"
+            style="width: 100%"
+          >
             <el-option value="bound" label="固定绑定：使用下方填写的广告 ID" />
             <el-option
               value="dynamic"
               label="动态归因：读取访问 URL 的广告 ID（新 Meta 链接推荐）"
             />
           </el-select>
-          <small class="muted"
-            >已有链接保留固定绑定。动态模式适合多个广告共用短链接，投放 URL
-            需携带 campaign_id、adset_id、ad_id。</small
-          >
+          <el-input v-else model-value="动态归因" disabled />
+          <small class="muted">{{
+            form.ad_platform === "tiktok"
+              ? "TikTok 自动读取 ttclid、campaign_id、adgroup_id、creative_id、ad_id_v2 和 placement。"
+              : "已有链接保留固定绑定。动态模式适合多个广告共用短链接，投放 URL 需携带 campaign_id、adset_id、ad_id。"
+          }}</small>
         </el-form-item>
-        <el-form-item label="Meta 网址参数">
+        <el-form-item v-if="form.ad_platform === 'meta'" label="Meta 网址参数">
           <!-- Disable direct editing so every operator copies the same canonical Meta template. -->
           <el-input
             :model-value="META_URL_PARAMETERS"
@@ -288,7 +366,24 @@
             >
           </div>
         </el-form-item>
-        <div class="form-grid">
+        <el-form-item v-else label="TikTok 投放链接模板">
+          <el-input
+            :model-value="currentTikTokTemplate"
+            type="textarea"
+            :rows="4"
+            disabled
+            placeholder="保存并生成短码后即可复制"
+          />
+          <el-button
+            type="primary"
+            plain
+            :disabled="!form.code"
+            @click="copyCurrentTikTokTemplate"
+          >
+            一键复制 TikTok 投放链接
+          </el-button>
+        </el-form-item>
+        <div v-if="form.ad_platform === 'meta'" class="form-grid">
           <el-form-item label="渠道"
             ><el-input v-model="form.channel" /></el-form-item
           ><el-form-item label="广告 ID"
@@ -327,16 +422,20 @@ import {
   updateLink,
 } from "../api/links";
 import { listConnections, listPixels } from "../api/meta";
+import { listTikTokConnections, listTikTokPixels } from "../api/tiktok.js";
 import {
   pixelSelectable,
   connectionIDForPixel,
   pixelUnavailableReason,
   META_URL_PARAMETERS,
 } from "../utils/meta";
+import { tiktokTemplateURL } from "../utils/tiktok.js";
 const router = useRouter();
 const links = ref([]);
 const metaConnections = ref([]);
 const metaPixels = ref([]);
+const tiktokConnections = ref([]);
+const tiktokPixels = ref([]);
 const selectedMetaConnection = computed(() =>
   metaConnections.value.find(
     (connection) => connection.id === form.meta_connection_id,
@@ -345,6 +444,11 @@ const selectedMetaConnection = computed(() =>
 const selectedMetaPixel = computed(() =>
   metaPixels.value.find(
     (pixel) => Number(pixel.id) === Number(form.meta_pixel_id),
+  ),
+);
+const selectedTikTokPixel = computed(() =>
+  tiktokPixels.value.find(
+    (pixel) => Number(pixel.id) === Number(form.tiktok_pixel_id),
   ),
 );
 // Keep the operator informed whether the saved link can actually create CAPI events.
@@ -363,7 +467,21 @@ const metaBindingNotice = computed(() => {
     title: `事件将回传至 ${selectedMetaConnection.value.name} 的 Pixel ${selectedMetaPixel.value.pixel_id}。`,
   };
 });
+const tiktokBindingNotice = computed(() => {
+  if (!form.tiktok_pixel_id)
+    return {
+      type: "error",
+      title: "请选择 TikTok Pixel，事件才能通过 Pixel 与 Events API 完整回传。",
+    };
+  if (!tiktokPixelSelectable(selectedTikTokPixel.value))
+    return { type: "error", title: "当前 TikTok Pixel 或凭证不可用。" };
+  return {
+    type: "success",
+    title: `事件将回传至 TikTok Pixel ${selectedTikTokPixel.value.pixel_code}。`,
+  };
+});
 const metaError = ref("");
+const tiktokError = ref("");
 const busy = ref(false);
 const saving = ref(false);
 const deleting = ref(false);
@@ -394,6 +512,9 @@ const form = reactive({
   meta_connection_id: null,
   // New links never inherit a default Pixel; the operator chooses the CAPI target explicitly.
   meta_pixel_id: null,
+  // Platform bindings are mutually exclusive; hidden IDs are cleared on save.
+  ad_platform: "meta",
+  tiktok_pixel_id: null,
   // New links always use the URL's current ad IDs so one short link can serve
   // multiple ads without inheriting a fixed ID from the creation form.
   attribution_mode: "dynamic",
@@ -419,6 +540,14 @@ const activeLinks = computed(
   // Automatic expiry was removed; only the explicit enabled flag controls availability.
   () => links.value.filter((l) => l.enabled).length,
 );
+const currentTikTokTemplate = computed(() => {
+  if (!form.code) return "";
+  return tiktokTemplateURL(
+    settings.value.public_base_url || window.location.origin,
+    form.code,
+    "short-link",
+  );
+});
 // Element Plus supplies the full selected rows, preserving names for confirmation copy.
 function selectionChanged(rows) {
   selectedLinks.value = rows;
@@ -434,7 +563,7 @@ async function confirmDelete(rows) {
   const suffix = chosen.length > 3 ? ` 等 ${chosen.length} 条` : "";
   try {
     await ElMessageBox.confirm(
-      `即将永久删除 ${preview}${suffix}，对应访问统计、CAPI 回传记录和访客日志也会删除。此操作无法撤销。`,
+      `即将永久删除 ${preview}${suffix}，对应访问统计、Meta/TikTok 回传记录和访客日志也会删除。此操作无法撤销。`,
       `确认删除 ${chosen.length} 条短链接？`,
       {
         type: "warning",
@@ -468,6 +597,17 @@ function selectMetaPixel(value) {
   form.meta_connection_id = connectionIDForPixel(metaPixels.value, value);
   if (!editing.value && value) form.attribution_mode = "dynamic";
 }
+function changePlatform(platform) {
+  form.attribution_mode = "dynamic";
+  if (platform === "tiktok") {
+    form.meta_connection_id = null;
+    form.meta_pixel_id = null;
+    form.channel = "tiktok";
+  } else {
+    form.tiktok_pixel_id = null;
+    form.channel = "facebook";
+  }
+}
 // Disabled options remain visible so administrators can understand what to fix.
 function pixelOptionLabel(pixel) {
   const reason = pixelUnavailableReason(pixel);
@@ -475,6 +615,47 @@ function pixelOptionLabel(pixel) {
     (connection) => Number(connection.id) === Number(pixel.connection_id),
   );
   return `${account?.name || "未知账户"} · ${pixel.name} · ${pixel.pixel_id}${reason ? ` · ${reason}` : ""}`;
+}
+function tiktokConnectionForPixel(pixel) {
+  return tiktokConnections.value.find(
+    (connection) => Number(connection.id) === Number(pixel?.connection_id),
+  );
+}
+function tiktokPixelSelectable(pixel) {
+  const connection = tiktokConnectionForPixel(pixel);
+  return Boolean(
+    pixel?.enabled &&
+    connection?.enabled &&
+    connection?.has_access_token &&
+    !["invalid", "error"].includes(connection?.credential_status),
+  );
+}
+function tiktokPixelOptionLabel(pixel) {
+  const connection = tiktokConnectionForPixel(pixel);
+  const reason = !pixel.enabled
+    ? " · 已停用"
+    : !connection?.enabled
+      ? " · 凭证已停用"
+      : !connection?.has_access_token
+        ? " · 未保存 Token"
+        : ["invalid", "error"].includes(connection?.credential_status)
+          ? " · 凭证异常"
+          : "";
+  return `${connection?.name || "未知凭证"} · ${pixel.name} · ${pixel.pixel_code}${reason}`;
+}
+function linkedPixelLabel(row) {
+  if (row.ad_platform === "tiktok") {
+    const pixel = tiktokPixels.value.find(
+      (item) => Number(item.id) === Number(row.tiktok_pixel_id),
+    );
+    return pixel
+      ? `${pixel.name} · ${pixel.pixel_code}`
+      : "TikTok Pixel 未找到";
+  }
+  const pixel = metaPixels.value.find(
+    (item) => Number(item.id) === Number(row.meta_pixel_id),
+  );
+  return pixel ? `${pixel.name} · ${pixel.pixel_id}` : "Meta Pixel 未找到";
 }
 function openLink(row) {
   editing.value = row?.id || null;
@@ -502,6 +683,8 @@ function openLink(row) {
       channel: "facebook",
       meta_connection_id: null,
       meta_pixel_id: null,
+      ad_platform: "meta",
+      tiktok_pixel_id: null,
       // Creation resets to dynamic; an edited row below keeps its stored mode.
       attribution_mode: "dynamic",
     },
@@ -509,6 +692,8 @@ function openLink(row) {
   );
   form.meta_connection_id = row?.meta_connection_id || null;
   form.meta_pixel_id = row?.meta_pixel_id || null;
+  form.ad_platform = row?.ad_platform || "meta";
+  form.tiktok_pixel_id = row?.tiktok_pixel_id || null;
   form.attribution_mode = row?.attribution_mode || "dynamic";
   dialog.value = true;
 }
@@ -520,15 +705,25 @@ async function saveLink() {
   }
   // Re-derive the pair at save time so stale UI state cannot bind a Pixel to
   // the wrong account or silently depend on the legacy account CAPI switch.
-  form.meta_connection_id = connectionIDForPixel(
-    metaPixels.value,
-    form.meta_pixel_id,
-  );
-  if (form.meta_pixel_id && !pixelSelectable(selectedMetaPixel.value)) {
-    ElMessage.warning("当前 Pixel 无法用于 CAPI 回传");
-    return;
+  if (form.ad_platform === "meta") {
+    form.meta_connection_id = connectionIDForPixel(
+      metaPixels.value,
+      form.meta_pixel_id,
+    );
+    if (form.meta_pixel_id && !pixelSelectable(selectedMetaPixel.value)) {
+      ElMessage.warning("当前 Meta Pixel 无法用于 CAPI 回传");
+      return;
+    }
+    form.tiktok_pixel_id = null;
+  } else {
+    if (!tiktokPixelSelectable(selectedTikTokPixel.value)) {
+      ElMessage.warning("当前 TikTok Pixel 或凭证无法用于回传");
+      return;
+    }
+    form.meta_connection_id = null;
+    form.meta_pixel_id = null;
+    form.attribution_mode = "dynamic";
   }
-  if (!form.meta_pixel_id) form.meta_connection_id = null;
   saving.value = true;
   try {
     const payload = { ...form };
@@ -569,6 +764,29 @@ async function copy(row) {
     ElMessage.success("短链接已复制");
   } catch {
     ElMessage.warning("无法访问剪贴板，请手动复制链接");
+  }
+}
+async function copyTikTokTemplate(row) {
+  try {
+    await navigator.clipboard.writeText(
+      tiktokTemplateURL(
+        settings.value.public_base_url || window.location.origin,
+        row.code,
+        "short-link",
+      ),
+    );
+    ElMessage.success("TikTok 投放链接已复制");
+  } catch {
+    ElMessage.warning("无法访问剪贴板，请手动复制投放链接");
+  }
+}
+async function copyCurrentTikTokTemplate() {
+  if (!currentTikTokTemplate.value) return;
+  try {
+    await navigator.clipboard.writeText(currentTikTokTemplate.value);
+    ElMessage.success("TikTok 投放链接已复制");
+  } catch {
+    ElMessage.warning("无法访问剪贴板，请手动复制投放链接");
   }
 }
 async function copyMetaURLParameters() {
@@ -618,6 +836,20 @@ onMounted(() => {
     .catch((e) => {
       metaError.value = "Pixel 读取失败：" + e.message;
     });
+  listTikTokConnections()
+    .then((rows) => {
+      tiktokConnections.value = rows;
+    })
+    .catch((e) => {
+      tiktokError.value = "TikTok 凭证读取失败：" + e.message;
+    });
+  listTikTokPixels()
+    .then((rows) => {
+      tiktokPixels.value = rows;
+    })
+    .catch((e) => {
+      tiktokError.value = "TikTok Pixel 读取失败：" + e.message;
+    });
 });
 </script>
 
@@ -660,6 +892,13 @@ onMounted(() => {
   color: #909399;
   margin-top: 5px;
   word-break: break-all;
+}
+.platform-cell {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #606266;
+  font-size: 12px;
 }
 .form-grid {
   display: grid;

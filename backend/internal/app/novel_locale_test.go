@@ -21,8 +21,14 @@ func TestJapaneseVisitorFallsBackToEnglishWhenNovelHasNoJapaneseTranslation(t *t
 	if chapter.Code != 200 {
 		t.Fatalf("create chapter: %d %s", chapter.Code, chapter.Body.String())
 	}
+	var chapterItem struct {
+		ID int64 `json:"id"`
+	}
+	if err := json.Unmarshal(chapter.Body.Bytes(), &chapterItem); err != nil {
+		t.Fatal(err)
+	}
 	connectionID, pixelID := testLinkMetaBinding(t, a)
-	linkBody := fmt.Sprintf(`{"name":"日本无译文投放","code":"japan-english-fallback","novel_id":%d,"enabled":true,"channel":"facebook","meta_connection_id":%d,"meta_pixel_id":%d,"attribution_mode":"dynamic","time_spent_threshold":0}`, novelID, connectionID, pixelID)
+	linkBody := fmt.Sprintf(`{"name":"日本无译文投放","code":"japan-english-fallback","novel_id":%d,"entry_chapter_id":%d,"enabled":true,"channel":"facebook","meta_connection_id":%d,"meta_pixel_id":%d,"attribution_mode":"dynamic","time_spent_threshold":0}`, novelID, chapterItem.ID, connectionID, pixelID)
 	if response := call(a, "POST", "/api/v1/novel-links", linkBody, admin); response.Code != 200 {
 		t.Fatalf("create distribution link: %d %s", response.Code, response.Body.String())
 	}
@@ -47,6 +53,54 @@ func TestJapaneseVisitorFallsBackToEnglishWhenNovelHasNoJapaneseTranslation(t *t
 	a.Router.ServeHTTP(chapterResponse, chapterRequest)
 	if chapterResponse.Code != 200 || chapterResponse.Header().Get("Content-Language") != "en" || !strings.Contains(chapterResponse.Body.String(), "English chapter body") {
 		t.Fatalf("English chapter fallback: %d %s %s", chapterResponse.Code, chapterResponse.Header().Get("Content-Language"), chapterResponse.Body.String())
+	}
+}
+
+func TestBoundEntryChapterFallsBackWhenPublishedTranslationIsStaleOrIncomplete(t *testing.T) {
+	a := setup(t)
+	admin := login(t, a)
+	novelID := createDistributionNovel(t, a, admin, "Growing English Story", "growing-english-story")
+	firstChapterID := createDistributionChapter(t, a, admin, novelID, 1, "Opening", true)
+	var translatedRevision int64
+	if err := a.DB.QueryRow(context.Background(), "SELECT source_revision FROM novels WHERE id=$1", novelID).Scan(&translatedRevision); err != nil {
+		t.Fatal(err)
+	}
+	var versionID int64
+	if err := a.DB.QueryRow(context.Background(), `INSERT INTO novel_translation_versions(
+		novel_id,locale,source_revision,title,author,category,excerpt,status,enabled,total_items,completed_items,finished_at,published_at)
+		VALUES($1,'ja',$2,'古い日本語版','ナイン','ドラマ','概要','published',true,2,2,now(),now()) RETURNING id`, novelID, translatedRevision).Scan(&versionID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := a.DB.Exec(context.Background(), `INSERT INTO novel_chapter_translations(
+		version_id,chapter_id,chapter_number,title,body_markdown) VALUES($1,$2,1,'始まり','第一章')`, versionID, firstChapterID); err != nil {
+		t.Fatal(err)
+	}
+	// Adding the paid entry chapter advances the source revision; the published
+	// Japanese version neither matches that revision nor contains this chapter.
+	entryChapterID := createDistributionChapter(t, a, admin, novelID, 2, "New Paid Entry", true)
+	connectionID, pixelID := testLinkMetaBinding(t, a)
+	linkBody := fmt.Sprintf(`{"name":"新章节投放","code":"stale-ja-entry","novel_id":%d,"entry_chapter_id":%d,"enabled":true,"meta_connection_id":%d,"meta_pixel_id":%d,"time_spent_threshold":0}`, novelID, entryChapterID, connectionID, pixelID)
+	if response := call(a, "POST", "/api/v1/novel-links", linkBody, admin); response.Code != 200 {
+		t.Fatalf("create bound distribution link: %d %s", response.Code, response.Body.String())
+	}
+	distributionLink, err := (links.Repository{DB: a.DB}).ByCode(context.Background(), "stale-ja-entry")
+	if err != nil {
+		t.Fatal(err)
+	}
+	pageRequest := httptest.NewRequest("GET", "/novel/stale-ja-entry", nil)
+	pageResponse := httptest.NewRecorder()
+	pageContext, _ := gin.CreateTestContext(pageResponse)
+	pageContext.Request = pageRequest
+	(&novel.Handler{Core: a.Core}).Render(pageContext, distributionLink, "", false, "JP", true)
+	if pageResponse.Code != 200 || pageResponse.Header().Get("Content-Language") != "en" ||
+		!strings.Contains(pageResponse.Body.String(), `"locale":"en"`) ||
+		!strings.Contains(pageResponse.Body.String(), `"available_locales":["en"]`) ||
+		!strings.Contains(pageResponse.Body.String(), `"entry_chapter_number":2`) {
+		t.Fatalf("stale entry translation fallback: %d %s %s", pageResponse.Code, pageResponse.Header().Get("Content-Language"), pageResponse.Body.String())
+	}
+	chapter := call(a, "GET", "/novel-api/stale-ja-entry/stories/growing-english-story/chapters/2", "", nil)
+	if chapter.Code != 200 || !strings.Contains(chapter.Body.String(), "Chapter body") {
+		t.Fatalf("English entry chapter fallback: %d %s", chapter.Code, chapter.Body.String())
 	}
 }
 
@@ -97,7 +151,7 @@ func TestPublishedNovelTranslationLocalizesContentAndFallsBackToEnglish(t *testi
 	}
 
 	connectionID, pixelID := testLinkMetaBinding(t, a)
-	linkBody := fmt.Sprintf(`{"name":"日本投放","code":"ja-story","novel_id":%d,"enabled":true,"channel":"facebook","meta_connection_id":%d,"meta_pixel_id":%d,"attribution_mode":"dynamic","time_spent_threshold":0}`, novelID, connectionID, pixelID)
+	linkBody := fmt.Sprintf(`{"name":"日本投放","code":"ja-story","novel_id":%d,"entry_chapter_id":%d,"enabled":true,"channel":"facebook","meta_connection_id":%d,"meta_pixel_id":%d,"attribution_mode":"dynamic","time_spent_threshold":0}`, novelID, chapterItem.ID, connectionID, pixelID)
 	if response := call(a, "POST", "/api/v1/novel-links", linkBody, admin); response.Code != 200 {
 		t.Fatalf("create distribution link: %d %s", response.Code, response.Body.String())
 	}

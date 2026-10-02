@@ -51,11 +51,37 @@ func ValidLink(l Link) bool {
 		return false
 	}
 	// Empty product types come from older internal callers and are persisted as short_link.
-	return ValidCode(l.Code) && ValidTarget(l.TargetURL) && len(strings.TrimSpace(l.Name)) > 0 && len(l.Name) <= 120 && len(l.AdID) <= 120 && len(l.CampaignID) <= 120 && len(l.AdsetID) <= 120 && len(l.Channel) <= 60 && (l.ProductType == "" || l.ProductType == "legacy" || l.ProductType == "short_link") && l.NovelID == nil
+	return ValidCode(l.Code) && ValidTarget(l.TargetURL) && len(strings.TrimSpace(l.Name)) > 0 && len(l.Name) <= 120 && len(l.AdID) <= 120 && len(l.CampaignID) <= 120 && len(l.AdsetID) <= 120 && len(l.Channel) <= 60 && (l.ProductType == "" || l.ProductType == "legacy" || l.ProductType == "short_link") && l.NovelID == nil && l.EntryChapterID == nil
 }
 
 // HasMetaBinding identifies the complete account/Pixel pair required for new
 // links while legacy rows without a pair remain available for emergency pause.
 func HasMetaBinding(l Link) bool {
 	return l.MetaConnectionID != nil && *l.MetaConnectionID > 0 && l.MetaPixelID != nil && *l.MetaPixelID > 0
+}
+
+// HasAdvertisingBinding requires exactly one platform target. This prevents a
+// visit from being sent to both advertising systems or silently to neither.
+func HasAdvertisingBinding(l Link) bool {
+	platform := l.AdPlatform
+	if platform == "" {
+		platform = "meta"
+	}
+	switch platform {
+	case "meta":
+		return HasMetaBinding(l) && l.TikTokPixelID == nil
+	case "tiktok":
+		return l.AttributionMode == "dynamic" && l.TikTokPixelID != nil && *l.TikTokPixelID > 0 && l.MetaConnectionID == nil && l.MetaPixelID == nil
+	default:
+		return false
+	}
+}
+
+// HasEditableAdvertisingBinding keeps historical unbound rows available for
+// emergency enable/disable operations while all current short links stay strict.
+func HasEditableAdvertisingBinding(l Link) bool {
+	if HasAdvertisingBinding(l) {
+		return true
+	}
+	return l.ProductType == "legacy" && l.MetaConnectionID == nil && l.MetaPixelID == nil && l.TikTokPixelID == nil && (l.AdPlatform == "" || l.AdPlatform == "meta")
 }

@@ -65,6 +65,10 @@ func TestVueBootstrapEscapingAndMetadata(t *testing.T) {
 	if !strings.Contains(csp, "https://assets.anytrack.io") || !strings.Contains(csp, "https://t1.anytrack.io") {
 		t.Fatalf("AnyTrack hosts missing from CSP: %s", csp)
 	}
+	// TikTok Pixel and Events API hosts are explicit; no wildcard source is needed.
+	if !strings.Contains(csp, "https://analytics.tiktok.com") || !strings.Contains(csp, "https://business-api.tiktok.com") {
+		t.Fatalf("TikTok hosts missing from CSP: %s", csp)
+	}
 }
 func TestVueUnavailableAndHead(t *testing.T) {
 	h := renderer(t)

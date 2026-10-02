@@ -187,7 +187,7 @@ func (h *Handler) listEvents(c *gin.Context) {
 	}
 	filters := EventFilters{Page: page, Status: c.Query("status"), EventName: c.Query("event_name")}
 	validStatus := map[string]bool{"": true, "pending": true, "sending": true, "accepted": true, "retry": true, "failed": true}
-	validName := map[string]bool{"": true, "StartReading": true, "StartListening": true, "ViewContent": true, "PageView": true}
+	validName := map[string]bool{"": true, "StartReading": true, "StartListening": true, "ViewContent": true, "PageView": true, "Contact": true}
 	if !validStatus[filters.Status] || !validName[filters.EventName] {
 		runtime.Bad(c, "TikTok 事件筛选条件无效")
 		return

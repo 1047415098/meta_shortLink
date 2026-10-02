@@ -61,6 +61,9 @@ type DistributionVisit struct {
 	Source               string    `json:"source"`
 	AdID                 string    `json:"ad_id"`
 	VisibleSeconds       *int      `json:"visible_seconds"`
+	EntryChapterID       *int64    `json:"entry_chapter_id,omitempty"`
+	EntryChapterNumber   *int      `json:"entry_chapter_number,omitempty"`
+	EntryChapterTitle    string    `json:"entry_chapter_title,omitempty"`
 	AdPlatform           string    `json:"ad_platform"`
 	PixelName            string    `json:"pixel_name"`
 	PixelCode            string    `json:"pixel_code"`
@@ -177,7 +180,7 @@ func (r Repository) DistributionStats(ctx context.Context, linkID int64, filter 
 		return out, err
 	}
 	defer tx.Rollback(ctx)
-	out.Link, err = scanDistribution(tx.QueryRow(ctx, "SELECT "+distributionColumns+" FROM short_links l JOIN novels n ON n.id=l.novel_id LEFT JOIN tiktok_pixels tp ON tp.id=l.tiktok_pixel_id WHERE l.id=$1 AND l.product_type='novel'", linkID))
+	out.Link, err = scanDistribution(tx.QueryRow(ctx, "SELECT "+distributionColumns+" FROM short_links l JOIN novels n ON n.id=l.novel_id LEFT JOIN novel_chapters ec ON ec.id=l.entry_chapter_id LEFT JOIN tiktok_pixels tp ON tp.id=l.tiktok_pixel_id WHERE l.id=$1 AND l.product_type='novel'", linkID))
 	if err != nil {
 		return out, err
 	}
@@ -234,6 +237,7 @@ func (r Repository) DistributionStats(ctx context.Context, linkID int64, filter 
 	queryArgs := append(append([]any{}, args...), (filter.Page-1)*out.PageSize)
 	rows, err := tx.Query(ctx, filteredCTE+` SELECT e.id,e.occurred_at,COALESCE(e.visitor_id,''),e.country,e.region,e.city,
 		e.device,e.browser,e.source,e.ad_id,CASE WHEN e.visible_updated_at IS NULL THEN NULL ELSE e.visible_seconds END,
+		e.entry_chapter_id,e.entry_chapter_number,e.entry_chapter_title,
 		e.ad_platform,COALESCE(tp.name,''),COALESCE(NULLIF(e.tiktok_pixel_code,''),tp.pixel_code,''),e.campaign_id,
 		e.tiktok_adgroup_id,e.tiktok_creative_id,e.tiktok_ad_id_v2,e.tiktok_placement,e.tiktok_ttclid,
 		e.tiktok_start_reading_at IS NOT NULL,e.tiktok_view_content_at IS NOT NULL,
@@ -247,7 +251,8 @@ func (r Repository) DistributionStats(ctx context.Context, linkID int64, filter 
 	for rows.Next() {
 		var item DistributionVisit
 		if err = rows.Scan(&item.ID, &item.OccurredAt, &item.VisitorID, &item.Country, &item.Region, &item.City,
-			&item.Device, &item.Browser, &item.Source, &item.AdID, &item.VisibleSeconds, &item.AdPlatform,
+			&item.Device, &item.Browser, &item.Source, &item.AdID, &item.VisibleSeconds,
+			&item.EntryChapterID, &item.EntryChapterNumber, &item.EntryChapterTitle, &item.AdPlatform,
 			&item.PixelName, &item.PixelCode, &item.CampaignID, &item.AdgroupID, &item.CreativeID, &item.AdIDV2,
 			&item.Placement, &item.TTCLID, &item.Started, &item.Qualified, &item.QualifiedEventStatus); err != nil {
 			rows.Close()

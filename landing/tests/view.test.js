@@ -10,6 +10,49 @@ test("landing view module exposes browser Meta Pixel installation", () => {
   assert.equal(typeof landingView.installMetaPixel, "function");
 });
 
+test("TikTok Pixel loads once and deduplicates browser events by server event ID", () => {
+  assert.equal(typeof landingView.installTikTokPixel, "function");
+  assert.equal(typeof landingView.trackTikTokEvent, "function");
+  const scripts = [];
+  const state = {};
+  const document = {
+    documentElement: { dataset: state },
+    createElement: () => ({}),
+    head: { appendChild: (node) => scripts.push(node) },
+  };
+  const scope = {};
+  assert.equal(
+    landingView.installTikTokPixel({
+      pixelCode: "PX_SHORT01",
+      document,
+      scope,
+    }),
+    true,
+  );
+  assert.equal(scripts.length, 1);
+  assert.match(scripts[0].src, /analytics\.tiktok\.com/);
+  // The downloaded SDK relies on TikTok's official per-Pixel queue metadata.
+  assert.match(scope.ttq._i.PX_SHORT01._u, /analytics\.tiktok\.com/);
+  assert.equal(
+    landingView.trackTikTokEvent({
+      name: "PageView",
+      eventId: "short_visit_view",
+      document,
+      scope,
+    }),
+    true,
+  );
+  assert.equal(
+    landingView.trackTikTokEvent({
+      name: "PageView",
+      eventId: "short_visit_view",
+      document,
+      scope,
+    }),
+    false,
+  );
+});
+
 test("browser Meta Pixel loads the selected Pixel and shares the CAPI PageView event ID", () => {
   const inserted = [];
   const firstScript = {
@@ -43,10 +86,13 @@ test("browser Meta Pixel loads the selected Pixel and shares the CAPI PageView e
     inserted[0].node.src,
     "https://connect.facebook.net/en_US/fbevents.js",
   );
-  assert.deepEqual(scope.fbq.queue.map((args) => [...args]), [
-    ["init", "1066571352827370"],
-    ["track", "PageView", {}, { eventID: "wa_visit-1_view" }],
-  ]);
+  assert.deepEqual(
+    scope.fbq.queue.map((args) => [...args]),
+    [
+      ["init", "1066571352827370"],
+      ["track", "PageView", {}, { eventID: "wa_visit-1_view" }],
+    ],
+  );
 
   // Repeated Vue mounts must not create a second browser PageView.
   assert.equal(
@@ -110,9 +156,10 @@ test("browser Meta Pixel initializes for manual consultation when PageView is di
     true,
   );
   assert.equal(inserted.length, 1);
-  assert.deepEqual(scope.fbq.queue.map((args) => [...args]), [
-    ["init", "1066571352827370"],
-  ]);
+  assert.deepEqual(
+    scope.fbq.queue.map((args) => [...args]),
+    [["init", "1066571352827370"]],
+  );
 });
 
 test("manual consultation sends one browser AddToCart with the shared CAPI event ID", () => {
@@ -174,6 +221,26 @@ test("signed landing view posts once per document", async () => {
       },
     ],
   ]);
+});
+
+test("signed landing view returns the server-authorized TikTok browser event", async () => {
+  const result = await reportLandingView({
+    code: "tiktok",
+    ticket: "signed",
+    state: {},
+    request: async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        ok: true,
+        tiktok_event: { name: "PageView", event_id: "short_visit_view" },
+      }),
+    }),
+  });
+  assert.deepEqual(result, {
+    name: "PageView",
+    event_id: "short_visit_view",
+  });
 });
 test("landing view does nothing without a ticket", async () => {
   const calls = [];

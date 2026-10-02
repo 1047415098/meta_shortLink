@@ -27,7 +27,7 @@ func TestNovelTikTokBootstrapAndCSPExposeOnlyPublicFields(t *testing.T) {
 		}
 	}
 	csp := novelContentSecurityPolicy("nonce-value")
-	for _, required := range []string{"'nonce-nonce-value'", "https://connect.facebook.net", "https://analytics.tiktok.com", "https://business-api.tiktok.com"} {
+	for _, required := range []string{"'nonce-nonce-value'", "https://connect.facebook.net", "https://analytics.tiktok.com", "https://business-api.tiktok.com", "frame-src 'self'"} {
 		if !strings.Contains(csp, required) {
 			t.Fatalf("CSP missing %q: %s", required, csp)
 		}

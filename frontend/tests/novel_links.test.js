@@ -9,6 +9,7 @@ import {
   novelLinkPayload,
   updateNovelLink,
 } from "../src/api/novelLinks.js";
+import * as novelLinksAPI from "../src/api/novelLinks.js";
 
 test("novel distribution client keeps links and statistics on dedicated endpoints", async (t) => {
   const calls = [];
@@ -26,10 +27,12 @@ test("novel distribution client keeps links and statistics on dedicated endpoint
   const payload = novelLinkPayload({
     name: "投手 A",
     novel_id: "7",
+    entry_chapter_id: "12",
     enabled: true,
     ignored: "no",
   });
   assert.equal(payload.novel_id, 7);
+  assert.equal(payload.entry_chapter_id, 12);
   assert.equal(payload.ignored, undefined);
   await listNovelLinks(7);
   await createNovelLink(payload);
@@ -119,6 +122,100 @@ test("novel link form only exposes the dwell-time attribution option", async () 
   assert.match(template, /复制 TikTok 投放模板/);
 });
 
+test("novel link form binds an enabled entry chapter and locks it after visits", async () => {
+  const source = await readFile(
+    new URL("../src/views/NovelLinkListView.vue", import.meta.url),
+    "utf8",
+  );
+  const template = source.split("<script setup>")[0];
+  const script = source.split("<script setup>")[1].split("</script>")[0];
+
+  assert.match(template, /label="入口章节" required/);
+  assert.match(template, /v-model="form\.entry_chapter_id"/);
+  assert.match(template, /:disabled="Boolean\(editing\?\.first_visited_at\)"/);
+  assert.match(
+    template,
+    /:disabled="!chapter\.enabled \|\| chapter\.entry_unavailable"/,
+  );
+  assert.match(template, /@change="changeNovel"/);
+  assert.match(template, /简介页（兼容旧链接）/);
+  assert.match(template, /首次访问后，小说和入口章节均不可修改/);
+  assert.match(script, /listChapters/);
+  assert.match(script, /novelEntryChapterOptions/);
+  assert.match(script, /const needsEntryChapter = !editing\.value;/);
+  assert.match(
+    script,
+    /form\.entry_chapter_id = lockedLink\?\.entry_chapter_id/,
+  );
+});
+
+test("novel link table shows the bound entry chapter", async () => {
+  const source = await readFile(
+    new URL("../src/views/NovelLinkListView.vue", import.meta.url),
+    "utf8",
+  );
+  const template = source.split("<script setup>")[0];
+  assert.match(template, /label="入口章节"/);
+  assert.match(template, /entryChapterLabel\(row\)/);
+});
+
+test("entry chapter choices keep frozen unavailable chapters only for visited links", () => {
+  assert.equal(typeof novelLinksAPI.novelEntryChapterOptions, "function");
+  const chapters = [
+    { id: 4, chapter_number: 4, title: "Four", enabled: true },
+    { id: 1, chapter_number: 1, title: "One", enabled: true },
+    { id: 2, chapter_number: 2, title: "Two", enabled: false },
+    {
+      id: 3,
+      chapter_number: 3,
+      title: "Three",
+      enabled: true,
+      deleted_at: "2026-09-25T00:00:00Z",
+    },
+  ];
+
+  assert.deepEqual(
+    novelLinksAPI.novelEntryChapterOptions(chapters).map(({ id }) => id),
+    [1, 4],
+  );
+  const disabled = novelLinksAPI.novelEntryChapterOptions(chapters, {
+    first_visited_at: "2026-09-25T01:00:00Z",
+    entry_chapter_id: 2,
+    entry_chapter_number: 2,
+    entry_chapter_title: "Original two",
+  });
+  assert.equal(disabled.find(({ id }) => id === 2)?.enabled, false);
+
+  const missing = novelLinksAPI.novelEntryChapterOptions(chapters, {
+    first_visited_at: "2026-09-25T01:00:00Z",
+    entry_chapter_id: 9,
+    entry_chapter_number: 9,
+    entry_chapter_title: "Deleted chapter",
+  });
+  assert.deepEqual(
+    missing.find(({ id }) => id === 9),
+    {
+      id: 9,
+      chapter_number: 9,
+      title: "Deleted chapter",
+      enabled: false,
+      entry_unavailable: true,
+    },
+  );
+});
+
+test("chapter loading ignores stale responses after the selected novel changes", async () => {
+  const source = await readFile(
+    new URL("../src/views/NovelLinkListView.vue", import.meta.url),
+    "utf8",
+  );
+  const script = source.split("<script setup>")[1].split("</script>")[0];
+  assert.match(script, /let chapterLoadRequest = 0/);
+  assert.match(script, /const requestID = \+\+chapterLoadRequest/);
+  assert.match(script, /if \(requestID !== chapterLoadRequest\) return/);
+  assert.match(script, /if \(requestID === chapterLoadRequest\)/);
+});
+
 test("admin registers the numeric input used by the dwell-time field", async () => {
   // Component source alone is insufficient because this project registers Element Plus widgets explicitly.
   const source = await readFile(
@@ -159,4 +256,18 @@ test("TikTok novel statistics expose funnel, delivery and attribution boundaries
     /TikTok 是否归因：本系统未知，请到 TikTok Ads Manager 查看。/,
   );
   assert.match(source, /TikTok 已接收/);
+});
+
+test("novel visit statistics show the frozen entry chapter and identify legacy visits", async () => {
+  const source = await readFile(
+    new URL("../src/views/NovelLinkStatsView.vue", import.meta.url),
+    "utf8",
+  );
+  const template = source.split("<script setup>")[0];
+
+  // 该列必须使用访问快照，避免章节后续改名时覆盖历史投放数据。
+  assert.match(template, /label="入口章节"/);
+  assert.match(template, /row\.entry_chapter_number/);
+  assert.match(template, /row\.entry_chapter_title/);
+  assert.match(template, /未记录（兼容旧链接）/);
 });

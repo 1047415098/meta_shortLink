@@ -60,12 +60,14 @@ func TestTikTokAttributionFreezesOnlyTheFirstNormalReader(t *testing.T) {
 	admin := login(t, a)
 	novelID := createDistributionNovel(t, a, admin, "TikTok Story", "tiktok-story")
 	secondNovelID := createDistributionNovel(t, a, admin, "TikTok Story Two", "tiktok-story-two")
+	entryChapterID := createDistributionChapter(t, a, admin, novelID, 1, "TikTok Entry", true)
+	secondEntryChapterID := createDistributionChapter(t, a, admin, secondNovelID, 1, "TikTok Entry Two", true)
 	pixelID := testTikTokBinding(t, a, "ATTR01")
 	secondPixelID := testTikTokBinding(t, a, "ATTR02")
 
 	create := func(name, code string) int64 {
 		t.Helper()
-		body := fmt.Sprintf(`{"name":%q,"code":%q,"novel_id":%d,"enabled":true,"ad_platform":"tiktok","tiktok_pixel_id":%d,"time_spent_threshold":10}`, name, code, novelID, pixelID)
+		body := fmt.Sprintf(`{"name":%q,"code":%q,"novel_id":%d,"entry_chapter_id":%d,"enabled":true,"ad_platform":"tiktok","tiktok_pixel_id":%d,"time_spent_threshold":10}`, name, code, novelID, entryChapterID, pixelID)
 		response := call(a, "POST", "/api/v1/novel-links", body, admin)
 		if response.Code != 200 {
 			t.Fatalf("create TikTok link %s: %d %s", code, response.Code, response.Body.String())
@@ -110,8 +112,8 @@ func TestTikTokAttributionFreezesOnlyTheFirstNormalReader(t *testing.T) {
 	}
 
 	for _, body := range []string{
-		fmt.Sprintf(`{"name":"TikTok A","novel_id":%d,"enabled":true,"ad_platform":"tiktok","tiktok_pixel_id":%d,"time_spent_threshold":10}`, secondNovelID, pixelID),
-		fmt.Sprintf(`{"name":"TikTok A","novel_id":%d,"enabled":true,"ad_platform":"tiktok","tiktok_pixel_id":%d,"time_spent_threshold":10}`, novelID, secondPixelID),
+		fmt.Sprintf(`{"name":"TikTok A","novel_id":%d,"entry_chapter_id":%d,"enabled":true,"ad_platform":"tiktok","tiktok_pixel_id":%d,"time_spent_threshold":10}`, secondNovelID, secondEntryChapterID, pixelID),
+		fmt.Sprintf(`{"name":"TikTok A","novel_id":%d,"entry_chapter_id":%d,"enabled":true,"ad_platform":"tiktok","tiktok_pixel_id":%d,"time_spent_threshold":10}`, novelID, entryChapterID, secondPixelID),
 	} {
 		if response := call(a, "PATCH", "/api/v1/novel-links/"+itoa(firstID), body, admin); response.Code != 409 {
 			t.Fatalf("frozen binding update status=%d body=%s", response.Code, response.Body.String())
@@ -147,9 +149,11 @@ func TestNovelDistributionLinkLifecycleLocksContentAfterFirstVisit(t *testing.T)
 	admin := login(t, a)
 	first := createDistributionNovel(t, a, admin, "Craving For My Divorced Wife", "craving-for-my-divorced-wife")
 	second := createDistributionNovel(t, a, admin, "Second Story", "second-story")
+	firstChapterID := createDistributionChapter(t, a, admin, first, 1, "First Entry", true)
+	secondChapterID := createDistributionChapter(t, a, admin, second, 1, "Second Entry", true)
 	connectionID, pixelID := testLinkMetaBinding(t, a)
 
-	createBody := fmt.Sprintf(`{"name":"投手 A","code":"wife-a","novel_id":%d,"enabled":true,"channel":"facebook","meta_connection_id":%d,"meta_pixel_id":%d,"attribution_mode":"dynamic","time_spent_threshold":0}`, first, connectionID, pixelID)
+	createBody := fmt.Sprintf(`{"name":"投手 A","code":"wife-a","novel_id":%d,"entry_chapter_id":%d,"enabled":true,"channel":"facebook","meta_connection_id":%d,"meta_pixel_id":%d,"attribution_mode":"dynamic","time_spent_threshold":0}`, first, firstChapterID, connectionID, pixelID)
 	created := call(a, "POST", "/api/v1/novel-links", createBody, admin)
 	if created.Code != 200 {
 		t.Fatalf("create distribution link: %d %s", created.Code, created.Body.String())
@@ -169,7 +173,7 @@ func TestNovelDistributionLinkLifecycleLocksContentAfterFirstVisit(t *testing.T)
 	if response := call(a, "POST", "/api/v1/novel-links", createBody, admin); response.Code != 409 {
 		t.Fatalf("duplicate short code status = %d, body=%s", response.Code, response.Body.String())
 	}
-	autoBody := fmt.Sprintf(`{"name":"临时投放","novel_id":%d,"enabled":true,"channel":"facebook","meta_connection_id":%d,"meta_pixel_id":%d,"attribution_mode":"dynamic","time_spent_threshold":0}`, first, connectionID, pixelID)
+	autoBody := fmt.Sprintf(`{"name":"临时投放","novel_id":%d,"entry_chapter_id":%d,"enabled":true,"channel":"facebook","meta_connection_id":%d,"meta_pixel_id":%d,"attribution_mode":"dynamic","time_spent_threshold":0}`, first, firstChapterID, connectionID, pixelID)
 	autoCreated := call(a, "POST", "/api/v1/novel-links", autoBody, admin)
 	if autoCreated.Code != 200 {
 		t.Fatalf("create automatic code: %d %s", autoCreated.Code, autoCreated.Body.String())
@@ -186,7 +190,7 @@ func TestNovelDistributionLinkLifecycleLocksContentAfterFirstVisit(t *testing.T)
 	}
 
 	// 没有访问时允许修正小说绑定。
-	updateBody := fmt.Sprintf(`{"name":"投手 A","novel_id":%d,"enabled":true,"channel":"facebook","meta_connection_id":%d,"meta_pixel_id":%d,"attribution_mode":"dynamic","time_spent_threshold":0}`, second, connectionID, pixelID)
+	updateBody := fmt.Sprintf(`{"name":"投手 A","novel_id":%d,"entry_chapter_id":%d,"enabled":true,"channel":"facebook","meta_connection_id":%d,"meta_pixel_id":%d,"attribution_mode":"dynamic","time_spent_threshold":0}`, second, secondChapterID, connectionID, pixelID)
 	if response := call(a, "PATCH", "/api/v1/novel-links/"+itoa(link.ID), updateBody, admin); response.Code != 200 {
 		t.Fatalf("update unused distribution link: %d %s", response.Code, response.Body.String())
 	}
@@ -210,7 +214,7 @@ func TestNovelDistributionLinkLifecycleLocksContentAfterFirstVisit(t *testing.T)
 	if _, err := a.DB.Exec(context.Background(), "DELETE FROM click_events WHERE link_id=$1", link.ID); err != nil {
 		t.Fatal(err)
 	}
-	lockBody := fmt.Sprintf(`{"name":"投手 A","novel_id":%d,"enabled":true,"channel":"facebook","meta_connection_id":%d,"meta_pixel_id":%d,"attribution_mode":"dynamic","time_spent_threshold":0}`, first, connectionID, pixelID)
+	lockBody := fmt.Sprintf(`{"name":"投手 A","novel_id":%d,"entry_chapter_id":%d,"enabled":true,"channel":"facebook","meta_connection_id":%d,"meta_pixel_id":%d,"attribution_mode":"dynamic","time_spent_threshold":0}`, first, firstChapterID, connectionID, pixelID)
 	if response := call(a, "PATCH", "/api/v1/novel-links/"+itoa(link.ID), lockBody, admin); response.Code != 409 {
 		t.Fatalf("visited link rebinding status = %d, body=%s", response.Code, response.Body.String())
 	}
@@ -230,10 +234,11 @@ func TestNovelDistributionLinksKeepIndependentVisitorsAndVisibleTime(t *testing.
 	a := setup(t)
 	admin := login(t, a)
 	novelID := createDistributionNovel(t, a, admin, "Craving For My Divorced Wife", "craving-for-my-divorced-wife")
+	entryChapterID := createDistributionChapter(t, a, admin, novelID, 1, "Campaign Entry", true)
 	connectionID, pixelID := testLinkMetaBinding(t, a)
 	create := func(name, code string) int64 {
 		t.Helper()
-		body := fmt.Sprintf(`{"name":%q,"code":%q,"novel_id":%d,"enabled":true,"channel":"facebook","meta_connection_id":%d,"meta_pixel_id":%d,"attribution_mode":"dynamic","time_spent_threshold":0}`, name, code, novelID, connectionID, pixelID)
+		body := fmt.Sprintf(`{"name":%q,"code":%q,"novel_id":%d,"entry_chapter_id":%d,"enabled":true,"channel":"facebook","meta_connection_id":%d,"meta_pixel_id":%d,"attribution_mode":"dynamic","time_spent_threshold":0}`, name, code, novelID, entryChapterID, connectionID, pixelID)
 		response := call(a, "POST", "/api/v1/novel-links", body, admin)
 		if response.Code != 200 {
 			t.Fatalf("create %s: %d %s", code, response.Code, response.Body.String())
@@ -307,10 +312,11 @@ func TestTikTokDistributionStatsKeepLinkFunnelAndDeliveryIsolated(t *testing.T) 
 	a := setup(t)
 	admin := login(t, a)
 	novelID := createDistributionNovel(t, a, admin, "TikTok Stats Story", "tiktok-stats-story")
+	entryChapterID := createDistributionChapter(t, a, admin, novelID, 1, "Stats Entry", true)
 	pixelID := testTikTokBinding(t, a, "STATS01")
 	create := func(name, code string) int64 {
 		t.Helper()
-		body := fmt.Sprintf(`{"name":%q,"code":%q,"novel_id":%d,"enabled":true,"ad_platform":"tiktok","tiktok_pixel_id":%d,"time_spent_threshold":10}`, name, code, novelID, pixelID)
+		body := fmt.Sprintf(`{"name":%q,"code":%q,"novel_id":%d,"entry_chapter_id":%d,"enabled":true,"ad_platform":"tiktok","tiktok_pixel_id":%d,"time_spent_threshold":10}`, name, code, novelID, entryChapterID, pixelID)
 		response := call(a, "POST", "/api/v1/novel-links", body, admin)
 		if response.Code != 200 {
 			t.Fatalf("create TikTok stats link: %d %s", response.Code, response.Body.String())

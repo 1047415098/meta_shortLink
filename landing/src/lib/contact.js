@@ -8,6 +8,7 @@ export async function submitLandingContact({
   attributionHeaders = {},
   request = fetch,
   anyTrack = globalThis.AnyTrack,
+  onTikTokEvent,
   navigate = (target) => window.location.assign(target),
 }) {
   const response = await request(`/${encodeURIComponent(code)}/contact`, {
@@ -26,6 +27,7 @@ export async function submitLandingContact({
   if (!payload?.target_url) throw new Error("Consultation target is missing");
   // Report only after the first-party endpoint confirms the manual action.
   trackAnyTrackManualContact(trigger, anyTrack);
+  if (payload.tiktok_event) onTikTokEvent?.(payload.tiktok_event);
   navigate(payload.target_url);
   return payload.target_url;
 }

@@ -5,6 +5,7 @@ import UnavailableView from "./views/UnavailableView.vue";
 import { installMetaPixel, trackMetaTimeSpent } from "./lib/meta.js";
 import { installTikTokPixel, readTikTokTTP, trackTikTokEvent } from "./lib/tiktok.js";
 import { createVisibleTimeTracker, reportReadingTime, reportTimeSpent } from "./lib/timeSpent.js";
+import { entryRouteForBootstrap } from "./lib/entry.js";
 const bootstrap = inject("bootstrap");
 const router=useRouter();
 let cleanupTimer,visibleSeconds=0,lastReported=0,readingInFlight=false;
@@ -36,8 +37,9 @@ onMounted(() => {
   } });
   document.addEventListener("visibilitychange",onVisibilityChange);
   window.addEventListener("pagehide",onPageHide);
-  // A bound campaign opens its story directly while keeping this document and visit intact.
-  if(bootstrap.link.entry_story_slug&&router.currentRoute.value.name==="home")void router.replace({name:"story",params:{code:bootstrap.link.code,slug:bootstrap.link.entry_story_slug}});
+  // 同一文档内进入绑定小说或章节，避免重新请求入口并重复统计访问。
+  const entryRoute=entryRouteForBootstrap(bootstrap.link,router.currentRoute.value);
+  if(entryRoute)void router.replace(entryRoute);
 });
 onBeforeUnmount(() => {reportReading(true);cleanupTimer?.();document.removeEventListener("visibilitychange",onVisibilityChange);window.removeEventListener("pagehide",onPageHide);});
 </script>

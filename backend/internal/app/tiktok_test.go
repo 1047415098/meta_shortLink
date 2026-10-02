@@ -29,8 +29,9 @@ func TestTikTokStartReadingAndQualifiedViewContentFlow(t *testing.T) {
 	a := setup(t)
 	admin := login(t, a)
 	novelID := createDistributionNovel(t, a, admin, "TikTok Qualified Story", "tiktok-qualified-story")
+	entryChapterID := createDistributionChapter(t, a, admin, novelID, 1, "TikTok Flow Entry", true)
 	pixelID := testTikTokBinding(t, a, "FLOW01")
-	createBody := fmt.Sprintf(`{"name":"TikTok Flow","code":"tik-flow","novel_id":%d,"enabled":true,"ad_platform":"tiktok","tiktok_pixel_id":%d,"time_spent_threshold":10}`, novelID, pixelID)
+	createBody := fmt.Sprintf(`{"name":"TikTok Flow","code":"tik-flow","novel_id":%d,"entry_chapter_id":%d,"enabled":true,"ad_platform":"tiktok","tiktok_pixel_id":%d,"time_spent_threshold":10}`, novelID, entryChapterID, pixelID)
 	if response := call(a, http.MethodPost, "/api/v1/novel-links", createBody, admin); response.Code != http.StatusOK {
 		t.Fatalf("create link: %d %s", response.Code, response.Body.String())
 	}
@@ -45,25 +46,29 @@ func TestTikTokStartReadingAndQualifiedViewContentFlow(t *testing.T) {
 		t.Fatal(err)
 	}
 	ticket := visitID + "." + a.Sign("contact:novel:tik-flow:"+visitID)
+	startIdentity := url.Values{"novel_id": {itoa(novelID)}, "chapter_id": {itoa(entryChapterID)}, "chapter": {"1"}}
 
-	if response := postNovelAction(a, "/novel/tik-flow/start-reading", url.Values{"ticket": {ticket}, "chapter": {"1"}}, "https://evil.example"); response.Code != http.StatusForbidden {
+	if response := postNovelAction(a, "/novel/tik-flow/start-reading", url.Values{"ticket": {ticket}, "novel_id": {itoa(novelID)}, "chapter_id": {itoa(entryChapterID)}, "chapter": {"1"}}, "https://evil.example"); response.Code != http.StatusForbidden {
 		t.Fatalf("wrong origin status=%d", response.Code)
 	}
-	if response := postNovelAction(a, "/novel/tik-flow/start-reading", url.Values{"ticket": {"bad.ticket"}, "chapter": {"1"}}, "http://example.com"); response.Code != http.StatusBadRequest {
+	if response := postNovelAction(a, "/novel/tik-flow/start-reading", url.Values{"ticket": {"bad.ticket"}, "novel_id": {itoa(novelID)}, "chapter_id": {itoa(entryChapterID)}, "chapter": {"1"}}, "http://example.com"); response.Code != http.StatusBadRequest {
 		t.Fatalf("bad ticket status=%d", response.Code)
 	}
-	if response := postNovelAction(a, "/novel/tik-flow/start-reading", url.Values{"ticket": {ticket}, "chapter": {"2"}}, "http://example.com"); response.Code != http.StatusBadRequest {
+	if response := postNovelAction(a, "/novel/tik-flow/start-reading", url.Values{"ticket": {ticket}, "novel_id": {itoa(novelID)}, "chapter_id": {itoa(entryChapterID)}, "chapter": {"2"}}, "http://example.com"); response.Code != http.StatusBadRequest {
 		t.Fatalf("wrong chapter status=%d", response.Code)
 	}
-	if response := postNovelAction(a, "/novel/tik-flow/start-reading", url.Values{"ticket": {ticket}, "chapter": {"1"}, "_ttp": {"bad\nvalue"}}, "http://example.com"); response.Code != http.StatusBadRequest {
+	if response := postNovelAction(a, "/novel/tik-flow/start-reading", url.Values{"ticket": {ticket}, "novel_id": {itoa(novelID)}, "chapter_id": {itoa(entryChapterID)}, "chapter": {"1"}, "_ttp": {"bad\nvalue"}}, "http://example.com"); response.Code != http.StatusBadRequest {
 		t.Fatalf("invalid _ttp status=%d", response.Code)
 	}
 
-	start := postNovelAction(a, "/novel/tik-flow/start-reading", url.Values{"ticket": {ticket}, "chapter": {"1"}, "_ttp": {"ttp-first"}}, "http://example.com")
+	startIdentity.Set("ticket", ticket)
+	startIdentity.Set("_ttp", "ttp-first")
+	start := postNovelAction(a, "/novel/tik-flow/start-reading", startIdentity, "http://example.com")
 	if start.Code != http.StatusOK || !strings.Contains(start.Body.String(), `"name":"StartReading"`) {
 		t.Fatalf("start response=%d %s", start.Code, start.Body.String())
 	}
-	repeated := postNovelAction(a, "/novel/tik-flow/start-reading", url.Values{"ticket": {ticket}, "chapter": {"1"}, "_ttp": {"ttp-second"}}, "http://example.com")
+	startIdentity.Set("_ttp", "ttp-second")
+	repeated := postNovelAction(a, "/novel/tik-flow/start-reading", startIdentity, "http://example.com")
 	if repeated.Code != http.StatusOK || repeated.Body.String() != start.Body.String() {
 		t.Fatalf("repeated start differs: first=%s second=%s", start.Body.String(), repeated.Body.String())
 	}
@@ -117,7 +122,7 @@ func TestTikTokStartReadingAndQualifiedViewContentFlow(t *testing.T) {
 
 	// A Meta visit continues collecting duration without creating TikTok events.
 	connectionID, metaPixelID := testLinkMetaBinding(t, a)
-	metaBody := fmt.Sprintf(`{"name":"Meta Flow","code":"meta-flow","novel_id":%d,"enabled":true,"meta_connection_id":%d,"meta_pixel_id":%d,"time_spent_threshold":10}`, novelID, connectionID, metaPixelID)
+	metaBody := fmt.Sprintf(`{"name":"Meta Flow","code":"meta-flow","novel_id":%d,"entry_chapter_id":%d,"enabled":true,"meta_connection_id":%d,"meta_pixel_id":%d,"time_spent_threshold":10}`, novelID, entryChapterID, connectionID, metaPixelID)
 	if response := call(a, http.MethodPost, "/api/v1/novel-links", metaBody, admin); response.Code != http.StatusOK {
 		t.Fatalf("create Meta link: %d %s", response.Code, response.Body.String())
 	}
@@ -128,7 +133,7 @@ func TestTikTokStartReadingAndQualifiedViewContentFlow(t *testing.T) {
 	}
 	_ = metaPage
 	metaTicket := metaVisitID + "." + a.Sign("contact:novel:meta-flow:"+metaVisitID)
-	if response := postNovelAction(a, "/novel/meta-flow/start-reading", url.Values{"ticket": {metaTicket}, "chapter": {"1"}}, "http://example.com"); response.Code != http.StatusOK || response.Body.String() != `{"ok":true}` {
+	if response := postNovelAction(a, "/novel/meta-flow/start-reading", url.Values{"ticket": {metaTicket}, "novel_id": {itoa(novelID)}, "chapter_id": {itoa(entryChapterID)}, "chapter": {"1"}}, "http://example.com"); response.Code != http.StatusOK || response.Body.String() != `{"ok":true}` {
 		t.Fatalf("Meta start response=%d %s", response.Code, response.Body.String())
 	}
 	var metaTikTokEvents int

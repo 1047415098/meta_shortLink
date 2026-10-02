@@ -32,14 +32,29 @@ export async function reportReadingTime({ code,ticket,seconds,ttp,request=fetch,
   }catch{return empty;}
 }
 
-export async function reportStartReading({code,ticket,ttp,request=fetch}={}){
+export async function reportStartReading({code,ticket,novelId,chapterId,chapter,ttp,request=fetch,state=globalThis.document?.documentElement?.dataset||{},retryDelays=[1000,3000],wait=(milliseconds)=>new Promise((resolve)=>setTimeout(resolve,milliseconds))}={}){
   const empty={ok:false,tiktokEvent:null};
-  if(!ticket)return empty;
-  const values={ticket,chapter:"1"};if(ttp)values._ttp=ttp;
-  try{
-    const response=await request(`/novel/${encodeURIComponent(code)}/start-reading`,{method:"POST",headers:{"Content-Type":"application/x-www-form-urlencoded"},body:new URLSearchParams(values).toString(),keepalive:true});
-    if(response?.ok===false||typeof response?.json!=="function")return empty;
-    const data=await response.json();
-    return {ok:true,tiktokEvent:data?.tiktok_event||null};
-  }catch{return empty;}
+  const novelIdentity=Number(novelId),chapterIdentity=Number(chapterId),chapterNumber=Number(chapter);
+  // 必须提交当前响应中的实体 ID，避免只凭章节号产生歧义。
+  if(!ticket||!Number.isInteger(novelIdentity)||novelIdentity<1||!Number.isInteger(chapterIdentity)||chapterIdentity<1||!Number.isInteger(chapterNumber)||chapterNumber<1||["pending","true"].includes(state.novelStartReadingSent))return empty;
+  // pending 同时拦截切章/切语言产生的并发请求；瞬时失败最多重试两次。
+  state.novelStartReadingSent="pending";
+  const values={ticket,novel_id:String(novelIdentity),chapter_id:String(chapterIdentity),chapter:String(chapterNumber)};if(ttp)values._ttp=ttp;
+  for(let attempt=0;attempt<=retryDelays.length;attempt+=1){
+    try{
+      const response=await request(`/novel/${encodeURIComponent(code)}/start-reading`,{method:"POST",headers:{"Content-Type":"application/x-www-form-urlencoded"},body:new URLSearchParams(values).toString(),keepalive:true});
+      if(response?.ok!==false&&typeof response?.json==="function"){
+        const data=await response.json();
+        state.novelStartReadingSent="true";
+        return {ok:true,tiktokEvent:data?.tiktok_event||null};
+      }
+      // 参数或票据被服务器拒绝时重试没有意义；只重试网络和 5xx 故障。
+      if(Number(response?.status)>=400&&Number(response?.status)<500)break;
+    }catch{
+      // 网络异常走下一次有限重试，最终失败时释放文档标记。
+    }
+    if(attempt<retryDelays.length)await wait(retryDelays[attempt]);
+  }
+  delete state.novelStartReadingSent;
+  return empty;
 }
