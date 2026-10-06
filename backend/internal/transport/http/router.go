@@ -155,6 +155,14 @@ func New(core *runtime.Core, h Handlers) (*gin.Engine, error) {
 		r.GET(prefix+"*filepath", staticfiles.Handler(root))
 		r.HEAD(prefix+"*filepath", staticfiles.Handler(root))
 	}
+	// 小说站的隐藏统计/风控资源只允许被当前同源页面嵌入。
+	goollAssets := staticfiles.Handler(filepath.Join(core.Config.NovelDir, "gooll"))
+	gooll := func(c *gin.Context) {
+		c.Header("X-Frame-Options", "SAMEORIGIN")
+		goollAssets(c)
+	}
+	r.GET("/gooll/*filepath", gooll)
+	r.HEAD("/gooll/*filepath", gooll)
 	// Uploaded covers remain independent from frontend build artifacts and use persistent storage.
 	r.GET("/audio-novel-uploads/*filepath", staticfiles.Handler(core.Config.AudioNovelUploadDir))
 	r.HEAD("/audio-novel-uploads/*filepath", staticfiles.Handler(core.Config.AudioNovelUploadDir))

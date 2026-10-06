@@ -1,5 +1,5 @@
 <script setup>
-import { inject, onBeforeUnmount, onMounted } from "vue";
+import { inject, onBeforeUnmount, onMounted, ref } from "vue";
 import { useRouter } from "vue-router";
 import UnavailableView from "./views/UnavailableView.vue";
 import { installMetaPixel, trackMetaTimeSpent } from "./lib/meta.js";
@@ -8,7 +8,10 @@ import { createVisibleTimeTracker, reportReadingTime, reportTimeSpent } from "./
 import { entryRouteForBootstrap } from "./lib/entry.js";
 const bootstrap = inject("bootstrap");
 const router=useRouter();
+// 临时关闭 18+ 确认与 10 秒倒计时：短链访问直接进入小说；AgeGateView 组件保留，后续可恢复。
+const ageGatePassed = ref(true);
 let cleanupTimer,visibleSeconds=0,lastReported=0,readingInFlight=false;
+let experienceStarted=false;
 async function reportReading(useBeacon=false){
   if(visibleSeconds<=lastReported||!bootstrap.ticket||(!useBeacon&&readingInFlight))return;
   const seconds=visibleSeconds;
@@ -25,12 +28,10 @@ async function reportReading(useBeacon=false){
 }
 function onVisibilityChange(){if(document.visibilityState==="hidden")reportReading();}
 function onPageHide(){reportReading(true);}
-onMounted(() => {
-  if(bootstrap.ad_platform === "meta")installMetaPixel({ pixelId:bootstrap.meta_browser_pixel_id, eventId:bootstrap.meta_pageview_event_id });
-  if(bootstrap.ad_platform === "tiktok"&&bootstrap.tiktok_enabled)installTikTokPixel({pixelCode:bootstrap.tiktok_pixel_code});
-  if (!bootstrap.link?.code) return;
-  // 整个 SPA 文档只确认一次浏览，并连续累计可见停留时间。
-  if (bootstrap.ticket) fetch(`/novel/${encodeURIComponent(bootstrap.link.code)}/view`, { method:"POST", headers:{ "Content-Type":"application/x-www-form-urlencoded" }, body:new URLSearchParams({ ticket:bootstrap.ticket }), keepalive:true }).catch(()=>{});
+function startNovelExperience(){
+  if(experienceStarted||!bootstrap.link?.code)return;
+  experienceStarted=true;
+  // 年龄门槛暂时关闭后，短链进入即开始累计真实前台可见阅读时长。
   cleanupTimer = createVisibleTimeTracker({ threshold:Number(bootstrap.link.time_spent_threshold || 0), onTick:(seconds)=>{visibleSeconds=seconds;if(seconds>=lastReported+10)void reportReading();}, onThreshold:() => {
     if(bootstrap.ad_platform === "meta"){trackMetaTimeSpent(bootstrap.meta_time_spent_event_id);void reportTimeSpent({ code:bootstrap.link.code, ticket:bootstrap.ticket });}
     if(bootstrap.ad_platform === "tiktok")void reportReading();
@@ -40,7 +41,20 @@ onMounted(() => {
   // 同一文档内进入绑定小说或章节，避免重新请求入口并重复统计访问。
   const entryRoute=entryRouteForBootstrap(bootstrap.link,router.currentRoute.value);
   if(entryRoute)void router.replace(entryRoute);
+}
+onMounted(() => {
+  if(bootstrap.ad_platform === "meta")installMetaPixel({ pixelId:bootstrap.meta_browser_pixel_id, eventId:bootstrap.meta_pageview_event_id });
+  if(bootstrap.ad_platform === "tiktok"&&bootstrap.tiktok_enabled)installTikTokPixel({pixelCode:bootstrap.tiktok_pixel_code});
+  if (!bootstrap.link?.code) return;
+  // 保留入口访问确认和平台 PageView；内容停留统计会在短链进入后直接启动。
+  if (bootstrap.ticket) fetch(`/novel/${encodeURIComponent(bootstrap.link.code)}/view`, { method:"POST", headers:{ "Content-Type":"application/x-www-form-urlencoded" }, body:new URLSearchParams({ ticket:bootstrap.ticket }), keepalive:true }).catch(()=>{});
+  if(ageGatePassed.value)startNovelExperience();
 });
 onBeforeUnmount(() => {reportReading(true);cleanupTimer?.();document.removeEventListener("visibilitychange",onVisibilityChange);window.removeEventListener("pagehide",onPageHide);});
 </script>
-<template><main class="app-shell"><UnavailableView v-if="bootstrap.error" :error="bootstrap.error" /><RouterView v-else /></main></template>
+<template>
+  <main class="app-shell">
+    <UnavailableView v-if="bootstrap.error" :error="bootstrap.error" />
+    <RouterView v-else />
+  </main>
+</template>

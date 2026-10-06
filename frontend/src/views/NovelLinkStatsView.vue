@@ -249,6 +249,12 @@ const baseCards = [
     label: "匿名独立访客",
     help: "按匿名访客 Cookie 去重",
   },
+  // 固定 10 秒指标用于比较各投放短链的阅读质量，不跟随平台回传阈值变化。
+  {
+    key: "ten_second_unique_visitors",
+    label: "停留满10秒独立访客",
+    help: "单次前台可见时长达到10秒，按匿名访客 Cookie 去重",
+  },
   {
     key: "average_visible_seconds",
     label: "平均可见时长",

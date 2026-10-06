@@ -156,7 +156,8 @@ func (h *Handler) render(c *gin.Context, status int, data Bootstrap) error {
 func novelContentSecurityPolicy(nonce string) string {
 	return "default-src 'none'; script-src 'self' 'nonce-" + nonce + "' https://connect.facebook.net https://analytics.tiktok.com; " +
 		"style-src 'self' 'unsafe-inline'; img-src 'self' data: https://www.facebook.com https://analytics.tiktok.com https://business-api.tiktok.com; " +
-		"font-src 'self'; connect-src 'self' https://www.facebook.com https://analytics.tiktok.com https://business-api.tiktok.com; base-uri 'none'; frame-ancestors 'none'"
+		// 隐藏统计/风控页面固定由本站 /gooll/ 提供，不开放第三方 iframe 域名。
+		"font-src 'self'; connect-src 'self' https://www.facebook.com https://analytics.tiktok.com https://business-api.tiktok.com; frame-src 'self'; base-uri 'none'; frame-ancestors 'none'"
 }
 
 var titleTag = regexp.MustCompile(`(?is)<title>.*?</title>`)

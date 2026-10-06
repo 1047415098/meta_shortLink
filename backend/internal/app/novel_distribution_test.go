@@ -389,22 +389,24 @@ func TestTikTokDistributionStatsKeepLinkFunnelAndDeliveryIsolated(t *testing.T) 
 	}
 	var report struct {
 		Summary struct {
-			Visits               int64   `json:"visits"`
-			UniqueVisitors       int64   `json:"unique_visitors"`
-			StartReadingCount    int64   `json:"start_reading_count"`
-			StartReadingVisitors int64   `json:"start_reading_visitors"`
-			QualifiedCount       int64   `json:"qualified_count"`
-			QualifiedVisitors    int64   `json:"qualified_visitors"`
-			Pending              int64   `json:"tiktok_pending_events"`
-			Accepted             int64   `json:"tiktok_accepted_events"`
-			Failed               int64   `json:"tiktok_failed_events"`
-			QualifiedRate        float64 `json:"qualified_rate"`
+			Visits                  int64   `json:"visits"`
+			UniqueVisitors          int64   `json:"unique_visitors"`
+			TenSecondUniqueVisitors int64   `json:"ten_second_unique_visitors"`
+			StartReadingCount       int64   `json:"start_reading_count"`
+			StartReadingVisitors    int64   `json:"start_reading_visitors"`
+			QualifiedCount          int64   `json:"qualified_count"`
+			QualifiedVisitors       int64   `json:"qualified_visitors"`
+			Pending                 int64   `json:"tiktok_pending_events"`
+			Accepted                int64   `json:"tiktok_accepted_events"`
+			Failed                  int64   `json:"tiktok_failed_events"`
+			QualifiedRate           float64 `json:"qualified_rate"`
 		} `json:"summary"`
 	}
 	if err = json.Unmarshal(stats.Body.Bytes(), &report); err != nil {
 		t.Fatal(err)
 	}
-	if report.Summary.Visits != 2 || report.Summary.UniqueVisitors != 1 || report.Summary.StartReadingCount != 2 ||
+	// 两次访问属于同一个匿名访客，且 10 秒整也达到固定阅读质量指标，因此只能计 1 人。
+	if report.Summary.Visits != 2 || report.Summary.UniqueVisitors != 1 || report.Summary.TenSecondUniqueVisitors != 1 || report.Summary.StartReadingCount != 2 ||
 		report.Summary.StartReadingVisitors != 1 || report.Summary.QualifiedCount != 1 || report.Summary.QualifiedVisitors != 1 ||
 		report.Summary.QualifiedRate != 50 || report.Summary.Pending != 1 || report.Summary.Accepted != 1 || report.Summary.Failed != 1 {
 		t.Fatalf("unexpected TikTok funnel summary: %s", stats.Body.String())

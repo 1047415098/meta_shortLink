@@ -258,6 +258,18 @@ test("TikTok novel statistics expose funnel, delivery and attribution boundaries
   assert.match(source, /TikTok 已接收/);
 });
 
+test("novel statistics show the fixed ten-second unique visitor metric", async () => {
+  const source = await readFile(
+    new URL("../src/views/NovelLinkStatsView.vue", import.meta.url),
+    "utf8",
+  );
+
+  // 该指标属于 Meta/TikTok 共用基础卡片，不依赖平台回传是否成功。
+  assert.match(source, /key: "ten_second_unique_visitors"/);
+  assert.match(source, /label: "停留满10秒独立访客"/);
+  assert.match(source, /单次前台可见时长达到10秒，按匿名访客 Cookie 去重/);
+});
+
 test("novel visit statistics show the frozen entry chapter and identify legacy visits", async () => {
   const source = await readFile(
     new URL("../src/views/NovelLinkStatsView.vue", import.meta.url),

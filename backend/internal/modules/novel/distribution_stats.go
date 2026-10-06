@@ -34,19 +34,21 @@ type distributionStatsFilter struct {
 }
 
 type DistributionStatsSummary struct {
-	Visits                int64   `json:"visits"`
-	UniqueVisitors        int64   `json:"unique_visitors"`
-	CollectedVisits       int64   `json:"collected_visits"`
-	AverageVisibleSeconds float64 `json:"average_visible_seconds"`
-	TotalVisibleSeconds   int64   `json:"total_visible_seconds"`
-	StartReadingCount     int64   `json:"start_reading_count"`
-	StartReadingVisitors  int64   `json:"start_reading_visitors"`
-	QualifiedCount        int64   `json:"qualified_count"`
-	QualifiedVisitors     int64   `json:"qualified_visitors"`
-	QualifiedRate         float64 `json:"qualified_rate"`
-	TikTokPendingEvents   int64   `json:"tiktok_pending_events"`
-	TikTokAcceptedEvents  int64   `json:"tiktok_accepted_events"`
-	TikTokFailedEvents    int64   `json:"tiktok_failed_events"`
+	Visits         int64 `json:"visits"`
+	UniqueVisitors int64 `json:"unique_visitors"`
+	// TenSecondUniqueVisitors 是固定阅读质量指标，与广告平台的可配置回传阈值相互独立。
+	TenSecondUniqueVisitors int64   `json:"ten_second_unique_visitors"`
+	CollectedVisits         int64   `json:"collected_visits"`
+	AverageVisibleSeconds   float64 `json:"average_visible_seconds"`
+	TotalVisibleSeconds     int64   `json:"total_visible_seconds"`
+	StartReadingCount       int64   `json:"start_reading_count"`
+	StartReadingVisitors    int64   `json:"start_reading_visitors"`
+	QualifiedCount          int64   `json:"qualified_count"`
+	QualifiedVisitors       int64   `json:"qualified_visitors"`
+	QualifiedRate           float64 `json:"qualified_rate"`
+	TikTokPendingEvents     int64   `json:"tiktok_pending_events"`
+	TikTokAcceptedEvents    int64   `json:"tiktok_accepted_events"`
+	TikTokFailedEvents      int64   `json:"tiktok_failed_events"`
 }
 
 type DistributionVisit struct {
@@ -213,6 +215,7 @@ func (r Repository) DistributionStats(ctx context.Context, linkID int64, filter 
 	filteredCTE := `WITH filtered AS (SELECT e.* FROM click_events e WHERE ` + where + `)`
 	// Average time excludes historical visits that predate visible-time collection.
 	if err = tx.QueryRow(ctx, filteredCTE+` SELECT count(*),count(DISTINCT NULLIF(e.visitor_id,'')),
+		count(DISTINCT NULLIF(e.visitor_id,'')) FILTER(WHERE e.visible_updated_at IS NOT NULL AND e.visible_seconds>=10),
 		count(*) FILTER(WHERE e.visible_updated_at IS NOT NULL),
 		COALESCE(avg(e.visible_seconds) FILTER(WHERE e.visible_updated_at IS NOT NULL),0)::float8,
 		COALESCE(sum(e.visible_seconds) FILTER(WHERE e.visible_updated_at IS NOT NULL),0),
@@ -225,7 +228,7 @@ func (r Repository) DistributionStats(ctx context.Context, linkID int64, filter 
 		(SELECT count(*) FROM tiktok_events te JOIN filtered fv ON fv.id=te.visit_id AND fv.link_id=te.link_id WHERE te.status='accepted'),
 		(SELECT count(*) FROM tiktok_events te JOIN filtered fv ON fv.id=te.visit_id AND fv.link_id=te.link_id WHERE te.status='failed')
 		FROM filtered e`, args...).Scan(
-		&out.Summary.Visits, &out.Summary.UniqueVisitors, &out.Summary.CollectedVisits,
+		&out.Summary.Visits, &out.Summary.UniqueVisitors, &out.Summary.TenSecondUniqueVisitors, &out.Summary.CollectedVisits,
 		&out.Summary.AverageVisibleSeconds, &out.Summary.TotalVisibleSeconds,
 		&out.Summary.StartReadingCount, &out.Summary.StartReadingVisitors,
 		&out.Summary.QualifiedCount, &out.Summary.QualifiedVisitors, &out.Summary.QualifiedRate,
