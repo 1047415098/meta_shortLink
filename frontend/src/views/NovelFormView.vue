@@ -311,7 +311,7 @@ const loading = ref(editing),
   chapterSaving = ref(false),
   previewing = ref(false),
   bodyHTML = ref("");
-// 默认选中全部目标语言，运营人员点击一次即可批量创建八种译文。
+// 默认选中全部目标语言，运营人员点击一次即可批量创建九种译文。
 const translationsLoading = ref(false),
   generatingTranslations = ref(false),
   retryingLocale = ref(""),

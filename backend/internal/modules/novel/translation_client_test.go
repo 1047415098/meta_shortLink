@@ -37,6 +37,10 @@ func TestRoutedTranslatorUsesDeepLOnlyForVietnamese(t *testing.T) {
 	if err != nil || got != "apihz" || len(apihz.locales) != 1 {
 		t.Fatalf("Japanese route = %q, api=%v, deepl=%v, err=%v", got, apihz.locales, deepl.locales, err)
 	}
+	got, err = translator.Translate(context.Background(), "es", "Hello")
+	if err != nil || got != "apihz" || len(apihz.locales) != 2 || apihz.locales[1] != "es" {
+		t.Fatalf("Spanish route = %q, api=%v, deepl=%v, err=%v", got, apihz.locales, deepl.locales, err)
+	}
 }
 
 func TestDeepLTranslationClientPostsVietnameseJSON(t *testing.T) {
@@ -163,7 +167,8 @@ func TestDeepLTranslationClientLimitsConcurrentRequestStartRate(t *testing.T) {
 }
 
 func TestTranslationClientLocaleMappings(t *testing.T) {
-	want := map[string]int{"id": 24, "ja": 27, "ko": 28, "ms": 31, "pt": 35, "fil": 43, "th": 44, "vi": 48}
+	// APIHZ defines Spanish as etype=41; this guards against accidentally routing it to DeepL.
+	want := map[string]int{"id": 24, "ja": 27, "ko": 28, "ms": 31, "pt": 35, "es": 41, "fil": 43, "th": 44, "vi": 48}
 	if len(TargetLocales) != len(want) {
 		t.Fatalf("target locales = %d, want %d", len(TargetLocales), len(want))
 	}

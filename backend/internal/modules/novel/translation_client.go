@@ -27,6 +27,8 @@ var TargetLocales = []LocaleOption{
 	{Code: "ko", Name: "韩语", APIType: 28},
 	{Code: "ms", Name: "马来语", APIType: 31},
 	{Code: "pt", Name: "葡萄牙语", APIType: 35},
+	// APIHZ 文档定义西班牙语为 etype=41，和越南语的 DeepL 专用路由不同。
+	{Code: "es", Name: "西班牙语", APIType: 41},
 	{Code: "fil", Name: "菲律宾语", APIType: 43},
 	{Code: "th", Name: "泰语", APIType: 44},
 	{Code: "vi", Name: "越南语", APIType: 48},

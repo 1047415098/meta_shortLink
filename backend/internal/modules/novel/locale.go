@@ -38,6 +38,9 @@ func CountryLocale(country string) string {
 		return "ms"
 	case "BR", "PT", "AO", "MZ", "CV", "GW", "ST":
 		return "pt"
+	// 西班牙及主要西语市场共享 es；若小说未发布西语译本，ResolveLocale 会安全回退英文。
+	case "ES", "MX", "AR", "CO", "CL", "PE", "VE", "EC", "GT", "CU", "BO", "DO", "HN", "PY", "SV", "NI", "CR", "PA", "UY", "GQ", "PR":
+		return "es"
 	case "PH":
 		return "fil"
 	case "TH":

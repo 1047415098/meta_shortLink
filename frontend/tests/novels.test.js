@@ -128,10 +128,10 @@ test("existing novel cover upload is persisted before the new path is returned",
   assert.equal(calls[1].options.body, JSON.stringify({ cover_path: path }));
 });
 
-test("novel translation controls expose eight targets and dedicated actions", async (t) => {
+test("novel translation controls expose nine targets and dedicated actions", async (t) => {
   assert.deepEqual(
     NOVEL_TRANSLATION_LOCALES.map(({ code }) => code),
-    ["id", "ja", "ko", "ms", "pt", "fil", "th", "vi"],
+    ["id", "ja", "ko", "ms", "pt", "es", "fil", "th", "vi"],
   );
   assert.deepEqual(novelsAPI.NOVEL_TRANSLATION_LOCALE_CODES, [
     "id",
@@ -139,6 +139,7 @@ test("novel translation controls expose eight targets and dedicated actions", as
     "ko",
     "ms",
     "pt",
+    "es",
     "fil",
     "th",
     "vi",

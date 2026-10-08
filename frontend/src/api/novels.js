@@ -14,6 +14,8 @@ export const NOVEL_TRANSLATION_LOCALES = [
   { code: "ko", name: "韩语" },
   { code: "ms", name: "马来语" },
   { code: "pt", name: "葡萄牙语" },
+  // 西语请求由后端以 APIHZ etype=41 处理，前端仅发送稳定的语言代码。
+  { code: "es", name: "西班牙语" },
   { code: "fil", name: "菲律宾语" },
   { code: "th", name: "泰语" },
   { code: "vi", name: "越南语" },
