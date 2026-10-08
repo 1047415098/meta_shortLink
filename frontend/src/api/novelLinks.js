@@ -3,6 +3,7 @@ import { request } from "./http.js";
 // Keep admin-only presentation fields out of the mutation contract.
 export function novelLinkPayload(source = {}) {
   const requestedThreshold = Number(source.time_spent_threshold);
+  const requestedStartupTail = Number(source.startup_tail_seconds);
   const platform = source.ad_platform === "tiktok" ? "tiktok" : "meta";
   // 小说投放只暴露停留阈值；隐藏的广告参数始终按所选平台动态读取。
   return {
@@ -32,6 +33,13 @@ export function novelLinkPayload(source = {}) {
       !Number.isFinite(requestedThreshold)
         ? 10
         : requestedThreshold,
+    // The loading tail is a per-link reader experience setting, separate from the event-delivery threshold.
+    startup_tail_seconds:
+      source.startup_tail_seconds === "" ||
+      source.startup_tail_seconds == null ||
+      !Number.isFinite(requestedStartupTail)
+        ? 5
+        : requestedStartupTail,
   };
 }
 

@@ -68,9 +68,14 @@ test("novel link payload always uses hidden dynamic attribution defaults", () =>
   assert.equal(payload.adset_id, "");
   assert.equal(payload.ad_id, "");
   assert.equal(payload.time_spent_threshold, 10);
+  assert.equal(payload.startup_tail_seconds, 5);
   assert.equal(
     novelLinkPayload({ time_spent_threshold: 30 }).time_spent_threshold,
     30,
+  );
+  assert.equal(
+    novelLinkPayload({ startup_tail_seconds: 12 }).startup_tail_seconds,
+    12,
   );
 });
 
@@ -101,8 +106,8 @@ test("novel link payload selects exactly one platform", () => {
   assert.equal(meta.meta_connection_id, 3);
 });
 
-test("novel link form only exposes the dwell-time attribution option", async () => {
-  // The operator only chooses the threshold; dynamic attribution fields stay implementation details.
+test("novel link form exposes separate loading-tail and dwell-time settings", async () => {
+  // The operator controls reader loading and event delivery independently; dynamic attribution fields stay hidden.
   const source = await readFile(
     new URL("../src/views/NovelLinkListView.vue", import.meta.url),
     "utf8",
@@ -118,6 +123,9 @@ test("novel link form only exposes the dwell-time attribution option", async () 
     assert.doesNotMatch(template, new RegExp(`label="${label}"`));
   }
   assert.match(template, /label="停留时长回传（秒）"/);
+  assert.match(template, /label="首屏加载剩余 10%（秒）"/);
+  assert.match(template, /前 3 秒固定从 0% 走到 90%/);
+  assert.match(template, /row\.startup_tail_seconds \|\| 5/);
   assert.match(template, /达到设置的前台可见时长后才回传一次 Meta TimeSpent/);
   assert.match(template, /TikTok ViewContent/);
   assert.match(template, /复制普通短链/);

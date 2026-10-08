@@ -36,6 +36,7 @@ type DistributionInput struct {
 	AdPlatform         string `json:"ad_platform"`
 	AttributionMode    string `json:"attribution_mode"`
 	TimeSpentThreshold int    `json:"time_spent_threshold"`
+	StartupTailSeconds int    `json:"startup_tail_seconds"`
 }
 
 type DistributionLink struct {
@@ -62,6 +63,7 @@ type DistributionLink struct {
 	AdPlatform         string     `json:"ad_platform"`
 	AttributionMode    string     `json:"attribution_mode"`
 	TimeSpentThreshold int        `json:"time_spent_threshold"`
+	StartupTailSeconds int        `json:"startup_tail_seconds"`
 	VisitCount         int64      `json:"visit_count"`
 	CreatedAt          time.Time  `json:"created_at"`
 	FirstVisitedAt     *time.Time `json:"first_visited_at,omitempty"`
@@ -72,6 +74,10 @@ type DistributionLink struct {
 // NormalizeDistributionInput keeps campaign attribution dynamic and prevents
 // hidden client fields from silently changing the selected advertising platform.
 func NormalizeDistributionInput(input *DistributionInput) {
+	// The fixed 0–90% phase takes 3 seconds; zero means the admin used the safe default tail duration.
+	if input.StartupTailSeconds == 0 {
+		input.StartupTailSeconds = links.DefaultStartupTailSeconds
+	}
 	if input.AdPlatform == "" {
 		input.AdPlatform = "meta"
 	}
@@ -103,6 +109,9 @@ func ValidateDistributionInput(input DistributionInput, requireCode bool) error 
 	if input.TimeSpentThreshold != 0 && (input.TimeSpentThreshold < 5 || input.TimeSpentThreshold > 3600) {
 		return errors.New("停留事件阈值应为 5–3600 秒，或设为 0")
 	}
+	if input.StartupTailSeconds != 0 && (input.StartupTailSeconds < links.MinStartupTailSeconds || input.StartupTailSeconds > links.MaxStartupTailSeconds) {
+		return errors.New("首屏剩余加载时长应为 1–60 秒")
+	}
 	switch input.AdPlatform {
 	case "meta":
 		if input.TikTokPixelID != nil {
@@ -129,7 +138,7 @@ const distributionColumns = `l.id,l.code,l.name,l.enabled,l.product_type,l.novel
 	l.entry_chapter_id,ec.chapter_number,COALESCE(ec.title,''),
 	l.channel,l.campaign_id,l.adset_id,l.ad_id,l.meta_connection_id,l.meta_pixel_id,l.tiktok_pixel_id,
 	COALESCE(tp.pixel_code,''),COALESCE(tp.name,''),l.ad_platform,l.attribution_mode,
-	l.time_spent_threshold,(SELECT count(*) FROM click_events e WHERE e.link_id=l.id),l.created_at,l.first_visited_at`
+	l.time_spent_threshold,l.startup_tail_seconds,(SELECT count(*) FROM click_events e WHERE e.link_id=l.id),l.created_at,l.first_visited_at`
 
 func scanDistribution(row pgx.Row) (DistributionLink, error) {
 	var item DistributionLink
@@ -137,7 +146,7 @@ func scanDistribution(row pgx.Row) (DistributionLink, error) {
 		&item.EntryChapterID, &item.EntryChapterNumber, &item.EntryChapterTitle,
 		&item.Channel, &item.CampaignID, &item.AdsetID, &item.AdID, &item.MetaConnectionID, &item.MetaPixelID, &item.TikTokPixelID,
 		&item.TikTokPixelCode, &item.TikTokPixelName, &item.AdPlatform, &item.AttributionMode,
-		&item.TimeSpentThreshold, &item.VisitCount, &item.CreatedAt, &item.FirstVisitedAt)
+		&item.TimeSpentThreshold, &item.StartupTailSeconds, &item.VisitCount, &item.CreatedAt, &item.FirstVisitedAt)
 	return item, err
 }
 
@@ -179,9 +188,9 @@ func (r Repository) CreateDistributionLink(ctx context.Context, input Distributi
 		return DistributionLink{}, err
 	}
 	item, err := scanDistribution(tx.QueryRow(ctx, `INSERT INTO short_links
-		(code,name,target_url,enabled,campaign_id,adset_id,ad_id,channel,mode,meta_connection_id,attribution_mode,meta_pixel_id,tiktok_pixel_id,ad_platform,time_spent_threshold,product_type,novel_id,entry_chapter_id)
-		SELECT $1,$2,'',$3,$4,$5,$6,$7,'',$8,$9,$10,$11,$12,$13,'novel',n.id,$15 FROM novels n WHERE n.id=$14 AND n.deleted_at IS NULL
-		RETURNING `+distributionColumnsForReturn(), input.Code, strings.TrimSpace(input.Name), input.Enabled, input.CampaignID, input.AdsetID, input.AdID, input.Channel, input.MetaConnectionID, input.AttributionMode, input.MetaPixelID, input.TikTokPixelID, input.AdPlatform, input.TimeSpentThreshold, input.NovelID, input.EntryChapterID))
+		(code,name,target_url,enabled,campaign_id,adset_id,ad_id,channel,mode,meta_connection_id,attribution_mode,meta_pixel_id,tiktok_pixel_id,ad_platform,time_spent_threshold,startup_tail_seconds,product_type,novel_id,entry_chapter_id)
+		SELECT $1,$2,'',$3,$4,$5,$6,$7,'',$8,$9,$10,$11,$12,$13,$14,'novel',n.id,$16 FROM novels n WHERE n.id=$15 AND n.deleted_at IS NULL
+		RETURNING `+distributionColumnsForReturn(), input.Code, strings.TrimSpace(input.Name), input.Enabled, input.CampaignID, input.AdsetID, input.AdID, input.Channel, input.MetaConnectionID, input.AttributionMode, input.MetaPixelID, input.TikTokPixelID, input.AdPlatform, input.TimeSpentThreshold, input.StartupTailSeconds, input.NovelID, input.EntryChapterID))
 	if err != nil {
 		return DistributionLink{}, err
 	}
@@ -199,7 +208,7 @@ func distributionColumnsForReturn() string {
 		COALESCE((SELECT title FROM novel_chapters WHERE id=entry_chapter_id),''),
 		channel,campaign_id,adset_id,ad_id,meta_connection_id,meta_pixel_id,tiktok_pixel_id,
 		COALESCE((SELECT pixel_code FROM tiktok_pixels WHERE id=tiktok_pixel_id),''),
-		COALESCE((SELECT name FROM tiktok_pixels WHERE id=tiktok_pixel_id),''),ad_platform,attribution_mode,time_spent_threshold,
+		COALESCE((SELECT name FROM tiktok_pixels WHERE id=tiktok_pixel_id),''),ad_platform,attribution_mode,time_spent_threshold,startup_tail_seconds,
 		(SELECT count(*) FROM click_events WHERE link_id=short_links.id),created_at,first_visited_at`
 }
 
@@ -239,9 +248,9 @@ func (r Repository) UpdateDistributionLink(ctx context.Context, id int64, input 
 		return DistributionLink{}, err
 	}
 	item, err := scanDistribution(tx.QueryRow(ctx, `UPDATE short_links SET name=$2,enabled=$3,campaign_id=$4,adset_id=$5,ad_id=$6,
-		channel=$7,meta_connection_id=$8,attribution_mode=$9,meta_pixel_id=$10,tiktok_pixel_id=$11,ad_platform=$12,time_spent_threshold=$13,novel_id=$14,entry_chapter_id=$15
-		WHERE id=$1 AND product_type='novel' AND EXISTS(SELECT 1 FROM novels WHERE id=$14 AND deleted_at IS NULL)
-		RETURNING `+distributionColumnsForReturn(), id, strings.TrimSpace(input.Name), input.Enabled, input.CampaignID, input.AdsetID, input.AdID, input.Channel, input.MetaConnectionID, input.AttributionMode, input.MetaPixelID, input.TikTokPixelID, input.AdPlatform, input.TimeSpentThreshold, input.NovelID, input.EntryChapterID))
+		channel=$7,meta_connection_id=$8,attribution_mode=$9,meta_pixel_id=$10,tiktok_pixel_id=$11,ad_platform=$12,time_spent_threshold=$13,startup_tail_seconds=$14,novel_id=$15,entry_chapter_id=$16
+		WHERE id=$1 AND product_type='novel' AND EXISTS(SELECT 1 FROM novels WHERE id=$15 AND deleted_at IS NULL)
+		RETURNING `+distributionColumnsForReturn(), id, strings.TrimSpace(input.Name), input.Enabled, input.CampaignID, input.AdsetID, input.AdID, input.Channel, input.MetaConnectionID, input.AttributionMode, input.MetaPixelID, input.TikTokPixelID, input.AdPlatform, input.TimeSpentThreshold, input.StartupTailSeconds, input.NovelID, input.EntryChapterID))
 	if err != nil {
 		return DistributionLink{}, err
 	}

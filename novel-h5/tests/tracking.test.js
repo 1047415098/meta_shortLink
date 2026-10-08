@@ -123,6 +123,18 @@ test("language menu is limited to home and story introduction", async () => {
   assert.doesNotMatch(sources[3],/show-language/);
 });
 
+test("home header renders the supplied logo image instead of the former book icon", async () => {
+  const [header,css]=await Promise.all([
+    readFile(new URL("../src/components/AppHeader.vue",import.meta.url),"utf8"),
+    readFile(new URL("../src/styles.css",import.meta.url),"utf8"),
+  ]);
+  const brandMarkup=header.match(/<RouterLink v-else class="brand-mark"[\s\S]*?<\/RouterLink>/)?.[0]||"";
+  // 首页标识必须只保留实际图片，避免旧字体图标与新 Logo 同时显示。
+  assert.match(brandMarkup,/class="brand-logo" src="\.\.\/assets\/logo\.png"/);
+  assert.doesNotMatch(brandMarkup,/fa-book-open/);
+  assert.match(css,/\.brand-logo\s*\{[^}]*object-fit:\s*contain/);
+});
+
 test("chapter navigation keeps previous left and continue reading right", async () => {
   const css=await readFile(new URL("../src/styles.css",import.meta.url),"utf8");
   const actions=css.match(/\.chapter-actions\s*\{([^}]+)\}/)?.[1]||"";

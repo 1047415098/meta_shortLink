@@ -1,7 +1,8 @@
-// The loader reaches a reassuring near-complete state quickly, then eases into readiness.
+// The loader reaches a reassuring near-complete state quickly, then uses each campaign link's tail duration.
 export const STARTUP_FAST_MS = 3000;
-export const STARTUP_SLOW_MS = 7000;
-export const STARTUP_TOTAL_MS = STARTUP_FAST_MS + STARTUP_SLOW_MS;
+export const STARTUP_DEFAULT_TAIL_MS = 5000;
+const STARTUP_MIN_TAIL_MS = 1000;
+const STARTUP_MAX_TAIL_MS = 60000;
 
 const startupCoverPattern = /^\/novel-uploads\/[a-f0-9]{32}\.(jpg|png|webp)$/;
 // Existing campaign novels may retain a cover on this historical CDN during the upload migration.
@@ -22,6 +23,21 @@ export function startupExcerpt(bootstrap) {
   const text = source.replace(/\s+/g, " ").trim();
   const runes = Array.from(text);
   return runes.length > startupPreviewMaxRunes ? `${runes.slice(0, startupPreviewMaxRunes).join("")}…` : text;
+}
+
+// Only the final 10% is configurable; invalid or legacy bootstrap data stays on the five-second default.
+export function startupTailMs(bootstrap) {
+  const seconds = Number(bootstrap?.link?.startup_tail_seconds);
+  if (!Number.isFinite(seconds) || seconds < 1 || seconds > 60) return STARTUP_DEFAULT_TAIL_MS;
+  return Math.round(seconds * 1000);
+}
+
+// Progress helpers may be called by tests or future UI code, so they receive the same safe fallback as bootstrap data.
+function normalizedStartupTailMs(tailMs) {
+  const value = Number(tailMs);
+  return Number.isFinite(value) && value >= STARTUP_MIN_TAIL_MS && value <= STARTUP_MAX_TAIL_MS
+    ? Math.round(value)
+    : STARTUP_DEFAULT_TAIL_MS;
 }
 
 export function startupStoryRoute(pathname = "") {
@@ -62,16 +78,19 @@ export async function fetchStartupExcerpt(pathname, { locale = "", request = fet
   }
 }
 
-export function startupProgressAt(elapsedMs, contentReady) {
+export function startupProgressAt(elapsedMs, tailMs = STARTUP_DEFAULT_TAIL_MS) {
   const elapsed = Math.max(0, Number(elapsedMs) || 0);
+  const safeTailMs = normalizedStartupTailMs(tailMs);
+  const totalMs = STARTUP_FAST_MS + safeTailMs;
   if (elapsed < STARTUP_FAST_MS) return Math.round((elapsed / STARTUP_FAST_MS) * 90);
-  if (elapsed < STARTUP_TOTAL_MS) return 90 + Math.round(((elapsed - STARTUP_FAST_MS) / STARTUP_SLOW_MS) * 10);
-  // Ten seconds always completes the visible bar; readiness still controls when the layer closes.
+  if (elapsed < totalMs) return 90 + Math.round(((elapsed - STARTUP_FAST_MS) / safeTailMs) * 10);
+  // The configured visual duration completes the bar; readiness still controls when the layer closes.
   return 100;
 }
 
-export function canFinishStartupLoader(elapsedMs, contentReady) {
-  return Number(elapsedMs) >= STARTUP_TOTAL_MS && Boolean(contentReady);
+export function canFinishStartupLoader(elapsedMs, contentReady, tailMs = STARTUP_DEFAULT_TAIL_MS) {
+  const safeTailMs = normalizedStartupTailMs(tailMs);
+  return Number(elapsedMs) >= STARTUP_FAST_MS + safeTailMs && Boolean(contentReady);
 }
 
 export function markNovelStartupReady(windowRef = window) {
@@ -91,6 +110,8 @@ export function installStartupLoader({ documentRef = document, windowRef = windo
   } catch {
     // A malformed bootstrap keeps the neutral loading background.
   }
+  // This first-document value prevents an API request from delaying the visual loading policy.
+  const tailMs = startupTailMs(bootstrap);
   function showExcerpt(excerpt) {
     if (!excerpt || !excerptLayer) return;
     // A single preview keeps the loading layer visually consistent with the real reader page.
@@ -127,12 +148,12 @@ export function installStartupLoader({ documentRef = document, windowRef = windo
     // 已执行的动画帧不再算作待执行帧，内容稍后就绪时才能立即收尾。
     frameId = undefined;
     const elapsed = now() - startedAt;
-    const progress = startupProgressAt(elapsed, contentReady);
+    const progress = startupProgressAt(elapsed, tailMs);
     if (fill) fill.style.width = `${progress}%`;
     // Keep the numeric state available to assistive technology without showing a percentage.
     loader.setAttribute("aria-valuenow", String(progress));
-    if (canFinishStartupLoader(elapsed, contentReady)) return close();
-    if (elapsed < STARTUP_TOTAL_MS) frameId = windowRef.requestAnimationFrame(render);
+    if (canFinishStartupLoader(elapsed, contentReady, tailMs)) return close();
+    if (elapsed < STARTUP_FAST_MS + tailMs) frameId = windowRef.requestAnimationFrame(render);
   }
 
   function onContentReady() {

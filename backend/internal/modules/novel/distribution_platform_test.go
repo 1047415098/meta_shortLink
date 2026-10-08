@@ -3,6 +3,8 @@ package novel
 import (
 	"strings"
 	"testing"
+
+	"whatsapp-analytics/internal/modules/links"
 )
 
 func int64Pointer(value int64) *int64 { return &value }
@@ -32,6 +34,26 @@ func TestDistributionPlatformRequiresExactlyOnePixel(t *testing.T) {
 				t.Fatalf("error=%v, want %q", err, testCase.wantError)
 			}
 		})
+	}
+}
+
+func TestDistributionStartupTailDefaultsAndLimits(t *testing.T) {
+	// Use an otherwise valid Meta link so this test reaches the loading-duration guard.
+	input := DistributionInput{
+		Name:             "Tail duration",
+		NovelID:          1,
+		AdPlatform:       "meta",
+		MetaConnectionID: int64Pointer(1),
+		MetaPixelID:      int64Pointer(2),
+	}
+	NormalizeDistributionInput(&input)
+	if input.StartupTailSeconds != links.DefaultStartupTailSeconds {
+		t.Fatalf("default startup tail=%d, want %d", input.StartupTailSeconds, links.DefaultStartupTailSeconds)
+	}
+
+	input.StartupTailSeconds = links.MaxStartupTailSeconds + 1
+	if err := ValidateDistributionInput(input, false); err == nil || !strings.Contains(err.Error(), "首屏剩余加载时长") {
+		t.Fatalf("invalid startup tail error=%v", err)
 	}
 }
 

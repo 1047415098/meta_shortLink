@@ -41,6 +41,10 @@
           ><template #default="{ row }">{{
             entryChapterLabel(row)
           }}</template></el-table-column
+        ><el-table-column label="首屏尾段" width="110"
+          ><template #default="{ row }">{{
+            row.startup_tail_seconds || 5
+          }} 秒</template></el-table-column
         ><el-table-column label="访问" prop="visit_count" width="90" />
         <el-table-column label="状态" width="90"
           ><template #default="{ row }"
@@ -194,6 +198,17 @@
             />
           </el-select>
         </el-form-item>
+        <el-form-item label="首屏加载剩余 10%（秒）">
+          <el-input-number
+            v-model="form.startup_tail_seconds"
+            :min="1"
+            :max="60"
+            :step="1"
+          />
+          <small class="muted"
+            >前 3 秒固定从 0% 走到 90%；这里控制最后 10% 的完成时长，默认 5 秒。</small
+          >
+        </el-form-item>
         <el-form-item label="停留时长回传（秒）"
           ><el-input-number
             v-model="form.time_spent_threshold"
@@ -274,6 +289,8 @@ const blank = () => ({
   meta_pixel_id: null,
   tiktok_pixel_id: null,
   attribution_mode: "dynamic",
+  // 首屏固定用 3 秒完成前 90%，每条新投放链接默认再用 5 秒完成尾段。
+  startup_tail_seconds: 5,
   // 新投放默认以 10 秒前台可见时间作为 Meta 回传门槛。
   time_spent_threshold: 10,
 });

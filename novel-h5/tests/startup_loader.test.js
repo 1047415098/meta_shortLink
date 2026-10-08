@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
-import { canFinishStartupLoader, fetchStartupExcerpt, installStartupLoader, markNovelStartupReady, startupCoverPath, startupExcerpt, startupProgressAt, startupStoryRoute } from "../src/lib/startupLoader.js";
+import { STARTUP_DEFAULT_TAIL_MS, canFinishStartupLoader, fetchStartupExcerpt, installStartupLoader, markNovelStartupReady, startupCoverPath, startupExcerpt, startupProgressAt, startupStoryRoute, startupTailMs } from "../src/lib/startupLoader.js";
 
 test("startup loader accepts persisted local covers and the narrowly trusted historical CDN", () => {
   assert.equal(startupCoverPath({ startup_cover_path: "/novel-uploads/0123456789abcdef0123456789abcdef.webp" }), "/novel-uploads/0123456789abcdef0123456789abcdef.webp");
@@ -75,20 +75,24 @@ test("startup loader reuses the server-injected excerpt without a duplicate requ
   assert.equal(excerptLayer.textContent, "Server preview.");
 });
 
-test("startup loader reaches 90 percent in three seconds and finishes over the next seven", () => {
-  assert.equal(startupProgressAt(0, false), 0);
-  assert.equal(startupProgressAt(1500, false), 45);
-  assert.equal(startupProgressAt(3000, false), 90);
-  assert.equal(startupProgressAt(6500, false), 95);
-  assert.equal(startupProgressAt(10000, false), 100);
-  assert.equal(startupProgressAt(10000, true), 100);
-  assert.equal(canFinishStartupLoader(9999, true), false);
-  assert.equal(canFinishStartupLoader(10000, false), false);
-  assert.equal(canFinishStartupLoader(10000, true), true);
+test("startup loader keeps the first three seconds fixed and reads each link's final-ten-percent duration", () => {
+  assert.equal(startupTailMs({ link:{ startup_tail_seconds:12 } }), 12000);
+  assert.equal(startupTailMs({ link:{ startup_tail_seconds:0 } }), STARTUP_DEFAULT_TAIL_MS);
+  assert.equal(startupTailMs({}), STARTUP_DEFAULT_TAIL_MS);
+  assert.equal(startupProgressAt(0), 0);
+  assert.equal(startupProgressAt(1500), 45);
+  assert.equal(startupProgressAt(3000), 90);
+  assert.equal(startupProgressAt(5500), 95);
+  assert.equal(startupProgressAt(8000), 100);
+  // A two-second tail proves the campaign setting changes only the final visual segment.
+  assert.equal(startupProgressAt(4000, 2000), 95);
+  assert.equal(canFinishStartupLoader(7999, true), false);
+  assert.equal(canFinishStartupLoader(8000, false), false);
+  assert.equal(canFinishStartupLoader(8000, true), true);
 });
 
-test("startup loader closes when content becomes ready after the ten-second minimum", () => {
-  let clock = 10000;
+test("startup loader closes when content becomes ready after the configured default minimum", () => {
+  let clock = 8000;
   let scheduledFrame;
   const listeners = new Map();
   const loader = { classList:{ values:new Set(), add(value){this.values.add(value);} }, setAttribute(){}, remove(){this.removed=true;} };
@@ -105,7 +109,7 @@ test("startup loader closes when content becomes ready after the ten-second mini
   };
 
   installStartupLoader({ documentRef, windowRef, now:()=>clock });
-  clock = 10001;
+  clock = 8001;
   scheduledFrame();
   assert.equal(fill.style.width, "100%");
   markNovelStartupReady(windowRef);
@@ -125,6 +129,9 @@ test("every initial novel route notifies the one-time loader after its first ren
   ]);
 
   assert.match(index, /id="novel-startup-loader"/);
+  // 标签页图标与页面头部使用同一品牌资源，ICO 不可用时回退 PNG。
+  assert.match(index, /rel="icon" type="image\/x-icon" href="\/src\/assets\/logo\.ico"/);
+  assert.match(index, /rel="icon" type="image\/png" href="\/src\/assets\/logo\.png"/);
   assert.match(index, /id="novel-startup-loader-cover"/);
   assert.match(index, /id="novel-startup-loader-text"/);
   assert.match(index, /novel-startup-loader__reader/);

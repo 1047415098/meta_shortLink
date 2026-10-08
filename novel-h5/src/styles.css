@@ -222,11 +222,14 @@ a {
   place-items: center;
   width: 42px;
   height: 42px;
-  border-radius: 50%;
-  color: #fff;
-  background: linear-gradient(145deg, #ff8a68, #ff5b42);
   text-decoration: none;
-  box-shadow: 0 8px 18px rgba(255, 107, 74, 0.23);
+}
+/* 使用实际品牌图，不再叠加原先的圆形书本图标背景。 */
+.brand-logo {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
 }
 .icon-button,
 .menu-button {

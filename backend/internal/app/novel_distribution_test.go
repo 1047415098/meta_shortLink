@@ -159,14 +159,15 @@ func TestNovelDistributionLinkLifecycleLocksContentAfterFirstVisit(t *testing.T)
 		t.Fatalf("create distribution link: %d %s", created.Code, created.Body.String())
 	}
 	var link struct {
-		ID          int64  `json:"id"`
-		ProductType string `json:"product_type"`
-		PublicURL   string `json:"public_url"`
+		ID                 int64  `json:"id"`
+		ProductType        string `json:"product_type"`
+		PublicURL          string `json:"public_url"`
+		StartupTailSeconds int    `json:"startup_tail_seconds"`
 	}
 	if err := json.Unmarshal(created.Body.Bytes(), &link); err != nil {
 		t.Fatal(err)
 	}
-	if link.ProductType != "novel" || link.PublicURL != "http://localhost:8080/novel/wife-a" {
+	if link.ProductType != "novel" || link.PublicURL != "http://localhost:8080/novel/wife-a" || link.StartupTailSeconds != 5 {
 		t.Fatalf("unexpected link: %+v", link)
 	}
 	// Short codes remain globally unique, while an unused auto-generated link can be removed cleanly.
@@ -190,11 +191,12 @@ func TestNovelDistributionLinkLifecycleLocksContentAfterFirstVisit(t *testing.T)
 	}
 
 	// 没有访问时允许修正小说绑定。
-	updateBody := fmt.Sprintf(`{"name":"投手 A","novel_id":%d,"entry_chapter_id":%d,"enabled":true,"channel":"facebook","meta_connection_id":%d,"meta_pixel_id":%d,"attribution_mode":"dynamic","time_spent_threshold":0}`, second, secondChapterID, connectionID, pixelID)
+	// The visual tail can be configured independently while the content binding is still editable.
+	updateBody := fmt.Sprintf(`{"name":"投手 A","novel_id":%d,"entry_chapter_id":%d,"enabled":true,"channel":"facebook","meta_connection_id":%d,"meta_pixel_id":%d,"attribution_mode":"dynamic","time_spent_threshold":0,"startup_tail_seconds":12}`, second, secondChapterID, connectionID, pixelID)
 	if response := call(a, "PATCH", "/api/v1/novel-links/"+itoa(link.ID), updateBody, admin); response.Code != 200 {
 		t.Fatalf("update unused distribution link: %d %s", response.Code, response.Body.String())
 	}
-	if page := call(a, "GET", "/novel/wife-a", "", nil); page.Code != 200 {
+	if page := call(a, "GET", "/novel/wife-a", "", nil); page.Code != 200 || !strings.Contains(page.Body.String(), `"startup_tail_seconds":12`) {
 		t.Fatalf("open distribution link: %d %s", page.Code, page.Body.String())
 	}
 	// Disabling bound content makes the campaign unavailable and re-enabling restores it.

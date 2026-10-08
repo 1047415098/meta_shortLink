@@ -44,6 +44,7 @@ type PublicLink struct {
 	EntryStorySlug     string `json:"entry_story_slug,omitempty"`
 	EntryChapterNumber *int   `json:"entry_chapter_number,omitempty"`
 	TimeSpentThreshold int    `json:"time_spent_threshold"`
+	StartupTailSeconds int    `json:"startup_tail_seconds"`
 }
 type PageError struct {
 	Status  int    `json:"status"`
@@ -51,7 +52,8 @@ type PageError struct {
 }
 
 func (h *Handler) Render(c *gin.Context, link links.Link, eventID string, recorded bool, country string, allowLanguageCookie bool) {
-	publicLink := &PublicLink{Code: link.Code, TimeSpentThreshold: link.TimeSpentThreshold}
+	// This per-link value is embedded in the first document, so the loading layer needs no extra request.
+	publicLink := &PublicLink{Code: link.Code, TimeSpentThreshold: link.TimeSpentThreshold, StartupTailSeconds: link.StartupTailSeconds}
 	available := []string{"en"}
 	startupCoverPath := ""
 	repository := Repository{DB: h.DB}

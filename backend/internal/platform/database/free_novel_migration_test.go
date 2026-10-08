@@ -42,3 +42,21 @@ func TestNovelDistributionMigrationFreezesLinkAndReadingMetrics(t *testing.T) {
 		}
 	}
 }
+
+func TestNovelLinkStartupTailMigrationUsesSafeDefaultAndBounds(t *testing.T) {
+	// The database remains the final guard when an admin request bypasses browser validation.
+	sqlBytes, err := migrations.ReadFile("migrations/029_novel_link_startup_tail_seconds.sql")
+	if err != nil {
+		t.Fatalf("read startup-tail migration: %v", err)
+	}
+	sql := string(sqlBytes)
+	for _, required := range []string{
+		"startup_tail_seconds integer NOT NULL DEFAULT 5",
+		"short_links_startup_tail_seconds_check",
+		"startup_tail_seconds BETWEEN 1 AND 60",
+	} {
+		if !strings.Contains(sql, required) {
+			t.Fatalf("startup-tail migration does not contain %q", required)
+		}
+	}
+}

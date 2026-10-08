@@ -16,7 +16,8 @@ func TestNovelMetadataReplacesGenericTags(t *testing.T) {
 }
 
 func TestNovelTikTokBootstrapAndCSPExposeOnlyPublicFields(t *testing.T) {
-	data := Bootstrap{AdPlatform: "tiktok", TikTokEnabled: true, TikTokPixelCode: "C0ABC123", TikTokStartEventID: "novel_v1_start", TikTokQualifiedID: "novel_v1_qualified", StartupCoverPath: "/novel-uploads/0123456789abcdef0123456789abcdef.webp"}
+	// The campaign's visual loading setting is public bootstrap data, never a tracking credential.
+	data := Bootstrap{Link: &PublicLink{Code: "campaign-a", StartupTailSeconds: 12}, AdPlatform: "tiktok", TikTokEnabled: true, TikTokPixelCode: "C0ABC123", TikTokStartEventID: "novel_v1_start", TikTokQualifiedID: "novel_v1_qualified", StartupCoverPath: "/novel-uploads/0123456789abcdef0123456789abcdef.webp"}
 	raw, err := json.Marshal(data)
 	if err != nil {
 		t.Fatal(err)
@@ -24,6 +25,9 @@ func TestNovelTikTokBootstrapAndCSPExposeOnlyPublicFields(t *testing.T) {
 	// The startup cover is a public, same-origin upload path and contains no visitor data.
 	if !strings.Contains(string(raw), `"startup_cover_path":"/novel-uploads/0123456789abcdef0123456789abcdef.webp"`) {
 		t.Fatalf("startup cover missing from public bootstrap: %s", raw)
+	}
+	if !strings.Contains(string(raw), `"startup_tail_seconds":12`) {
+		t.Fatalf("startup tail missing from public bootstrap: %s", raw)
 	}
 	for _, secret := range []string{"access_token", "test_event_code", "ttclid", "_ttp", "user_agent", "payload_cipher"} {
 		if strings.Contains(string(raw), secret) {
