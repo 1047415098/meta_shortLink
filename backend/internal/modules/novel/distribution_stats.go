@@ -100,7 +100,8 @@ func parseDistributionStatsFilter(input distributionStatsRequest, fallbackTimezo
 		return distributionStatsFilter{}, errors.New("时区无效")
 	}
 	now := time.Now().In(location)
-	startText, endText := now.AddDate(0, 0, -6).Format("2006-01-02"), now.Format("2006-01-02")
+	// Omitted bounds deliberately mean today's report day, matching the administration page.
+	startText, endText := now.Format("2006-01-02"), now.Format("2006-01-02")
 	if input.Start != nil {
 		startText = *input.Start
 	}

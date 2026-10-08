@@ -11,10 +11,9 @@ export function useReport(fetcher) {
     const end = new Date().toLocaleDateString("en-CA", {
       timeZone: settings.value.timezone || "Asia/Shanghai",
     });
-    const d = new Date(end + "T12:00:00Z");
-    d.setUTCDate(d.getUTCDate() - 6);
+    // Reports open on the current calendar day; historical ranges are an explicit operator choice.
     return {
-      start: d.toISOString().slice(0, 10),
+      start: end,
       end,
       tz: settings.value.timezone || "Asia/Shanghai",
       link_id: "",

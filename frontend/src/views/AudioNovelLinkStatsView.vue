@@ -253,10 +253,9 @@ const loading = ref(false);
 const timezone = settings.value.timezone || "Asia/Shanghai";
 const today = () =>
   new Date().toLocaleDateString("en-CA", { timeZone: timezone });
-const startDate = new Date(`${today()}T12:00:00Z`);
-startDate.setUTCDate(startDate.getUTCDate() - 6);
+// The initial audio report is today's data; wider ranges require an operator selection.
 const filters = reactive({
-  start: startDate.toISOString().slice(0, 10),
+  start: today(),
   end: today(),
   tz: timezone,
   ad_id: "",

@@ -1,8 +1,25 @@
 package audionovel
 
-import "testing"
+import (
+	"testing"
+	"time"
+)
 
 func distributionID(value int64) *int64 { return &value }
+
+func TestDistributionStatsFilterDefaultsToCurrentReportDay(t *testing.T) {
+	filter, err := parseDistributionStatsFilter(distributionStatsRequest{Page: 1}, "UTC")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Audio campaign reports use the same current-day default as every other report.
+	if got, want := filter.Start.Format("2006-01-02"), time.Now().UTC().Format("2006-01-02"); got != want {
+		t.Fatalf("default start = %q, want %q", got, want)
+	}
+	if got, want := filter.End, filter.Start.AddDate(0, 0, 1); !got.Equal(want) {
+		t.Fatalf("default end = %s, want next day %s", got, want)
+	}
+}
 
 func TestAudioDistributionInputUsesDynamicExclusivePlatformBinding(t *testing.T) {
 	input := DistributionInput{

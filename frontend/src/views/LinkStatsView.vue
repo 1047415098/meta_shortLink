@@ -370,9 +370,8 @@ const rowTitle = (r) => r.ad_name || `广告 ${r.source_value}`;
 function defaults() {
   const tz = settings.value.timezone || "Asia/Shanghai";
   const end = new Date().toLocaleDateString("en-CA", { timeZone: tz });
-  const start = new Date(end + "T12:00:00Z");
-  start.setUTCDate(start.getUTCDate() - 6);
-  return { start: start.toISOString().slice(0, 10), end, tz, ad_id: "" };
+  // A link's first statistics query is today's data; date controls expose historical ranges.
+  return { start: end, end, tz, ad_id: "" };
 }
 // Keep report filters inside the page because the API receives the complete POST body.
 async function query(nextPage = 1) {

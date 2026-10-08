@@ -32,7 +32,8 @@ func parseFilterValues(query url.Values, timezone string) (Filter, error) {
 		return f, errors.New("时区无效")
 	}
 	now := time.Now().In(loc)
-	f.Start, e = time.ParseInLocation("2006-01-02", defaultQuery("start", now.AddDate(0, 0, -6).Format("2006-01-02")), loc)
+	// Keep direct API queries aligned with the UI: no dates means the current report day.
+	f.Start, e = time.ParseInLocation("2006-01-02", defaultQuery("start", now.Format("2006-01-02")), loc)
 	if e != nil {
 		return f, errors.New("开始日期无效")
 	}

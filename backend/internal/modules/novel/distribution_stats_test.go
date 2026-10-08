@@ -1,6 +1,9 @@
 package novel
 
-import "testing"
+import (
+	"testing"
+	"time"
+)
 
 func stringPointer(value string) *string { return &value }
 
@@ -20,6 +23,20 @@ func TestDistributionStatsFilterAcceptsTikTokAttributionFields(t *testing.T) {
 	if filter.CampaignID != "campaign-1" || filter.AdgroupID != "group-1" || filter.CreativeID != "creative-1" ||
 		filter.AdIDV2 != "ad-1" || filter.EventStatus != "accepted" || filter.Page != 2 {
 		t.Fatalf("unexpected TikTok stats filter: %+v", filter)
+	}
+}
+
+func TestDistributionStatsFilterDefaultsToCurrentReportDay(t *testing.T) {
+	filter, err := parseDistributionStatsFilter(distributionStatsRequest{Page: 1}, "UTC")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The first visit to a link report is intentionally scoped to today's report day.
+	if got, want := filter.Start.Format("2006-01-02"), time.Now().UTC().Format("2006-01-02"); got != want {
+		t.Fatalf("default start = %q, want %q", got, want)
+	}
+	if got, want := filter.End, filter.Start.AddDate(0, 0, 1); !got.Equal(want) {
+		t.Fatalf("default end = %s, want next day %s", got, want)
 	}
 }
 

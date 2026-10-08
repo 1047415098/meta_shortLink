@@ -219,10 +219,9 @@ const today = () =>
   new Date().toLocaleDateString("en-CA", {
     timeZone: settings.value.timezone || "Asia/Shanghai",
   });
-const start = new Date(`${today()}T12:00:00Z`);
-start.setUTCDate(start.getUTCDate() - 6);
+// Start with today's report day; operators choose any historical range in the filter.
 const filters = reactive({
-  start: start.toISOString().slice(0, 10),
+  start: today(),
   end: today(),
   tz: settings.value.timezone || "Asia/Shanghai",
   ad_id: "",
