@@ -14,14 +14,13 @@
         value-format="YYYY-MM-DD"
         range-separator="至"
         :clearable="false"
+        :shortcuts="dateShortcuts"
       /><el-select v-model="filters.tz"
-        ><el-option label="上海 · UTC+8" value="Asia/Shanghai" /><el-option
-          label="UTC"
-          value="UTC" /><el-option
-          label="纽约"
-          value="America/New_York" /><el-option
-          label="洛杉矶"
-          value="America/Los_Angeles" /></el-select
+        ><el-option
+          v-for="timezone in REPORT_TIMEZONES"
+          :key="timezone.value"
+          :label="timezone.label"
+          :value="timezone.value" /></el-select
       ><el-input
         v-if="!isTikTok"
         v-model="filters.ad_id"
@@ -207,6 +206,11 @@ import PageHeader from "../components/PageHeader.vue";
 import { getNovelLinkStats } from "../api/novelLinks.js";
 import { settings } from "../stores/settings.js";
 import {
+  DEFAULT_REPORT_TIMEZONE,
+  REPORT_TIMEZONES,
+} from "../constants/reportTimezones.js";
+import { reportDateShortcuts } from "../utils/reportDateShortcuts.js";
+import {
   tiktokEventStatuses,
   tiktokStatusLabels,
   tiktokStatusType,
@@ -217,13 +221,14 @@ const route = useRoute(),
   loading = ref(false);
 const today = () =>
   new Date().toLocaleDateString("en-CA", {
-    timeZone: settings.value.timezone || "Asia/Shanghai",
+    // Use fixed UTC-8 until the settings response supplies the deployed choice.
+    timeZone: settings.value.timezone || DEFAULT_REPORT_TIMEZONE,
   });
 // Start with today's report day; operators choose any historical range in the filter.
 const filters = reactive({
   start: today(),
   end: today(),
-  tz: settings.value.timezone || "Asia/Shanghai",
+  tz: settings.value.timezone || DEFAULT_REPORT_TIMEZONE,
   ad_id: "",
   campaign_id: "",
   adgroup_id: "",
@@ -241,6 +246,8 @@ const range = computed({
     filters.end = value?.[1] || "";
   },
 });
+// Match the shared dashboard calendar shortcuts and selected report timezone.
+const dateShortcuts = reportDateShortcuts(() => filters.tz);
 const baseCards = [
   { key: "visits", label: "访问次数", help: "当前投放链接的正常入口访问" },
   {
@@ -340,7 +347,8 @@ function changePage(page) {
 function back() {
   router.push({
     name: "novel-links",
-    params: { id: data.value?.link.novel_id || route.query.novel_id || "" },
+    // The current response is the source of the parent ID; no URL query fallback.
+    params: { id: data.value?.link.novel_id || "" },
   });
 }
 onMounted(load);

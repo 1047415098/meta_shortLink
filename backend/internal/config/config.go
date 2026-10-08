@@ -12,6 +12,18 @@ import (
 	"time"
 )
 
+const (
+	// IANA Etc/GMT signs are reversed: this is the fixed UTC-8 reporting default.
+	DefaultReportTimezone = "Etc/GMT+8"
+	// UTCPlus8ReportTimezone is the only optional report day boundary.
+	UTCPlus8ReportTimezone = "Etc/GMT-8"
+)
+
+// IsReportTimezone keeps every operator report on one of the two fixed offsets.
+func IsReportTimezone(value string) bool {
+	return value == DefaultReportTimezone || value == UTCPlus8ReportTimezone
+}
+
 type Config struct {
 	MetaEncryptionKeys                                                                                                                                                                                       map[string]string
 	MetaEncryptionKeyID                                                                                                                                                                                      string
@@ -38,7 +50,7 @@ func LoadConfig() (Config, error) {
 	}
 	// 两个内容站使用独立构建和上传目录，部署时可以分别替换而不影响另一产品。
 	// Translation provider secrets stay in the Go server environment and never enter either frontend build.
-	c := Config{DatabaseURL: os.Getenv("DATABASE_URL"), PublicURL: env("PUBLIC_BASE_URL", "http://localhost:8080"), AdminUser: env("ADMIN_USER", "admin"), AdminPassword: os.Getenv("ADMIN_PASSWORD"), Secret: os.Getenv("APP_SECRET"), CookieMode: env("COOKIE_MODE", "off"), Timezone: env("REPORT_TIMEZONE", "Asia/Shanghai"), GeoDB: os.Getenv("GEOIP_DB_PATH"), Listen: env("LISTEN_ADDR", "127.0.0.1:8080"), FrontendDir: env("FRONTEND_DIR", "../frontend/dist"), LandingDir: env("LANDING_DIR", "../landing/dist"), AudioNovelDir: env("AUDIO_NOVEL_DIR", "../audio-novel/dist"), AudioNovelUploadDir: env("AUDIO_NOVEL_UPLOAD_DIR", "../data/audio-novel-uploads"), AudioNovelAudioDir: env("AUDIO_NOVEL_AUDIO_DIR", "../data/audio-novel-audio"), NovelDir: env("NOVEL_DIR", "../novel-h5/dist"), NovelUploadDir: env("NOVEL_UPLOAD_DIR", "../data/novel-uploads"), RetentionDays: days, APIHZTranslationID: os.Getenv("APIHZ_TRANSLATION_ID"), APIHZTranslationKey: os.Getenv("APIHZ_TRANSLATION_KEY"), APIHZTranslationURL: env("APIHZ_TRANSLATION_URL", "https://cn.apihz.cn/api/zici/fanyiapihz.php"), DeepLAuthKey: os.Getenv("DEEPL_AUTH_KEY"), DeepLTranslationURL: env("DEEPL_TRANSLATION_URL", "https://api-free.deepl.com/v2/translate"), TikTokEventsURL: env("TIKTOK_EVENTS_URL", "https://business-api.tiktok.com/open_api/v1.3/event/track/")}
+	c := Config{DatabaseURL: os.Getenv("DATABASE_URL"), PublicURL: env("PUBLIC_BASE_URL", "http://localhost:8080"), AdminUser: env("ADMIN_USER", "admin"), AdminPassword: os.Getenv("ADMIN_PASSWORD"), Secret: os.Getenv("APP_SECRET"), CookieMode: env("COOKIE_MODE", "off"), Timezone: env("REPORT_TIMEZONE", DefaultReportTimezone), GeoDB: os.Getenv("GEOIP_DB_PATH"), Listen: env("LISTEN_ADDR", "127.0.0.1:8080"), FrontendDir: env("FRONTEND_DIR", "../frontend/dist"), LandingDir: env("LANDING_DIR", "../landing/dist"), AudioNovelDir: env("AUDIO_NOVEL_DIR", "../audio-novel/dist"), AudioNovelUploadDir: env("AUDIO_NOVEL_UPLOAD_DIR", "../data/audio-novel-uploads"), AudioNovelAudioDir: env("AUDIO_NOVEL_AUDIO_DIR", "../data/audio-novel-audio"), NovelDir: env("NOVEL_DIR", "../novel-h5/dist"), NovelUploadDir: env("NOVEL_UPLOAD_DIR", "../data/novel-uploads"), RetentionDays: days, APIHZTranslationID: os.Getenv("APIHZ_TRANSLATION_ID"), APIHZTranslationKey: os.Getenv("APIHZ_TRANSLATION_KEY"), APIHZTranslationURL: env("APIHZ_TRANSLATION_URL", "https://cn.apihz.cn/api/zici/fanyiapihz.php"), DeepLAuthKey: os.Getenv("DEEPL_AUTH_KEY"), DeepLTranslationURL: env("DEEPL_TRANSLATION_URL", "https://api-free.deepl.com/v2/translate"), TikTokEventsURL: env("TIKTOK_EVENTS_URL", "https://business-api.tiktok.com/open_api/v1.3/event/track/")}
 	tiktokEnabled := strings.ToLower(env("TIKTOK_ENABLED", "false"))
 	if tiktokEnabled != "true" && tiktokEnabled != "false" {
 		return c, errors.New("TIKTOK_ENABLED must be true or false")
@@ -77,6 +89,9 @@ func LoadConfig() (Config, error) {
 	}
 	if c.CookieMode != "off" && c.CookieMode != "all" {
 		return c, errors.New("COOKIE_MODE must be off or all")
+	}
+	if !IsReportTimezone(c.Timezone) {
+		return c, errors.New("REPORT_TIMEZONE must be Etc/GMT+8 (UTC-8) or Etc/GMT-8 (UTC+8)")
 	}
 	if _, e = time.LoadLocation(c.Timezone); e != nil {
 		return c, e

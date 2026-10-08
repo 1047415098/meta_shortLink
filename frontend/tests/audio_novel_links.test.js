@@ -60,13 +60,15 @@ test("audio novel campaign client uses isolated endpoints and a strict payload",
   assert.deepEqual(
     calls.map(({ url }) => url),
     [
-      "/api/v1/audio-novel-links?audio_novel_id=7",
+      "/api/v1/audio-novel-links/query",
       "/api/v1/audio-novel-links",
       "/api/v1/audio-novel-links/2",
       "/api/v1/audio-novel-links/2/stats",
       "/api/v1/audio-novel-links/2",
     ],
   );
+  assert.equal(calls[0].options.method, "POST");
+  assert.deepEqual(JSON.parse(calls[0].options.body), { audio_novel_id: 7 });
 });
 
 test("audio novel campaign payload selects exactly one platform", () => {

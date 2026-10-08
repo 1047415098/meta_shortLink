@@ -6,6 +6,8 @@ import (
 	"io"
 	"strings"
 	"time"
+
+	"whatsapp-analytics/internal/config"
 )
 
 func Parse(reader io.Reader) ([][]string, error) {
@@ -41,7 +43,8 @@ func Parse(reader io.Reader) ([][]string, error) {
 		if row[1] == "" || len(row[1]) > 120 || !amountPattern.MatchString(row[2]) || !currencyPattern.MatchString(row[3]) {
 			return nil, errors.New("广告 ID、金额或币种无效；金额必须非负且最多四位小数")
 		}
-		if _, e = time.LoadLocation(row[4]); e != nil {
+		// Imported spend must use the same report day boundary as visit statistics.
+		if !config.IsReportTimezone(row[4]) {
 			return nil, errors.New("时区无效")
 		}
 		key := row[0] + "|" + row[1] + "|" + row[3] + "|" + row[4]

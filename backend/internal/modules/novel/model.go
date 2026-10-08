@@ -60,8 +60,10 @@ type ChapterInput struct {
 }
 
 type ListFilter struct {
-	Query, Status  string
-	Page, PageSize int
+	Query    string `json:"q"`
+	Status   string `json:"status"`
+	Page     int    `json:"page"`
+	PageSize int    `json:"page_size"`
 }
 
 type NovelList struct {

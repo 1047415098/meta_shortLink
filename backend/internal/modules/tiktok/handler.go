@@ -19,11 +19,13 @@ func (h *Handler) Register(api *gin.RouterGroup) {
 	api.PATCH("/tiktok-connections/:id", h.updateConnection)
 	api.DELETE("/tiktok-connections/:id", h.deleteConnection)
 	api.GET("/tiktok-pixels", h.listPixels)
+	api.POST("/tiktok-pixels/query", h.listPixels)
 	api.POST("/tiktok-pixels", h.createPixel)
 	api.PATCH("/tiktok-pixels/:id", h.updatePixel)
 	api.DELETE("/tiktok-pixels/:id", h.deletePixel)
 	api.POST("/tiktok-pixels/:id/test", h.testPixel)
 	api.GET("/tiktok-events", h.listEvents)
+	api.POST("/tiktok-events/query", h.listEvents)
 	api.POST("/tiktok-events/:id/retry", h.retryEvent)
 }
 
@@ -86,8 +88,18 @@ func (h *Handler) deleteConnection(c *gin.Context) {
 }
 
 func (h *Handler) listPixels(c *gin.Context) {
-	connectionID, err := strconv.ParseInt(c.DefaultQuery("connection_id", "0"), 10, 64)
-	if err != nil || connectionID < 0 {
+	var input struct {
+		ConnectionID int64 `json:"connection_id"`
+	}
+	if c.Request.Method == "POST" && c.ShouldBindJSON(&input) != nil {
+		runtime.Bad(c, "TikTok 凭证筛选条件格式无效")
+		return
+	}
+	connectionID := input.ConnectionID
+	if c.Request.Method != "POST" {
+		connectionID, _ = strconv.ParseInt(c.DefaultQuery("connection_id", "0"), 10, 64)
+	}
+	if connectionID < 0 {
 		runtime.Bad(c, "TikTok 凭证编号无效")
 		return
 	}
@@ -180,25 +192,37 @@ func (h *Handler) writeConfigError(c *gin.Context, err error, notFound, duplicat
 }
 
 func (h *Handler) listEvents(c *gin.Context) {
-	page, err := strconv.Atoi(c.DefaultQuery("page", "1"))
-	if err != nil || page < 1 || page > 100000 {
+	var filters EventFilters
+	if c.Request.Method == "POST" {
+		if c.ShouldBindJSON(&filters) != nil {
+			runtime.Bad(c, "TikTok 事件筛选条件格式无效")
+			return
+		}
+	} else {
+		filters.Page, _ = strconv.Atoi(c.DefaultQuery("page", "1"))
+		filters.Status = c.Query("status")
+		filters.EventName = c.Query("event_name")
+		filters.PixelRecordID, _ = strconv.ParseInt(c.DefaultQuery("pixel_record_id", "0"), 10, 64)
+		filters.LinkID, _ = strconv.ParseInt(c.DefaultQuery("link_id", "0"), 10, 64)
+	}
+	if filters.Page == 0 {
+		filters.Page = 1
+	}
+	if filters.Page < 1 || filters.Page > 100000 {
 		runtime.Bad(c, "页码无效")
 		return
 	}
-	filters := EventFilters{Page: page, Status: c.Query("status"), EventName: c.Query("event_name")}
 	validStatus := map[string]bool{"": true, "pending": true, "sending": true, "accepted": true, "retry": true, "failed": true}
 	validName := map[string]bool{"": true, "StartReading": true, "StartListening": true, "ViewContent": true, "PageView": true, "Contact": true}
 	if !validStatus[filters.Status] || !validName[filters.EventName] {
 		runtime.Bad(c, "TikTok 事件筛选条件无效")
 		return
 	}
-	filters.PixelRecordID, err = strconv.ParseInt(c.DefaultQuery("pixel_record_id", "0"), 10, 64)
-	if err != nil || filters.PixelRecordID < 0 {
+	if filters.PixelRecordID < 0 {
 		runtime.Bad(c, "TikTok Pixel 编号无效")
 		return
 	}
-	filters.LinkID, err = strconv.ParseInt(c.DefaultQuery("link_id", "0"), 10, 64)
-	if err != nil || filters.LinkID < 0 {
+	if filters.LinkID < 0 {
 		runtime.Bad(c, "投放链接编号无效")
 		return
 	}
@@ -209,7 +233,7 @@ func (h *Handler) listEvents(c *gin.Context) {
 		runtime.ServerError(c, err)
 		return
 	}
-	c.JSON(200, gin.H{"items": items, "total": total, "page": page, "page_size": 50})
+	c.JSON(200, gin.H{"items": items, "total": total, "page": filters.Page, "page_size": 50})
 }
 
 func (h *Handler) retryEvent(c *gin.Context) {

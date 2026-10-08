@@ -47,10 +47,10 @@ type AudioNovelInput struct {
 }
 
 type ListFilter struct {
-	Query    string
-	Status   string
-	Page     int
-	PageSize int
+	Query    string `json:"q"`
+	Status   string `json:"status"`
+	Page     int    `json:"page"`
+	PageSize int    `json:"page_size"`
 }
 
 type AudioNovelList struct {

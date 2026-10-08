@@ -66,10 +66,11 @@ export function chapterPayload(source) {
   };
 }
 export function listNovels(filters = {}) {
-  const query = new URLSearchParams();
-  for (const [key, value] of Object.entries(filters))
-    if (value !== "" && value != null) query.set(key, value);
-  return request(`/novels?${query}`);
+  // List filters are sent in JSON so the operator's search never appears in URLs.
+  return request("/novels/query", {
+    method: "POST",
+    body: JSON.stringify(filters),
+  });
 }
 export const getNovel = (id) => request(`/novels/${id}`);
 export const createNovel = (data) =>

@@ -16,6 +16,8 @@ import (
 	"whatsapp-analytics/internal/platform/runtime"
 )
 
+var legacyStartupCoverPattern = regexp.MustCompile(`^https://cdn\.overseas-new-media\.com/xiaoyao-writer/prod/content/cover/[A-Za-z0-9_-]+\.(?:jpg|png|webp)$`)
+
 type Bootstrap struct {
 	Link                 *PublicLink `json:"link,omitempty"`
 	Ticket               string      `json:"ticket,omitempty"`
@@ -30,6 +32,7 @@ type Bootstrap struct {
 	TikTokPixelCode      string      `json:"tiktok_pixel_code,omitempty"`
 	TikTokStartEventID   string      `json:"tiktok_start_event_id,omitempty"`
 	TikTokQualifiedID    string      `json:"tiktok_qualified_event_id,omitempty"`
+	StartupCoverPath     string      `json:"startup_cover_path,omitempty"`
 	Locale               string      `json:"locale"`
 	AvailableLocales     []string    `json:"available_locales"`
 	Error                *PageError  `json:"error,omitempty"`
@@ -48,10 +51,15 @@ type PageError struct {
 func (h *Handler) Render(c *gin.Context, link links.Link, eventID string, recorded bool, country string, allowLanguageCookie bool) {
 	publicLink := &PublicLink{Code: link.Code, TimeSpentThreshold: link.TimeSpentThreshold}
 	available := []string{"en"}
+	startupCoverPath := ""
 	if link.NovelID != nil {
 		// The bootstrap carries the bound slug so the SPA can switch routes without a second entry request.
 		if item, err := (Repository{DB: h.DB}).ByID(c.Request.Context(), *link.NovelID); err == nil {
 			publicLink.EntryStorySlug = item.Slug
+			// Local uploads and the historical trusted CDN are the only cover sources allowed on the loading layer.
+			if coverPattern.MatchString(item.CoverPath) || legacyStartupCoverPattern.MatchString(item.CoverPath) {
+				startupCoverPath = item.CoverPath
+			}
 		}
 		repository := Repository{DB: h.DB}
 		locales, err := repository.PublishedLocales(c.Request.Context(), *link.NovelID)
@@ -74,7 +82,7 @@ func (h *Handler) Render(c *gin.Context, link links.Link, eventID string, record
 	if platform == "" {
 		platform = "meta"
 	}
-	data := Bootstrap{Link: publicLink, Surface: "novel", AdPlatform: platform, CookieEnabled: h.Config.CookieMode == "all", Locale: locale, AvailableLocales: available}
+	data := Bootstrap{Link: publicLink, Surface: "novel", AdPlatform: platform, CookieEnabled: h.Config.CookieMode == "all", StartupCoverPath: startupCoverPath, Locale: locale, AvailableLocales: available}
 	c.Header("Content-Language", locale)
 	if allowLanguageCookie && remembered != locale {
 		// 只为真实读者记住语言选择；爬虫和平台预览请求必须保持无 Cookie。
@@ -155,7 +163,8 @@ func (h *Handler) render(c *gin.Context, status int, data Bootstrap) error {
 
 func novelContentSecurityPolicy(nonce string) string {
 	return "default-src 'none'; script-src 'self' 'nonce-" + nonce + "' https://connect.facebook.net https://analytics.tiktok.com; " +
-		"style-src 'self' 'unsafe-inline'; img-src 'self' data: https://www.facebook.com https://analytics.tiktok.com https://business-api.tiktok.com; " +
+		// The exact legacy CDN keeps existing novel covers usable without allowing arbitrary remote images.
+		"style-src 'self' 'unsafe-inline'; img-src 'self' data: https://cdn.overseas-new-media.com https://www.facebook.com https://analytics.tiktok.com https://business-api.tiktok.com; " +
 		// 隐藏统计/风控页面固定由本站 /gooll/ 提供，不开放第三方 iframe 域名。
 		"font-src 'self'; connect-src 'self' https://www.facebook.com https://analytics.tiktok.com https://business-api.tiktok.com; frame-src 'self'; base-uri 'none'; frame-ancestors 'none'"
 }

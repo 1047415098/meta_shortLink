@@ -1,41 +1,35 @@
-import { ref, reactive, onMounted, onBeforeUnmount, watch } from "vue";
-import { useRoute, useRouter } from "vue-router";
+import { ref, reactive, onMounted, onBeforeUnmount } from "vue";
 import { listLinks } from "../api/links";
 import { exportVisits } from "../api/analytics";
 import { settings } from "../stores/settings";
+import { DEFAULT_REPORT_TIMEZONE } from "../constants/reportTimezones";
 import { ElMessage } from "element-plus/es/components/message/index";
 export function useReport(fetcher) {
-  const route = useRoute(),
-    router = useRouter();
   const defaults = () => {
     const end = new Date().toLocaleDateString("en-CA", {
-      timeZone: settings.value.timezone || "Asia/Shanghai",
+      // Use fixed UTC-8 until the settings request supplies the deployed choice.
+      timeZone: settings.value.timezone || DEFAULT_REPORT_TIMEZONE,
     });
     // Reports open on the current calendar day; historical ranges are an explicit operator choice.
     return {
       start: end,
       end,
-      tz: settings.value.timezone || "Asia/Shanghai",
+      tz: settings.value.timezone || DEFAULT_REPORT_TIMEZONE,
       link_id: "",
       ad_id: "",
       surface: "",
     };
   };
-  const fromQuery = () => {
-    const v = defaults();
-    for (const key of Object.keys(v))
-      if (typeof route.query[key] === "string") v[key] = route.query[key];
-    return v;
-  };
-  const filters = reactive(fromQuery()),
+  // Report state stays in memory so date and ad filters never enter the URL.
+  const filters = reactive(defaults()),
     data = ref(null),
     links = ref([]),
     busy = ref(false),
     error = ref(""),
-    clickPage = ref(Number(route.query.page) || 1);
+    clickPage = ref(1);
   let generation = 0,
     alive = true;
-  async function load(reset = true, sync = true) {
+  async function load(reset = true) {
     if (reset) clickPage.value = 1;
     const run = ++generation;
     error.value = "";
@@ -53,10 +47,6 @@ export function useReport(fetcher) {
         ]),
       );
       Object.assign(filters, snapshot);
-      if (sync)
-        await router.replace({
-          query: { ...snapshot, page: String(clickPage.value) },
-        });
       const result = await fetcher({ ...snapshot, page: clickPage.value });
       if (alive && run === generation) data.value = result;
     } catch (e) {
@@ -82,26 +72,10 @@ export function useReport(fetcher) {
       ElMessage.error(e.message);
     }
   }
-  watch(
-    () => route.query,
-    () => {
-      if (!alive) return;
-      const next = fromQuery();
-      const nextPage = Number(route.query.page) || 1;
-      if (
-        JSON.stringify(next) !== JSON.stringify({ ...filters }) ||
-        nextPage !== clickPage.value
-      ) {
-        Object.assign(filters, next);
-        clickPage.value = nextPage;
-        load(false, false);
-      }
-    },
-  );
   onMounted(async () => {
     try {
       links.value = await listLinks();
-      await load(false, false);
+      await load(false);
     } catch (e) {
       error.value = e.message;
     }

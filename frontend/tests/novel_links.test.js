@@ -42,13 +42,15 @@ test("novel distribution client keeps links and statistics on dedicated endpoint
   assert.deepEqual(
     calls.map(({ url }) => url),
     [
-      "/api/v1/novel-links?novel_id=7",
+      "/api/v1/novel-links/query",
       "/api/v1/novel-links",
       "/api/v1/novel-links/2",
       "/api/v1/novel-links/2/stats",
       "/api/v1/novel-links/2",
     ],
   );
+  assert.equal(calls[0].options.method, "POST");
+  assert.deepEqual(JSON.parse(calls[0].options.body), { novel_id: 7 });
 });
 
 test("novel link payload always uses hidden dynamic attribution defaults", () => {

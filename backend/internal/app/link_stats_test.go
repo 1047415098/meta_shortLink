@@ -48,7 +48,7 @@ func TestLinkStatsRequireVerifiedAdClick(t *testing.T) {
 		}
 	}
 	admin := login(t, a)
-	w := call(a, "POST", "/api/v1/links/1/stats", `{"start":"2026-09-02","end":"2026-09-02","tz":"Asia/Shanghai"}`, admin)
+	w := call(a, "POST", "/api/v1/links/1/stats", `{"start":"2026-09-02","end":"2026-09-02","tz":"Etc/GMT-8"}`, admin)
 	if w.Code != 200 {
 		t.Fatalf("stats %d: %s", w.Code, w.Body.String())
 	}
@@ -105,7 +105,7 @@ func TestLinkStatsLocationsUseStrictRealClicks(t *testing.T) {
 		}
 	}
 	admin := login(t, a)
-	w := call(a, "POST", "/api/v1/links/1/stats", `{"start":"2026-09-02","end":"2026-09-02","tz":"Asia/Shanghai"}`, admin)
+	w := call(a, "POST", "/api/v1/links/1/stats", `{"start":"2026-09-02","end":"2026-09-02","tz":"Etc/GMT-8"}`, admin)
 	if w.Code != 200 {
 		t.Fatalf("stats %d: %s", w.Code, w.Body.String())
 	}
@@ -199,7 +199,7 @@ func TestLinkStatsScopeAttributionAndCookieDedup(t *testing.T) {
 	add("before", "401", "before", `{}`, "2026-09-01T15:59:59Z", "normal", "landing", 1, 1, "101", true, true)
 	add("after", "401", "after", `{}`, "2026-09-02T16:00:00Z", "normal", "landing", 1, 1, "101", true, true)
 	path := "/api/v1/links/1/stats"
-	filters := `{"start":"2026-09-02","end":"2026-09-02","tz":"Asia/Shanghai"}`
+	filters := `{"start":"2026-09-02","end":"2026-09-02","tz":"Etc/GMT-8"}`
 	if w := call(a, "POST", path, filters, nil); w.Code != 401 {
 		t.Fatalf("unauthenticated: %d", w.Code)
 	}

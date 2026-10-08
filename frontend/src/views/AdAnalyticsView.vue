@@ -59,9 +59,10 @@
         <h2>导入广告花费</h2>
         <p class="muted">
           CSV 表头：date,ad_id,amount,currency,time_zone。日期使用
-          YYYY-MM-DD，时区与广告账户保持一致。
+          YYYY-MM-DD，时区仅支持固定 UTC-8 或固定 UTC+8，需与报表筛选一致。
         </p>
-        <p class="muted">示例：2026-09-08,广告ID,25.50,USD,Asia/Shanghai</p>
+        <!-- IANA Etc/GMT uses reversed signs: GMT+8 represents fixed UTC-8. -->
+        <p class="muted">示例：2026-09-08,广告ID,25.50,USD,Etc/GMT+8</p>
         <el-upload
           drag
           accept=".csv,text/csv"

@@ -8,16 +8,30 @@ import (
 func distributionID(value int64) *int64 { return &value }
 
 func TestDistributionStatsFilterDefaultsToCurrentReportDay(t *testing.T) {
-	filter, err := parseDistributionStatsFilter(distributionStatsRequest{Page: 1}, "UTC")
+	filter, err := parseDistributionStatsFilter(distributionStatsRequest{Page: 1}, "Etc/GMT+8")
 	if err != nil {
 		t.Fatal(err)
 	}
 	// Audio campaign reports use the same current-day default as every other report.
-	if got, want := filter.Start.Format("2006-01-02"), time.Now().UTC().Format("2006-01-02"); got != want {
+	if got, want := filter.Start.Format("2006-01-02"), time.Now().In(time.FixedZone("UTC-8", -8*60*60)).Format("2006-01-02"); got != want {
 		t.Fatalf("default start = %q, want %q", got, want)
 	}
 	if got, want := filter.End, filter.Start.AddDate(0, 0, 1); !got.Equal(want) {
 		t.Fatalf("default end = %s, want next day %s", got, want)
+	}
+}
+
+func TestDistributionStatsFilterOnlyAcceptsFixedReportOffsets(t *testing.T) {
+	for _, timezone := range []string{"Etc/GMT+8", "Etc/GMT-8"} {
+		timezone := timezone
+		filter, err := parseDistributionStatsFilter(distributionStatsRequest{TZ: &timezone, Page: 1}, "Etc/GMT+8")
+		if err != nil || filter.Timezone != timezone {
+			t.Fatalf("timezone %q was not accepted: filter=%+v error=%v", timezone, filter, err)
+		}
+	}
+	legacyTimezone := "Asia/Shanghai"
+	if _, err := parseDistributionStatsFilter(distributionStatsRequest{TZ: &legacyTimezone, Page: 1}, "Etc/GMT+8"); err == nil {
+		t.Fatal("legacy reporting timezone was accepted")
 	}
 }
 

@@ -29,10 +29,11 @@ export function audioNovelPayload(source) {
 }
 
 export function listAudioNovels(filters = {}) {
-  const query = new URLSearchParams();
-  for (const [key, value] of Object.entries(filters))
-    if (value !== "" && value != null) query.set(key, value);
-  return request(`/audio-novels?${query}`);
+  // List filters are sent in JSON so the operator's search never appears in URLs.
+  return request("/audio-novels/query", {
+    method: "POST",
+    body: JSON.stringify(filters),
+  });
 }
 export const getAudioNovel = (id) => request(`/audio-novels/${id}`);
 export const createAudioNovel = (data) =>

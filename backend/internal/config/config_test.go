@@ -2,6 +2,28 @@ package config
 
 import "testing"
 
+func TestReportTimezoneDefaultsToFixedUTCMinusEight(t *testing.T) {
+	t.Setenv("DATABASE_URL", "postgres://test")
+	t.Setenv("APP_SECRET", "0123456789abcdef0123456789abcdef")
+	t.Setenv("ADMIN_PASSWORD", "test-password")
+	t.Setenv("REPORT_TIMEZONE", "")
+
+	c, err := LoadConfig()
+	if err != nil {
+		t.Fatalf("load config: %v", err)
+	}
+	// Etc/GMT names reverse their signs: GMT+8 is the fixed UTC-8 reporting day.
+	if c.Timezone != "Etc/GMT+8" {
+		t.Fatalf("report timezone default = %q, want fixed UTC-8", c.Timezone)
+	}
+
+	// Legacy regions and UTC cannot silently change the established report-day boundary.
+	t.Setenv("REPORT_TIMEZONE", "UTC")
+	if _, err := LoadConfig(); err == nil {
+		t.Fatal("unsupported report timezone was accepted")
+	}
+}
+
 func TestNovelPathsUseIndependentDefaultsAndOverrides(t *testing.T) {
 	t.Setenv("DATABASE_URL", "postgres://test")
 	t.Setenv("APP_SECRET", "0123456789abcdef0123456789abcdef")

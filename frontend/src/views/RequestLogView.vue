@@ -10,7 +10,7 @@
         <div>
           <h2>访客接口日志</h2>
           <p class="muted">
-            仅记录访客端：短链接访问与咨询提交 · 保留 7 天 · 时间为北京时间
+            仅记录访客端：短链接访问与咨询提交 · 保留 7 天 · 时间为固定 UTC-8
           </p>
         </div>
         <el-button :loading="busy" @click="load()">刷新日志</el-button>
@@ -28,6 +28,7 @@
             value-format="YYYY-MM-DD"
             start-placeholder="开始日期"
             end-placeholder="结束日期"
+            :shortcuts="dateShortcuts"
             style="width: 260px"
         /></el-form-item>
         <el-form-item label="路径"
@@ -207,27 +208,26 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted, onBeforeUnmount, watch } from "vue";
+import { ref, reactive, onMounted, onBeforeUnmount } from "vue";
 import { getLogs, getLog } from "../api/requestLogs";
 import PageHeader from "../components/PageHeader.vue";
-import { buildQuery } from "../utils";
-import { useRoute, useRouter } from "vue-router";
-const route = useRoute(),
-  router = useRouter();
-const queryText = (key) =>
-  typeof route.query[key] === "string" ? route.query[key] : "";
-const queryPage = () => Math.max(1, parseInt(queryText("page")) || 1);
+import { DEFAULT_REPORT_TIMEZONE } from "../constants/reportTimezones";
+import { reportDateShortcuts } from "../utils/reportDateShortcuts";
 const now = new Date().toLocaleDateString("en-CA", {
-  timeZone: "Asia/Shanghai",
+  // Logs follow the same fixed UTC-8 reporting day as all analytics views.
+  timeZone: DEFAULT_REPORT_TIMEZONE,
 });
-const range = ref([queryText("start") || now, queryText("end") || now]);
+// Keep log filters in component state instead of exposing them in the address bar.
+const range = ref([now, now]);
+// Request logs use the same fixed UTC-8 calendar shortcuts as report pages.
+const dateShortcuts = reportDateShortcuts(() => DEFAULT_REPORT_TIMEZONE);
 const filters = reactive({
-  path: queryText("path"),
-  method: queryText("method"),
-  status: queryText("status"),
+  path: "",
+  method: "",
+  status: "",
 });
 const data = ref({ items: [], total: 0 }),
-  page = ref(queryPage()),
+  page = ref(1),
   busy = ref(false),
   error = ref(""),
   detail = ref(null),
@@ -235,7 +235,7 @@ const data = ref({ items: [], total: 0 }),
 let generation = 0;
 const time = (value) =>
   new Date(value).toLocaleString("zh-CN", {
-    timeZone: "Asia/Shanghai",
+    timeZone: DEFAULT_REPORT_TIMEZONE,
     hour12: false,
   });
 const pretty = (value) => JSON.stringify(value ?? null, null, 2);
@@ -243,7 +243,7 @@ const pretty = (value) => JSON.stringify(value ?? null, null, 2);
 function clearClosedDetail() {
   if (!opened.value) detail.value = null;
 }
-async function load(reset = false, sync = true) {
+async function load(reset = false) {
   const run = ++generation;
   if (reset) page.value = 1;
   if (!range.value?.[0] || !range.value?.[1]) {
@@ -254,24 +254,13 @@ async function load(reset = false, sync = true) {
   busy.value = true;
   error.value = "";
   try {
-    if (sync)
-      await router.replace({
-        query: {
-          ...filters,
-          start: range.value[0],
-          end: range.value[1],
-          page: String(page.value),
-        },
-      });
-    const result = await getLogs(
-      buildQuery({
-        ...filters,
-        start: range.value[0],
-        end: range.value[1],
-        tz: "Asia/Shanghai",
-        page: page.value,
-      }),
-    );
+    const result = await getLogs({
+      ...filters,
+      start: range.value[0],
+      end: range.value[1],
+      tz: DEFAULT_REPORT_TIMEZONE,
+      page: page.value,
+    });
     if (run === generation) data.value = result;
   } catch (e) {
     if (run === generation) error.value = e.message;
@@ -288,28 +277,7 @@ async function show(row) {
     error.value = e.message;
   }
 }
-watch(
-  () => route.query,
-  () => {
-    const nextRange = [queryText("start") || now, queryText("end") || now];
-    const next = {
-      path: queryText("path"),
-      method: queryText("method"),
-      status: queryText("status"),
-    };
-    if (
-      JSON.stringify(nextRange) === JSON.stringify(range.value) &&
-      JSON.stringify(next) === JSON.stringify({ ...filters }) &&
-      queryPage() === page.value
-    )
-      return;
-    range.value = nextRange;
-    Object.assign(filters, next);
-    page.value = queryPage();
-    load(false, false);
-  },
-);
-onMounted(() => load(false, false));
+onMounted(() => load(false));
 onBeforeUnmount(() => {
   generation++;
 });

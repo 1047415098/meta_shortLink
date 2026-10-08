@@ -64,9 +64,11 @@ export function novelEntryChapterOptions(items = [], link = null) {
   return sortOptions();
 }
 export function listNovelLinks(novelId) {
-  const query = new URLSearchParams();
-  if (novelId) query.set("novel_id", novelId);
-  return request(`/novel-links?${query}`);
+  // The selected novel is an admin query filter, not part of the URL.
+  return request("/novel-links/query", {
+    method: "POST",
+    body: JSON.stringify({ novel_id: novelId || 0 }),
+  });
 }
 export const createNovelLink = (data) =>
   request("/novel-links", {

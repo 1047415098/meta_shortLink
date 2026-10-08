@@ -89,7 +89,7 @@ func TestLandingVisitAndContact(t *testing.T) {
 	if post(m[1]) != 303 || post(m[1]) != 303 {
 		t.Fatal("contact / retry failed")
 	}
-	today := time.Now().In(mustLocation("Asia/Shanghai")).Format("2006-01-02")
+	today := time.Now().In(mustLocation("Etc/GMT+8")).Format("2006-01-02")
 	w = call(a, "GET", "/api/v1/analytics?start="+today+"&end="+today, "", admin)
 	var data struct {
 		Summary map[string]int
@@ -265,7 +265,7 @@ func TestTimedLandingDoesNotCountAsManualConsultation(t *testing.T) {
 		t.Fatal("manual consultation failed")
 	}
 
-	today := time.Now().In(mustLocation("Asia/Shanghai")).Format("2006-01-02")
+	today := time.Now().In(mustLocation("Etc/GMT+8")).Format("2006-01-02")
 	result := call(a, "GET", "/api/v1/analytics?start="+today+"&end="+today, "", admin)
 	var report struct {
 		Summary map[string]int

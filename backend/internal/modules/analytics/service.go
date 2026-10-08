@@ -1,17 +1,62 @@
 package analytics
 
 import (
+	"encoding/json"
 	"errors"
+	"io"
 	"net/url"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"whatsapp-analytics/internal/config"
 )
+
+// FilterInput carries operator report filters in a JSON body so they never
+// appear in browser history, proxy logs, or API query strings.
+type FilterInput struct {
+	Start   string `json:"start"`
+	End     string `json:"end"`
+	TZ      string `json:"tz"`
+	LinkID  string `json:"link_id"`
+	AdID    string `json:"ad_id"`
+	Surface string `json:"surface"`
+	Page    int    `json:"page"`
+}
 
 func ParseFilter(c *gin.Context, timezone string) (Filter, error) {
 	return parseFilterValues(c.Request.URL.Query(), timezone)
+}
+
+// ParseFilterJSON accepts the same validated report shape as GET queries but
+// keeps all operator-entered values in the POST body.
+func ParseFilterJSON(c *gin.Context, timezone string) (Filter, FilterInput, error) {
+	var input FilterInput
+	decoder := json.NewDecoder(c.Request.Body)
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&input); err != nil {
+		return Filter{}, input, errors.New("统计条件格式无效")
+	}
+	if err := decoder.Decode(&struct{}{}); err != io.EOF {
+		return Filter{}, input, errors.New("统计条件格式无效")
+	}
+	return ParseFilterInput(input, timezone)
+}
+
+// ParseFilterInput is shared by JSON report handlers that add their own fields.
+func ParseFilterInput(input FilterInput, timezone string) (Filter, FilterInput, error) {
+	values := url.Values{}
+	for key, value := range map[string]string{
+		"start": input.Start, "end": input.End, "tz": input.TZ,
+		"link_id": input.LinkID, "ad_id": input.AdID, "surface": input.Surface,
+	} {
+		if strings.TrimSpace(value) != "" {
+			values.Set(key, value)
+		}
+	}
+	filter, err := parseFilterValues(values, timezone)
+	return filter, input, err
 }
 
 // Share date and timezone validation between existing GET reports and JSON POST
@@ -26,6 +71,10 @@ func parseFilterValues(query url.Values, timezone string) (Filter, error) {
 	f := Filter{TZ: defaultQuery("tz", timezone), AdID: query.Get("ad_id"), Surface: query.Get("surface")}
 	if f.Surface != "" && f.Surface != "short_link" && f.Surface != "audio_novel" && f.Surface != "novel" {
 		return f, errors.New("入口类型无效")
+	}
+	// Keep direct API calls aligned with the two fixed-offset choices in the admin UI.
+	if !config.IsReportTimezone(f.TZ) {
+		return f, errors.New("时区无效")
 	}
 	loc, e := time.LoadLocation(f.TZ)
 	if e != nil {

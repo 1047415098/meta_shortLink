@@ -64,13 +64,15 @@ test("novel clients whitelist payloads and use chapter endpoints", async (t) => 
   assert.deepEqual(
     calls.map(({ url }) => url),
     [
-      "/api/v1/novels?q=glass",
+      "/api/v1/novels/query",
       "/api/v1/novels",
       "/api/v1/novels/7/chapters",
       "/api/v1/novels/7/chapters",
       "/api/v1/novels/7/chapters/3",
     ],
   );
+  assert.equal(calls[0].options.method, "POST");
+  assert.deepEqual(JSON.parse(calls[0].options.body), { q: "glass" });
 });
 
 test("admin development server proxies persisted novel covers", () => {

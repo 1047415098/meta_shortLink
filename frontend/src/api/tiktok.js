@@ -1,5 +1,4 @@
 import { request } from "./http.js";
-import { buildQuery } from "../utils/index.js";
 import {
   tiktokConnectionPayload,
   tiktokPixelPayload,
@@ -18,7 +17,10 @@ export const deleteTikTokConnection = (id) =>
   request(`/tiktok-connections/${id}`, { method: "DELETE" });
 
 export const listTikTokPixels = (connection_id) =>
-  request(`/tiktok-pixels?${buildQuery({ connection_id })}`);
+  request("/tiktok-pixels/query", {
+    method: "POST",
+    body: JSON.stringify({ connection_id: connection_id || 0 }),
+  });
 
 export const saveTikTokPixel = (id, data) =>
   request(`/tiktok-pixels${id ? `/${id}` : ""}`, {
@@ -33,7 +35,10 @@ export const testTikTokPixel = (id) =>
   request(`/tiktok-pixels/${id}/test`, { method: "POST" });
 
 export const listTikTokEvents = (filters = {}) =>
-  request(`/tiktok-events?${buildQuery(filters)}`);
+  request("/tiktok-events/query", {
+    method: "POST",
+    body: JSON.stringify(filters),
+  });
 
 export const retryTikTokEvent = (id) =>
   request(`/tiktok-events/${encodeURIComponent(id)}/retry`, {

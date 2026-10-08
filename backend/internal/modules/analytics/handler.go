@@ -21,6 +21,20 @@ func (a *Handler) Overview(c *gin.Context) {
 		runtime.Bad(c, e.Error())
 		return
 	}
+	a.writeOverview(c, f)
+}
+
+// OverviewJSON keeps analytics filters out of the request URL for the admin UI.
+func (a *Handler) OverviewJSON(c *gin.Context) {
+	f, _, e := ParseFilterJSON(c, a.Config.Timezone)
+	if e != nil {
+		runtime.Bad(c, e.Error())
+		return
+	}
+	a.writeOverview(c, f)
+}
+
+func (a *Handler) writeOverview(c *gin.Context, f Filter) {
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 10*time.Second)
 	defer cancel()
 	data, e := (Repository{DB: a.DB}).Overview(ctx, f)
@@ -29,7 +43,6 @@ func (a *Handler) Overview(c *gin.Context) {
 		return
 	}
 	c.JSON(200, gin.H{"summary": data.Summary, "trends": data.Trends, "devices": data.Devices, "countries": data.Countries, "sources": data.Sources, "ads": data.Ads, "health": gin.H{"write_failures": a.WriteFailures.Load(), "geo_enabled": a.Geo != nil, "cookie_mode": a.Config.CookieMode}, "timezone": f.TZ, "retention_days": a.Config.RetentionDays})
-
 }
 
 func (a *Handler) Clicks(c *gin.Context) {
@@ -43,17 +56,37 @@ func (a *Handler) Clicks(c *gin.Context) {
 		runtime.Bad(c, "页码无效")
 		return
 	}
-	ctx, cancel := context.WithTimeout(c.Request.Context(), 10*time.Second)
-	defer cancel()
-	var total int64
-	total, e = (Repository{DB: a.DB}).Count(ctx, f)
+	a.writeClicks(c, f, page)
+}
+
+// ClicksJSON mirrors Clicks but takes the page and filters from JSON.
+func (a *Handler) ClicksJSON(c *gin.Context) {
+	f, input, e := ParseFilterJSON(c, a.Config.Timezone)
 	if e != nil {
-		runtime.ServerError(c, e)
+		runtime.Bad(c, e.Error())
 		return
 	}
-	items, e := (Repository{DB: a.DB}).Events(ctx, f, 50, (page-1)*50)
-	if e != nil {
-		runtime.ServerError(c, e)
+	a.writeClicks(c, f, input.Page)
+}
+
+func (a *Handler) writeClicks(c *gin.Context, f Filter, page int) {
+	if page == 0 {
+		page = 1
+	}
+	if page < 1 || page > 100000 {
+		runtime.Bad(c, "页码无效")
+		return
+	}
+	ctx, cancel := context.WithTimeout(c.Request.Context(), 10*time.Second)
+	defer cancel()
+	total, err := (Repository{DB: a.DB}).Count(ctx, f)
+	if err != nil {
+		runtime.ServerError(c, err)
+		return
+	}
+	items, err := (Repository{DB: a.DB}).Events(ctx, f, 50, (page-1)*50)
+	if err != nil {
+		runtime.ServerError(c, err)
 		return
 	}
 	c.JSON(200, gin.H{"items": items, "page": page, "total": total})
@@ -65,6 +98,20 @@ func (a *Handler) Export(c *gin.Context) {
 		runtime.Bad(c, e.Error())
 		return
 	}
+	a.writeExport(c, f)
+}
+
+// ExportJSON returns the same CSV while keeping selected filters out of the URL.
+func (a *Handler) ExportJSON(c *gin.Context) {
+	f, _, e := ParseFilterJSON(c, a.Config.Timezone)
+	if e != nil {
+		runtime.Bad(c, e.Error())
+		return
+	}
+	a.writeExport(c, f)
+}
+
+func (a *Handler) writeExport(c *gin.Context, f Filter) {
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 30*time.Second)
 	defer cancel()
 	items, e := (Repository{DB: a.DB}).Events(ctx, f, 100001, 0)

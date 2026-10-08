@@ -16,11 +16,22 @@ import (
 )
 
 func (a *Handler) ListAdmin(c *gin.Context) {
-	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
-	pageSize, _ := strconv.Atoi(c.DefaultQuery("page_size", "20"))
+	filter := ListFilter{}
+	if c.Request.Method == "POST" {
+		// Admin list filters stay in JSON so they are not exposed in request URLs.
+		if decodeAudioNovelJSON(c, &filter) != nil {
+			runtime.Bad(c, "语音小说查询条件无效")
+			return
+		}
+	} else {
+		filter.Page, _ = strconv.Atoi(c.DefaultQuery("page", "1"))
+		filter.PageSize, _ = strconv.Atoi(c.DefaultQuery("page_size", "20"))
+		filter.Query = c.Query("q")
+		filter.Status = c.Query("status")
+	}
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 5*time.Second)
 	defer cancel()
-	result, err := (Repository{DB: a.DB}).ListAdmin(ctx, ListFilter{Query: c.Query("q"), Status: c.Query("status"), Page: page, PageSize: pageSize})
+	result, err := (Repository{DB: a.DB}).ListAdmin(ctx, filter)
 	if err != nil {
 		runtime.ServerError(c, err)
 		return

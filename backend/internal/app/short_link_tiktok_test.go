@@ -141,8 +141,8 @@ func TestTikTokShortLinkQueuesDeduplicatedFullFunnelAndStats(t *testing.T) {
 		t.Fatalf("TikTok visit created Meta events=%d err=%v", metaEvents, err)
 	}
 
-	today := time.Now().In(mustLocation("Asia/Shanghai")).Format("2006-01-02")
-	stats := call(a, http.MethodPost, fmt.Sprintf("/api/v1/links/%d/stats", link.ID), fmt.Sprintf(`{"start":%q,"end":%q,"tz":"Asia/Shanghai"}`, today, today), admin)
+	today := time.Now().In(mustLocation("Etc/GMT+8")).Format("2006-01-02")
+	stats := call(a, http.MethodPost, fmt.Sprintf("/api/v1/links/%d/stats", link.ID), fmt.Sprintf(`{"start":%q,"end":%q,"tz":"Etc/GMT+8"}`, today, today), admin)
 	if stats.Code != http.StatusOK || !strings.Contains(stats.Body.String(), `"ad_platform":"tiktok"`) || !strings.Contains(stats.Body.String(), `"source_value":"ad-4"`) || !strings.Contains(stats.Body.String(), `"visits":1`) {
 		t.Fatalf("TikTok stats: %d %s", stats.Code, stats.Body.String())
 	}

@@ -26,9 +26,11 @@ export function audioNovelLinkPayload(source = {}) {
 }
 
 export function listAudioNovelLinks(audioNovelId) {
-  const query = new URLSearchParams();
-  if (audioNovelId) query.set("audio_novel_id", audioNovelId);
-  return request(`/audio-novel-links?${query}`);
+  // The selected audio novel is an admin query filter, not part of the URL.
+  return request("/audio-novel-links/query", {
+    method: "POST",
+    body: JSON.stringify({ audio_novel_id: audioNovelId || 0 }),
+  });
 }
 
 export const createAudioNovelLink = (data) =>

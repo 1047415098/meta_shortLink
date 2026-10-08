@@ -96,7 +96,7 @@ test("audio novel client uses the renamed admin endpoints", async (t) => {
   assert.deepEqual(
     calls.map(({ url }) => url),
     [
-      "/api/v1/audio-novels?q=glass",
+      "/api/v1/audio-novels/query",
       "/api/v1/audio-novels",
       "/api/v1/audio-novels/preview",
       "/api/v1/audio-novel-covers",
@@ -104,6 +104,8 @@ test("audio novel client uses the renamed admin endpoints", async (t) => {
       "/api/v1/audio-novels/42/audio",
     ],
   );
+  assert.equal(calls[0].options.method, "POST");
+  assert.deepEqual(JSON.parse(calls[0].options.body), { q: "glass" });
   assert.equal(calls.at(-1).options.method, "DELETE");
 });
 

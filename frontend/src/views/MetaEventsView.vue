@@ -197,8 +197,8 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted, onBeforeUnmount, watch } from "vue";
-import { useRoute, useRouter } from "vue-router";
+import { ref, reactive, onMounted, onBeforeUnmount } from "vue";
+import { useRouter } from "vue-router";
 import { ElMessage } from "element-plus/es/components/message/index";
 import { Refresh } from "@element-plus/icons-vue";
 import PageHeader from "../components/PageHeader.vue";
@@ -215,8 +215,7 @@ import {
   statusType,
   timestamp,
 } from "../utils/meta";
-const route = useRoute(),
-  router = useRouter();
+const router = useRouter();
 const eventStatuses = [
   "pending",
   "processing",
@@ -237,20 +236,14 @@ const eventNames = [
   "WhatsAppAutoRedirect",
   "Contact",
 ];
-const connectionQuery = () => Number(route.query.connection_id) || "";
-const statusQuery = () =>
-  eventStatuses.includes(route.query.status) ? route.query.status : "";
-const pageQuery = () => Math.max(1, parseInt(route.query.page) || 1);
-const pixelQuery = () => Number(route.query.pixel_record_id) || "";
-const eventQuery = () =>
-  eventNames.includes(route.query.event_name) ? route.query.event_name : "";
+// Event filters remain local to the page and are never mirrored to the URL.
 const filters = reactive({
-  connection_id: connectionQuery(),
-  status: statusQuery(),
-  pixel_record_id: pixelQuery(),
-  event_name: eventQuery(),
+  connection_id: "",
+  status: "",
+  pixel_record_id: "",
+  event_name: "",
 });
-const page = ref(pageQuery()),
+const page = ref(1),
   data = ref({ items: [], total: 0, page_size: 50 }),
   connections = ref([]),
   pixels = ref([]);
@@ -259,27 +252,13 @@ const busy = ref(false),
   connectionError = ref(""),
   retrying = ref(null);
 let generation = 0;
-async function load(resetPage = false, sync = true) {
+async function load(resetPage = false) {
   const run = ++generation;
   if (resetPage) page.value = 1;
   busy.value = true;
   error.value = "";
   data.value = { items: [], total: 0, page_size: data.value.page_size || 50 };
   try {
-    if (sync)
-      await router.replace({
-        query: {
-          ...(filters.connection_id
-            ? { connection_id: String(filters.connection_id) }
-            : {}),
-          ...(filters.status ? { status: filters.status } : {}),
-          ...(filters.pixel_record_id
-            ? { pixel_record_id: String(filters.pixel_record_id) }
-            : {}),
-          ...(filters.event_name ? { event_name: filters.event_name } : {}),
-          page: String(page.value),
-        },
-      });
     const result = await listMetaEvents({ ...filters, page: page.value });
     if (run === generation) data.value = result;
   } catch (e) {
@@ -308,28 +287,9 @@ async function retry(row) {
     retrying.value = null;
   }
 }
-watch(
-  () => route.query,
-  () => {
-    if (
-      connectionQuery() === filters.connection_id &&
-      statusQuery() === filters.status &&
-      pixelQuery() === filters.pixel_record_id &&
-      eventQuery() === filters.event_name &&
-      pageQuery() === page.value
-    )
-      return;
-    filters.connection_id = connectionQuery();
-    filters.status = statusQuery();
-    filters.pixel_record_id = pixelQuery();
-    filters.event_name = eventQuery();
-    page.value = pageQuery();
-    load(false, false);
-  },
-);
 onMounted(async () => {
   await Promise.allSettled([
-    load(false, false),
+    load(false),
     listConnections()
       .then((result) => {
         connections.value = result;

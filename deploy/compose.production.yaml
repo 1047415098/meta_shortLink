@@ -49,7 +49,8 @@ services:
       DEEPL_AUTH_KEY: ${DEEPL_AUTH_KEY:-}
       DEEPL_TRANSLATION_URL: ${DEEPL_TRANSLATION_URL:-https://api-free.deepl.com/v2/translate}
       COOKIE_MODE: ${COOKIE_MODE:-all}
-      REPORT_TIMEZONE: Asia/Shanghai
+      # Fixed UTC-8 default; Etc/GMT+8 uses the IANA reversed-sign convention.
+      REPORT_TIMEZONE: Etc/GMT+8
       RETENTION_DAYS: 90
       # 安装时填写实测 Docker 网关地址；不接受任意公网来源的伪造 IP。
       TRUSTED_PROXIES: ${TRUSTED_PROXIES:?Set the exact Docker gateway address}

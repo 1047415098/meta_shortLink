@@ -9,6 +9,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/jackc/pgx/v5"
+	"whatsapp-analytics/internal/config"
 	"whatsapp-analytics/internal/platform/runtime"
 )
 
@@ -104,21 +105,15 @@ type DistributionStatsResponse struct {
 }
 
 func parseDistributionStatsFilter(input distributionStatsRequest, fallbackTimezone string) (distributionStatsFilter, error) {
-	// The allowlist matches the administration UI; the configured timezone is
-	// also accepted so a deployment can retain its established reporting day.
-	allowedTimezones := map[string]bool{
-		"UTC": true, "Asia/Shanghai": true,
-		"America/New_York": true, "America/Los_Angeles": true,
-	}
 	if fallbackTimezone == "" {
-		fallbackTimezone = "UTC"
+		fallbackTimezone = config.DefaultReportTimezone
 	}
-	allowedTimezones[fallbackTimezone] = true
 	timezone := fallbackTimezone
 	if input.TZ != nil {
 		timezone = strings.TrimSpace(*input.TZ)
 	}
-	if !allowedTimezones[timezone] {
+	// Audio report days are intentionally limited to the shared fixed UTC offsets.
+	if !config.IsReportTimezone(timezone) {
 		return distributionStatsFilter{}, errors.New("时区无效")
 	}
 	location, err := time.LoadLocation(timezone)

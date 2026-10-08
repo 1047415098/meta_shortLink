@@ -1,5 +1,4 @@
 import { request } from "./http.js";
-import { buildQuery } from "../utils/index.js";
 const post = (path, data) =>
   request("/meta" + path, {
     method: "POST",
@@ -16,10 +15,16 @@ export const saveConnection = (id, data) =>
 export const deleteConnection = (id) =>
   request(`/meta/connections/${id}`, { method: "DELETE" });
 export const listMetaEvents = (filters) =>
-  request("/meta/events?" + buildQuery(filters));
+  request("/meta/events/query", {
+    method: "POST",
+    body: JSON.stringify(filters),
+  });
 export const retryMetaEvent = (id) => post(`/events/${id}/retry`);
 export const listPixels = (connection_id) =>
-  request("/meta/pixels?" + buildQuery({ connection_id }));
+  request("/meta/pixels/query", {
+    method: "POST",
+    body: JSON.stringify({ connection_id: connection_id || 0 }),
+  });
 // Credential plaintext is requested only when an administrator opens one
 // Pixel for editing; the collection endpoint remains secret-free.
 export const getPixelCredential = (id) =>

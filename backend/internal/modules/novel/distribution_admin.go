@@ -13,10 +13,21 @@ import (
 )
 
 func (h *Handler) ListDistributionLinks(c *gin.Context) {
-	novelID, _ := strconv.ParseInt(c.Query("novel_id"), 10, 64)
+	var input struct {
+		NovelID int64 `json:"novel_id"`
+	}
+	if c.Request.Method == "POST" {
+		// Keep the selected novel out of the admin request URL.
+		if decodeJSON(c, &input) != nil {
+			runtime.Bad(c, "小说编号无效")
+			return
+		}
+	} else {
+		input.NovelID, _ = strconv.ParseInt(c.Query("novel_id"), 10, 64)
+	}
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 5*time.Second)
 	defer cancel()
-	items, err := (Repository{DB: h.DB}).ListDistributionLinks(ctx, novelID)
+	items, err := (Repository{DB: h.DB}).ListDistributionLinks(ctx, input.NovelID)
 	if err != nil {
 		runtime.ServerError(c, err)
 		return

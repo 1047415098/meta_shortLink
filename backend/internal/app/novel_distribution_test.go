@@ -14,8 +14,8 @@ import (
 
 func createDistributionNovel(t *testing.T, a *App, admin *http.Cookie, title, slug string) int64 {
 	t.Helper()
-	// Helper only creates the content prerequisite; every test still exercises the real HTTP contracts.
-	body := fmt.Sprintf(`{"title":%q,"slug":%q,"author":"Nine","category":"Drama","excerpt":"Distribution story.","cover_path":"","published_at":"2026-09-21","enabled":true,"featured":false,"sort_order":0}`, title, slug)
+	// The persisted cover verifies that a campaign's first HTML response binds the correct visual.
+	body := fmt.Sprintf(`{"title":%q,"slug":%q,"author":"Nine","category":"Drama","excerpt":"Distribution story.","cover_path":"/novel-uploads/0123456789abcdef0123456789abcdef.webp","published_at":"2026-09-21","enabled":true,"featured":false,"sort_order":0}`, title, slug)
 	response := call(a, "POST", "/api/v1/novels", body, admin)
 	if response.Code != 200 {
 		t.Fatalf("create novel: %d %s", response.Code, response.Body.String())
@@ -253,7 +253,7 @@ func TestNovelDistributionLinksKeepIndependentVisitorsAndVisibleTime(t *testing.
 	}
 	firstID, secondID := create("投手 A", "wife-a"), create("投手 B", "wife-b")
 	firstPage := call(a, "GET", "/novel/wife-a?ad_id=ad-a", "", nil)
-	if firstPage.Code != 200 || !strings.Contains(firstPage.Body.String(), `"entry_story_slug":"craving-for-my-divorced-wife"`) {
+	if firstPage.Code != 200 || !strings.Contains(firstPage.Body.String(), `"entry_story_slug":"craving-for-my-divorced-wife"`) || !strings.Contains(firstPage.Body.String(), `"startup_cover_path":"/novel-uploads/0123456789abcdef0123456789abcdef.webp"`) {
 		t.Fatalf("bound bootstrap: %d %s", firstPage.Code, firstPage.Body.String())
 	}
 	visitorCookie := firstPage.Result().Cookies()[0]
@@ -278,8 +278,8 @@ func TestNovelDistributionLinksKeepIndependentVisitorsAndVisibleTime(t *testing.
 			t.Fatalf("reading time %s: %d %s", seconds, response.Code, response.Body.String())
 		}
 	}
-	today := time.Now().In(mustLocation("Asia/Shanghai")).Format("2006-01-02")
-	stats := call(a, "POST", "/api/v1/novel-links/"+itoa(firstID)+"/stats", fmt.Sprintf(`{"start":%q,"end":%q,"tz":"Asia/Shanghai","ad_id":"","page":1}`, today, today), admin)
+	today := time.Now().In(mustLocation("Etc/GMT+8")).Format("2006-01-02")
+	stats := call(a, "POST", "/api/v1/novel-links/"+itoa(firstID)+"/stats", fmt.Sprintf(`{"start":%q,"end":%q,"tz":"Etc/GMT+8","ad_id":"","page":1}`, today, today), admin)
 	if stats.Code != 200 {
 		t.Fatalf("first stats: %d %s", stats.Code, stats.Body.String())
 	}
@@ -297,8 +297,8 @@ func TestNovelDistributionLinksKeepIndependentVisitorsAndVisibleTime(t *testing.
 		t.Fatalf("unexpected independent stats: %s", stats.Body.String())
 	}
 	// Ad filtering stays inside this link and cannot pull the second pitcher's visit.
-	matching := call(a, "POST", "/api/v1/novel-links/"+itoa(firstID)+"/stats", fmt.Sprintf(`{"start":%q,"end":%q,"tz":"Asia/Shanghai","ad_id":"ad-a","page":1}`, today, today), admin)
-	nonMatching := call(a, "POST", "/api/v1/novel-links/"+itoa(firstID)+"/stats", fmt.Sprintf(`{"start":%q,"end":%q,"tz":"Asia/Shanghai","ad_id":"ad-b","page":1}`, today, today), admin)
+	matching := call(a, "POST", "/api/v1/novel-links/"+itoa(firstID)+"/stats", fmt.Sprintf(`{"start":%q,"end":%q,"tz":"Etc/GMT+8","ad_id":"ad-a","page":1}`, today, today), admin)
+	nonMatching := call(a, "POST", "/api/v1/novel-links/"+itoa(firstID)+"/stats", fmt.Sprintf(`{"start":%q,"end":%q,"tz":"Etc/GMT+8","ad_id":"ad-b","page":1}`, today, today), admin)
 	if !strings.Contains(matching.Body.String(), `"visits":1`) || !strings.Contains(nonMatching.Body.String(), `"visits":0`) {
 		t.Fatalf("ad filters mismatch: matching=%s nonmatching=%s", matching.Body.String(), nonMatching.Body.String())
 	}
@@ -382,8 +382,8 @@ func TestTikTokDistributionStatsKeepLinkFunnelAndDeliveryIsolated(t *testing.T) 
 	insertEvent("stats-qualified-accepted", visitIDs[0], "ViewContent", "accepted")
 	insertEvent("stats-start-failed", visitIDs[1], "StartReading", "failed")
 
-	today := time.Now().In(mustLocation("Asia/Shanghai")).Format("2006-01-02")
-	stats := call(a, "POST", "/api/v1/novel-links/"+itoa(firstID)+"/stats", fmt.Sprintf(`{"start":%q,"end":%q,"tz":"Asia/Shanghai","page":1}`, today, today), admin)
+	today := time.Now().In(mustLocation("Etc/GMT+8")).Format("2006-01-02")
+	stats := call(a, "POST", "/api/v1/novel-links/"+itoa(firstID)+"/stats", fmt.Sprintf(`{"start":%q,"end":%q,"tz":"Etc/GMT+8","page":1}`, today, today), admin)
 	if stats.Code != 200 {
 		t.Fatalf("TikTok stats: %d %s", stats.Code, stats.Body.String())
 	}
@@ -415,11 +415,11 @@ func TestTikTokDistributionStatsKeepLinkFunnelAndDeliveryIsolated(t *testing.T) 
 		strings.Contains(stats.Body.String(), "tiktok_ttp") || strings.Contains(stats.Body.String(), "tiktok_context_cipher") {
 		t.Fatalf("TikTok detail was not safely masked: %s", stats.Body.String())
 	}
-	acceptedOnly := call(a, "POST", "/api/v1/novel-links/"+itoa(firstID)+"/stats", fmt.Sprintf(`{"start":%q,"end":%q,"tz":"Asia/Shanghai","campaign_id":"campaign-a","adgroup_id":"group-a","creative_id":"creative-a","ad_id_v2":"ad-a","event_status":"accepted","page":1}`, today, today), admin)
+	acceptedOnly := call(a, "POST", "/api/v1/novel-links/"+itoa(firstID)+"/stats", fmt.Sprintf(`{"start":%q,"end":%q,"tz":"Etc/GMT+8","campaign_id":"campaign-a","adgroup_id":"group-a","creative_id":"creative-a","ad_id_v2":"ad-a","event_status":"accepted","page":1}`, today, today), admin)
 	if acceptedOnly.Code != 200 || !strings.Contains(acceptedOnly.Body.String(), `"visits":1`) {
 		t.Fatalf("TikTok attribution filters: %d %s", acceptedOnly.Code, acceptedOnly.Body.String())
 	}
-	other := call(a, "POST", "/api/v1/novel-links/"+itoa(secondID)+"/stats", fmt.Sprintf(`{"start":%q,"end":%q,"tz":"Asia/Shanghai","page":1}`, today, today), admin)
+	other := call(a, "POST", "/api/v1/novel-links/"+itoa(secondID)+"/stats", fmt.Sprintf(`{"start":%q,"end":%q,"tz":"Etc/GMT+8","page":1}`, today, today), admin)
 	if other.Code != 200 || !strings.Contains(other.Body.String(), `"visits":1`) {
 		t.Fatalf("other link stats were mixed: %d %s", other.Code, other.Body.String())
 	}

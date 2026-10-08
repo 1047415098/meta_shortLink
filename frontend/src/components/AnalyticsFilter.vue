@@ -17,13 +17,11 @@
           :clearable="false" /></el-form-item
       ><el-form-item label="统计时区"
         ><el-select v-model="filters.tz" aria-label="统计时区"
-          ><el-option label="上海 · UTC+8" value="Asia/Shanghai" /><el-option
-            label="协调世界时 · UTC"
-            value="UTC" /><el-option
-            label="纽约"
-            value="America/New_York" /><el-option
-            label="洛杉矶"
-            value="America/Los_Angeles" /></el-select></el-form-item
+          ><el-option
+            v-for="timezone in REPORT_TIMEZONES"
+            :key="timezone.value"
+            :label="timezone.label"
+            :value="timezone.value" /></el-select></el-form-item
       ><el-form-item label="短链接"
         ><el-select
           v-model="filters.link_id"
@@ -68,6 +66,8 @@
 <script setup>
 import { computed } from "vue";
 import { Search } from "@element-plus/icons-vue";
+import { REPORT_TIMEZONES } from "../constants/reportTimezones";
+import { reportDateShortcuts } from "../utils/reportDateShortcuts";
 const props = defineProps({
   filters: { type: Object, required: true },
   links: { type: Array, default: () => [] },
@@ -81,25 +81,8 @@ const dateRange = computed({
     props.filters.end = v?.[1] || "";
   },
 });
-const dateShortcuts = [
-  { text: "今天", value: () => [new Date(), new Date()] },
-  {
-    text: "最近 7 天",
-    value: () => {
-      const d = new Date();
-      d.setDate(d.getDate() - 6);
-      return [d, new Date()];
-    },
-  },
-  {
-    text: "最近 30 天",
-    value: () => {
-      const d = new Date();
-      d.setDate(d.getDate() - 29);
-      return [d, new Date()];
-    },
-  },
-];
+// Shortcut dates follow the selected reporting timezone, not the browser timezone.
+const dateShortcuts = reportDateShortcuts(() => props.filters.tz);
 </script>
 
 <style scoped>

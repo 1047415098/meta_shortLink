@@ -55,14 +55,7 @@
         <el-table-column label="操作" width="235" fixed="right">
           <template #default="{ row }">
             <el-button link type="primary" @click="open(row)">编辑</el-button>
-            <el-button
-              link
-              @click="
-                router.push({
-                  name: 'meta-events',
-                  query: { connection_id: String(row.id) },
-                })
-              "
+            <el-button link @click="router.push({ name: 'meta-events' })"
               >事件记录</el-button
             >
             <el-button

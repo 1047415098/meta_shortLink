@@ -12,6 +12,7 @@ import (
 
 func (h *Handler) registerPixels(g *gin.RouterGroup) {
 	g.GET("/pixels", h.listPixels)
+	g.POST("/pixels/query", h.listPixels)
 	g.GET("/pixels/:id/credential", h.pixelCredential)
 	g.POST("/pixels", h.savePixel)
 	g.PATCH("/pixels/:id", h.savePixel)
@@ -63,8 +64,18 @@ func (h *Handler) pixelCredential(c *gin.Context) {
 	c.JSON(200, gin.H{"capi_token": token})
 }
 func (h *Handler) listPixels(c *gin.Context) {
-	id, e := strconv.ParseInt(c.DefaultQuery("connection_id", "0"), 10, 64)
-	if e != nil || id < 0 {
+	var input struct {
+		ConnectionID int64 `json:"connection_id"`
+	}
+	if c.Request.Method == "POST" && c.ShouldBindJSON(&input) != nil {
+		runtime.Bad(c, "账户筛选条件格式无效")
+		return
+	}
+	id := input.ConnectionID
+	if c.Request.Method != "POST" {
+		id, _ = strconv.ParseInt(c.DefaultQuery("connection_id", "0"), 10, 64)
+	}
+	if id < 0 {
 		runtime.Bad(c, "账户编号无效")
 		return
 	}

@@ -67,15 +67,22 @@ test("TikTok admin client uses exact centralized API paths", async (t) => {
       "/api/v1/tiktok-connections",
       "/api/v1/tiktok-connections/2",
       "/api/v1/tiktok-connections/2",
-      "/api/v1/tiktok-pixels?connection_id=2",
+      "/api/v1/tiktok-pixels/query",
       "/api/v1/tiktok-pixels",
       "/api/v1/tiktok-pixels/3",
       "/api/v1/tiktok-pixels/3/test",
       "/api/v1/tiktok-pixels/3",
-      "/api/v1/tiktok-events?status=failed&page=2",
+      "/api/v1/tiktok-events/query",
       "/api/v1/tiktok-events/novel_visit_qualified/retry",
     ],
   );
+  // Filter values stay in POST JSON, never in an API query string.
+  assert.equal(calls[4].options.method, "POST");
+  assert.equal(JSON.parse(calls[4].options.body).connection_id, 2);
+  assert.deepEqual(JSON.parse(calls[9].options.body), {
+    status: "failed",
+    page: 2,
+  });
   assert.equal(JSON.parse(calls[2].options.body).access_token, undefined);
 });
 

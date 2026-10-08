@@ -9,14 +9,14 @@ func stringPointer(value string) *string { return &value }
 
 func TestDistributionStatsFilterAcceptsTikTokAttributionFields(t *testing.T) {
 	filter, err := parseDistributionStatsFilter(distributionStatsRequest{
-		TZ:          stringPointer("UTC"),
+		TZ:          stringPointer("Etc/GMT+8"),
 		CampaignID:  "campaign-1",
 		AdgroupID:   "group-1",
 		CreativeID:  "creative-1",
 		AdIDV2:      "ad-1",
 		EventStatus: "accepted",
 		Page:        2,
-	}, "Asia/Shanghai")
+	}, "Etc/GMT+8")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -27,12 +27,12 @@ func TestDistributionStatsFilterAcceptsTikTokAttributionFields(t *testing.T) {
 }
 
 func TestDistributionStatsFilterDefaultsToCurrentReportDay(t *testing.T) {
-	filter, err := parseDistributionStatsFilter(distributionStatsRequest{Page: 1}, "UTC")
+	filter, err := parseDistributionStatsFilter(distributionStatsRequest{Page: 1}, "Etc/GMT+8")
 	if err != nil {
 		t.Fatal(err)
 	}
 	// The first visit to a link report is intentionally scoped to today's report day.
-	if got, want := filter.Start.Format("2006-01-02"), time.Now().UTC().Format("2006-01-02"); got != want {
+	if got, want := filter.Start.Format("2006-01-02"), time.Now().In(time.FixedZone("UTC-8", -8*60*60)).Format("2006-01-02"); got != want {
 		t.Fatalf("default start = %q, want %q", got, want)
 	}
 	if got, want := filter.End, filter.Start.AddDate(0, 0, 1); !got.Equal(want) {
@@ -42,10 +42,10 @@ func TestDistributionStatsFilterDefaultsToCurrentReportDay(t *testing.T) {
 
 func TestDistributionStatsFilterRejectsInvalidTikTokEventStatus(t *testing.T) {
 	_, err := parseDistributionStatsFilter(distributionStatsRequest{
-		TZ:          stringPointer("UTC"),
+		TZ:          stringPointer("Etc/GMT+8"),
 		EventStatus: "attributed",
 		Page:        1,
-	}, "Asia/Shanghai")
+	}, "Etc/GMT+8")
 	if err == nil {
 		t.Fatal("expected invalid TikTok event status to be rejected")
 	}

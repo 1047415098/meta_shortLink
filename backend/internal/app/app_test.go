@@ -46,7 +46,7 @@ func setup(t *testing.T) *App {
 	if e != nil {
 		t.Fatal(e)
 	}
-	c := Config{PublicURL: "http://localhost:8080", AdminUser: "admin", AdminPassword: "test-password-long", Secret: "test-secret-must-be-at-least-32-characters", CookieMode: "all", SecureCookies: false, Timezone: "Asia/Shanghai", RetentionDays: 90}
+	c := Config{PublicURL: "http://localhost:8080", AdminUser: "admin", AdminPassword: "test-password-long", Secret: "test-secret-must-be-at-least-32-characters", CookieMode: "all", SecureCookies: false, Timezone: "Etc/GMT+8", RetentionDays: 90}
 	c.LandingDir = t.TempDir()
 	if e := os.WriteFile(filepath.Join(c.LandingDir, "index.html"), []byte(`<!doctype html><html><head><!--LANDING_BOOTSTRAP--><script type="module" src="/landing-assets/app-test1234.js"></script></head><body><div id="app"></div></body></html>`), 0600); e != nil {
 		t.Fatal(e)
@@ -131,7 +131,7 @@ func TestRedirectAndDedup(t *testing.T) {
 	if w.Code != 400 {
 		t.Fatal("unbounded query allowed")
 	}
-	today := time.Now().In(mustLocation("Asia/Shanghai")).Format("2006-01-02")
+	today := time.Now().In(mustLocation("Etc/GMT+8")).Format("2006-01-02")
 	w = call(a, "GET", "/api/v1/analytics?start="+today+"&end="+today, "", admin)
 	var out struct {
 		Summary struct {
@@ -219,7 +219,7 @@ func TestCrossDayUniqueAndAttribution(t *testing.T) {
 	if e != nil {
 		t.Fatal(e)
 	}
-	w = call(a, "GET", "/api/v1/analytics?start=2026-09-01&end=2026-09-02&tz=UTC", "", admin)
+	w = call(a, "GET", "/api/v1/analytics?start=2026-09-01&end=2026-09-02&tz=Etc/GMT%2B8", "", admin)
 	var out struct {
 		Summary Summary
 		Trends  []Trend
@@ -271,11 +271,11 @@ func TestRetentionRuns(t *testing.T) {
 func TestSpendRequiresAllDates(t *testing.T) {
 	a := setup(t)
 	admin := login(t, a)
-	_, e := a.DB.Exec(context.Background(), `INSERT INTO ad_spend_daily(date,ad_id,amount,currency,time_zone) VALUES('2026-09-01','ad-A',10,'USD','UTC')`)
+	_, e := a.DB.Exec(context.Background(), `INSERT INTO ad_spend_daily(date,ad_id,amount,currency,time_zone) VALUES('2026-09-01','ad-A',10,'USD','Etc/GMT+8')`)
 	if e != nil {
 		t.Fatal(e)
 	}
-	w := call(a, "GET", "/api/v1/analytics?start=2026-09-01&end=2026-09-02&tz=UTC", "", admin)
+	w := call(a, "GET", "/api/v1/analytics?start=2026-09-01&end=2026-09-02&tz=Etc/GMT%2B8", "", admin)
 	var out struct{ Ads []Ad }
 	json.Unmarshal(w.Body.Bytes(), &out)
 	if len(out.Ads) != 1 || out.Ads[0].Cost != nil {
@@ -300,11 +300,11 @@ func TestSpendImportAndExport(t *testing.T) {
 		a.Router.ServeHTTP(w, r)
 		return w
 	}
-	w := upload("date,ad_id,amount,currency,time_zone\n2026-09-01,ad-A,10.25,USD,UTC\n")
+	w := upload("date,ad_id,amount,currency,time_zone\n2026-09-01,ad-A,10.25,USD,Etc/GMT+8\n")
 	if w.Code != 200 {
 		t.Fatal(w.Body.String())
 	}
-	w = upload("date,ad_id,amount,currency,time_zone\n2026-09-01,ad-A,-2,USD,UTC\n")
+	w = upload("date,ad_id,amount,currency,time_zone\n2026-09-01,ad-A,-2,USD,Etc/GMT+8\n")
 	if w.Code != 400 {
 		t.Fatal("negative spend accepted")
 	}
@@ -314,7 +314,7 @@ func TestSpendImportAndExport(t *testing.T) {
 		t.Fatal(cost)
 	}
 	call(a, "GET", "/hello", "", nil)
-	today := time.Now().In(mustLocation("Asia/Shanghai")).Format("2006-01-02")
+	today := time.Now().In(mustLocation("Etc/GMT+8")).Format("2006-01-02")
 	w = call(a, "GET", "/api/v1/exports/clicks?start="+today+"&end="+today, "", admin)
 	if w.Code != 200 || !strings.Contains(w.Body.String(), "hello") {
 		t.Fatalf("export %s", w.Body.String())

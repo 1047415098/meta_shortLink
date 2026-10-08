@@ -9,6 +9,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/jackc/pgx/v5"
+	"whatsapp-analytics/internal/config"
 	"whatsapp-analytics/internal/platform/runtime"
 )
 
@@ -93,7 +94,11 @@ type DistributionStatsResponse struct {
 func parseDistributionStatsFilter(input distributionStatsRequest, fallbackTimezone string) (distributionStatsFilter, error) {
 	timezone := fallbackTimezone
 	if input.TZ != nil {
-		timezone = *input.TZ
+		timezone = strings.TrimSpace(*input.TZ)
+	}
+	// Novel report days use the same two fixed offsets as the general dashboard.
+	if !config.IsReportTimezone(timezone) {
+		return distributionStatsFilter{}, errors.New("时区无效")
 	}
 	location, err := time.LoadLocation(timezone)
 	if err != nil {

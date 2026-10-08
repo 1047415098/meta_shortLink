@@ -196,7 +196,6 @@
 
 <script setup>
 import { onMounted, reactive, ref } from "vue";
-import { useRoute } from "vue-router";
 import { ElMessage } from "element-plus/es/components/message/index";
 import { Refresh } from "@element-plus/icons-vue";
 
@@ -226,7 +225,6 @@ const filters = reactive({
   pixel_record_id: "",
   link_id: "",
 });
-const route = useRoute();
 const page = ref(1);
 const data = ref({ items: [], total: 0, page_size: 50 });
 const pixels = ref([]);
@@ -278,10 +276,7 @@ async function retry(row) {
 }
 
 onMounted(async () => {
-  // Statistics pages can deep-link into the centralized log for one campaign.
-  filters.link_id = /^\d+$/.test(String(route.query.link_id || ""))
-    ? String(route.query.link_id)
-    : "";
+  // Filters remain local so the event query never exposes conditions in the URL.
   try {
     pixels.value = await listTikTokPixels();
   } catch (pixelError) {

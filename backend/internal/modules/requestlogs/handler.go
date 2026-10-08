@@ -17,6 +17,13 @@ import (
 
 type Handler struct{ *runtime.Core }
 
+type listInput struct {
+	analytics.FilterInput
+	Path   string `json:"path"`
+	Method string `json:"method"`
+	Status int    `json:"status"`
+}
+
 func (a *Handler) List(c *gin.Context) {
 	f, e := analytics.ParseFilter(c, a.Config.Timezone)
 	if e != nil {
@@ -65,6 +72,68 @@ func (a *Handler) List(c *gin.Context) {
 	}
 	if rows.Err() != nil {
 		runtime.ServerError(c, rows.Err())
+		return
+	}
+	c.JSON(200, gin.H{"items": items, "total": total, "page": page, "retention_days": 7, "body_limit": logBodyLimit})
+}
+
+// ListJSON keeps operator log filters in the JSON request body.
+func (a *Handler) ListJSON(c *gin.Context) {
+	var input listInput
+	if err := c.ShouldBindJSON(&input); err != nil {
+		runtime.Bad(c, "日志筛选条件格式无效")
+		return
+	}
+	f, _, err := analytics.ParseFilterInput(input.FilterInput, a.Config.Timezone)
+	if err != nil {
+		runtime.Bad(c, err.Error())
+		return
+	}
+	a.list(c, f, input.Page, input.Path, input.Method, input.Status)
+}
+
+func (a *Handler) list(c *gin.Context, f analytics.Filter, page int, path, method string, status int) {
+	if page == 0 {
+		page = 1
+	}
+	if page < 1 || page > 100000 {
+		runtime.Bad(c, "页码无效")
+		return
+	}
+	if status != 0 && (status < 100 || status > 599) {
+		runtime.Bad(c, "状态码无效")
+		return
+	}
+	if len(path) > 2048 || len(method) > 16 {
+		runtime.Bad(c, "筛选条件过长")
+		return
+	}
+	ctx, cancel := context.WithTimeout(c.Request.Context(), 5*time.Second)
+	defer cancel()
+	where := ` WHERE is_visitor=true AND path NOT IN ('/favicon.ico','/robots.txt') AND occurred_at >= $1 AND occurred_at < $2 AND ($3::text='' OR strpos(path,$3)>0) AND ($4::text='' OR method=$4) AND ($5::int=0 OR status=$5) `
+	args := []any{f.Start, f.End, path, method, status}
+	var total int
+	if err := a.DB.QueryRow(ctx, "SELECT count(*) FROM request_logs"+where, args...).Scan(&total); err != nil {
+		runtime.ServerError(c, err)
+		return
+	}
+	rows, err := a.DB.Query(ctx, "SELECT "+logCols+" FROM request_logs"+where+"ORDER BY occurred_at DESC,id DESC LIMIT 50 OFFSET $6", append(args, (page-1)*50)...)
+	if err != nil {
+		runtime.ServerError(c, err)
+		return
+	}
+	defer rows.Close()
+	items := []RequestLog{}
+	for rows.Next() {
+		var item RequestLog
+		if err := rows.Scan(&item.ID, &item.OccurredAt, &item.Method, &item.Path, &item.ClientIP, &item.Status, &item.DurationMS, &item.RequestBytes, &item.ResponseBytes, &item.Trigger); err != nil {
+			runtime.ServerError(c, err)
+			return
+		}
+		items = append(items, item)
+	}
+	if err := rows.Err(); err != nil {
+		runtime.ServerError(c, err)
 		return
 	}
 	c.JSON(200, gin.H{"items": items, "total": total, "page": page, "retention_days": 7, "body_limit": logBodyLimit})

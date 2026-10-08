@@ -16,12 +16,15 @@
         value-format="YYYY-MM-DD"
         range-separator="至"
         :clearable="false"
+        :shortcuts="dateShortcuts"
       />
       <el-select v-model="filters.tz">
-        <el-option label="上海 · UTC+8" value="Asia/Shanghai" />
-        <el-option label="UTC" value="UTC" />
-        <el-option label="纽约" value="America/New_York" />
-        <el-option label="洛杉矶" value="America/Los_Angeles" />
+        <el-option
+          v-for="timezone in REPORT_TIMEZONES"
+          :key="timezone.value"
+          :label="timezone.label"
+          :value="timezone.value"
+        />
       </el-select>
       <el-input
         v-if="!isTikTok"
@@ -244,13 +247,19 @@ import { ElMessage } from "element-plus";
 import PageHeader from "../components/PageHeader.vue";
 import { getAudioNovelLinkStats } from "../api/audioNovelLinks.js";
 import { settings } from "../stores/settings.js";
+import {
+  DEFAULT_REPORT_TIMEZONE,
+  REPORT_TIMEZONES,
+} from "../constants/reportTimezones.js";
+import { reportDateShortcuts } from "../utils/reportDateShortcuts.js";
 import { tiktokEventStatuses, tiktokStatusLabels } from "../utils/tiktok.js";
 
 const route = useRoute();
 const router = useRouter();
 const data = ref(null);
 const loading = ref(false);
-const timezone = settings.value.timezone || "Asia/Shanghai";
+// Audio reports share the fixed UTC-8 default with all operator statistics.
+const timezone = settings.value.timezone || DEFAULT_REPORT_TIMEZONE;
 const today = () =>
   new Date().toLocaleDateString("en-CA", { timeZone: timezone });
 // The initial audio report is today's data; wider ranges require an operator selection.
@@ -287,6 +296,8 @@ const range = computed({
     filters.end = value?.[1] || "";
   },
 });
+// Match the shared dashboard calendar shortcuts and selected report timezone.
+const dateShortcuts = reportDateShortcuts(() => filters.tz);
 
 const cards = [
   { key: "visits", label: "访问次数", help: "当前链接的正常入口访问" },
@@ -419,7 +430,8 @@ function back() {
   router.push({
     name: "audio-novel-links",
     params: {
-      id: data.value?.link.audio_novel_id || route.query.audio_novel_id || "",
+      // The current response is the source of the parent ID; no URL query fallback.
+      id: data.value?.link.audio_novel_id || "",
     },
   });
 }

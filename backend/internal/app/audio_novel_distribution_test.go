@@ -760,7 +760,7 @@ func TestAudioNovelDistributionStatsIsolatePlaybackFunnelsAndDelivery(t *testing
 		}
 		return out, response
 	}
-	full, response := stats(firstID, `{"start":"2026-09-01","end":"2026-09-02","tz":"Asia/Shanghai","page":1,"page_size":2}`)
+	full, response := stats(firstID, `{"start":"2026-09-01","end":"2026-09-02","tz":"Etc/GMT-8","page":1,"page_size":2}`)
 	if response.Code != 200 {
 		t.Fatalf("audio stats: %d %s", response.Code, response.Body.String())
 	}
@@ -777,25 +777,25 @@ func TestAudioNovelDistributionStatsIsolatePlaybackFunnelsAndDelivery(t *testing
 	if strings.Contains(response.Body.String(), "1234567890abcdef") || strings.Contains(response.Body.String(), "tiktok_context_cipher") || strings.Contains(response.Body.String(), "tiktok_ttp") {
 		t.Fatalf("audio stats exposed private TikTok data: %s", response.Body.String())
 	}
-	secondPage, response := stats(firstID, `{"start":"2026-09-01","end":"2026-09-02","tz":"Asia/Shanghai","page":2,"page_size":2}`)
+	secondPage, response := stats(firstID, `{"start":"2026-09-01","end":"2026-09-02","tz":"Etc/GMT-8","page":2,"page_size":2}`)
 	if response.Code != 200 || len(secondPage.Items) != 1 || secondPage.Items[0].ID != visits[0] || secondPage.Items[0].TTCLID != "1234…cdef" ||
 		secondPage.Items[0].PlaybackSeconds == nil || *secondPage.Items[0].PlaybackSeconds != 30 || secondPage.Items[0].StartEventStatus != "pending" || secondPage.Items[0].QualifiedEventStatus != "accepted" {
 		t.Fatalf("audio stats second page: %d %s", response.Code, response.Body.String())
 	}
 
-	shanghaiDay, response := stats(firstID, `{"start":"2026-09-02","end":"2026-09-02","tz":"Asia/Shanghai","page":1}`)
+	shanghaiDay, response := stats(firstID, `{"start":"2026-09-02","end":"2026-09-02","tz":"Etc/GMT-8","page":1}`)
 	if response.Code != 200 || shanghaiDay.Summary.Visits != 2 {
 		t.Fatalf("Shanghai date boundary: %d %s", response.Code, response.Body.String())
 	}
-	utcDay, response := stats(firstID, `{"start":"2026-09-01","end":"2026-09-01","tz":"UTC","page":1}`)
+	utcDay, response := stats(firstID, `{"start":"2026-09-01","end":"2026-09-01","tz":"Etc/GMT+8","page":1}`)
 	if response.Code != 200 || utcDay.Summary.Visits != 2 {
 		t.Fatalf("UTC date boundary: %d %s", response.Code, response.Body.String())
 	}
-	filtered, response := stats(firstID, `{"start":"2026-09-01","end":"2026-09-02","tz":"UTC","campaign_id":"campaign-a","adgroup_id":"group-a","creative_id":"creative-a","ad_id_v2":"ad-a","event_status":"accepted","page":1}`)
+	filtered, response := stats(firstID, `{"start":"2026-09-01","end":"2026-09-02","tz":"Etc/GMT+8","campaign_id":"campaign-a","adgroup_id":"group-a","creative_id":"creative-a","ad_id_v2":"ad-a","event_status":"accepted","page":1}`)
 	if response.Code != 200 || filtered.Summary.Visits != 1 {
 		t.Fatalf("TikTok audio filters: %d %s", response.Code, response.Body.String())
 	}
-	other, response := stats(secondID, `{"start":"2026-09-01","end":"2026-09-02","tz":"UTC","page":1}`)
+	other, response := stats(secondID, `{"start":"2026-09-01","end":"2026-09-02","tz":"Etc/GMT+8","page":1}`)
 	if response.Code != 200 || other.Summary.Visits != 1 || other.Summary.StartRate != 0 || other.Summary.QualifiedRate != 0 || other.Summary.CompletionRate != 0 {
 		t.Fatalf("audio link isolation: %d %s", response.Code, response.Body.String())
 	}
@@ -803,7 +803,7 @@ func TestAudioNovelDistributionStatsIsolatePlaybackFunnelsAndDelivery(t *testing
 	if response.Code != 400 {
 		t.Fatalf("unapproved timezone status=%d body=%s", response.Code, response.Body.String())
 	}
-	_, response = stats(firstID, `{"start":"2026-09-01","end":"2026-09-02","tz":"UTC","page":1,"page_size":1000}`)
+	_, response = stats(firstID, `{"start":"2026-09-01","end":"2026-09-02","tz":"Etc/GMT+8","page":1,"page_size":1000}`)
 	if response.Code != 200 || !strings.Contains(response.Body.String(), `"page_size":100`) {
 		t.Fatalf("page-size cap: %d %s", response.Code, response.Body.String())
 	}
@@ -825,17 +825,17 @@ func TestAudioNovelDistributionStatsIsolatePlaybackFunnelsAndDelivery(t *testing
 			t.Fatal(err)
 		}
 	}
-	metaStats, response := stats(metaID, `{"start":"2026-09-02","end":"2026-09-02","tz":"UTC","ad_id":"meta-ad","event_status":"succeeded","page":1}`)
+	metaStats, response := stats(metaID, `{"start":"2026-09-02","end":"2026-09-02","tz":"Etc/GMT+8","ad_id":"meta-ad","event_status":"succeeded","page":1}`)
 	// Legacy TimeSpent is not an audio playback event and must not inflate the
 	// new PageView/StartListening/ViewContent delivery totals.
 	if response.Code != 200 || metaStats.Summary.Visits != 1 || metaStats.Summary.SavedEvents != 3 || metaStats.Summary.PendingEvents != 1 || metaStats.Summary.AcceptedEvents != 1 || metaStats.Summary.FailedEvents != 1 {
 		t.Fatalf("Meta audio delivery stats: %d %s", response.Code, response.Body.String())
 	}
-	wrongMeta, response := stats(metaID, `{"start":"2026-09-02","end":"2026-09-02","tz":"UTC","ad_id":"wrong","page":1}`)
+	wrongMeta, response := stats(metaID, `{"start":"2026-09-02","end":"2026-09-02","tz":"Etc/GMT+8","ad_id":"wrong","page":1}`)
 	if response.Code != 200 || wrongMeta.Summary.Visits != 0 {
 		t.Fatalf("Meta ad filter: %d %s", response.Code, response.Body.String())
 	}
-	_, response = stats(999999, `{"start":"2026-09-02","end":"2026-09-02","tz":"UTC","page":1}`)
+	_, response = stats(999999, `{"start":"2026-09-02","end":"2026-09-02","tz":"Etc/GMT+8","page":1}`)
 	if response.Code != 404 {
 		t.Fatalf("unknown audio link status=%d body=%s", response.Code, response.Body.String())
 	}
@@ -843,7 +843,7 @@ func TestAudioNovelDistributionStatsIsolatePlaybackFunnelsAndDelivery(t *testing
 	if err = a.DB.QueryRow(context.Background(), "SELECT id FROM short_links WHERE product_type<>'audio_novel' ORDER BY id LIMIT 1").Scan(&ordinaryLinkID); err != nil {
 		t.Fatal(err)
 	}
-	_, response = stats(ordinaryLinkID, `{"start":"2026-09-02","end":"2026-09-02","tz":"UTC","page":1}`)
+	_, response = stats(ordinaryLinkID, `{"start":"2026-09-02","end":"2026-09-02","tz":"Etc/GMT+8","page":1}`)
 	if response.Code != 404 {
 		t.Fatalf("non-audio link status=%d body=%s", response.Code, response.Body.String())
 	}

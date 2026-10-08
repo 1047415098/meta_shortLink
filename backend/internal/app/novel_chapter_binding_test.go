@@ -188,7 +188,7 @@ func TestNovelDistributionBindsFreezesAndValidatesEntryChapter(t *testing.T) {
 		t.Fatalf("restored entry status=%d body=%s", response.Code, response.Body.String())
 	}
 
-	stats := call(a, http.MethodPost, "/api/v1/novel-links/"+itoa(link.ID)+"/stats", `{"tz":"Asia/Shanghai","page":1}`, admin)
+	stats := call(a, http.MethodPost, "/api/v1/novel-links/"+itoa(link.ID)+"/stats", `{"tz":"Etc/GMT+8","page":1}`, admin)
 	if stats.Code != http.StatusOK || !strings.Contains(stats.Body.String(), `"entry_chapter_number":2`) {
 		t.Fatalf("chapter snapshot stats: %d %s", stats.Code, stats.Body.String())
 	}

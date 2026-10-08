@@ -13,7 +13,20 @@ import (
 )
 
 func (a *Handler) ListDistributionLinks(c *gin.Context) {
-	audioNovelID, err := strconv.ParseInt(c.Query("audio_novel_id"), 10, 64)
+	var input struct {
+		AudioNovelID int64 `json:"audio_novel_id"`
+	}
+	var err error
+	if c.Request.Method == "POST" {
+		// Keep the selected audio novel out of the admin request URL.
+		if decodeAudioNovelJSON(c, &input) != nil {
+			runtime.Bad(c, "语音小说编号无效")
+			return
+		}
+	} else {
+		input.AudioNovelID, err = strconv.ParseInt(c.Query("audio_novel_id"), 10, 64)
+	}
+	audioNovelID := input.AudioNovelID
 	if err != nil || audioNovelID < 1 {
 		runtime.Bad(c, "语音小说编号无效")
 		return

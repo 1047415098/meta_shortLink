@@ -41,7 +41,8 @@ services:
       DEEPL_TRANSLATION_URL: ${DEEPL_TRANSLATION_URL:-https://api-free.deepl.com/v2/translate}
       # 小说投放统计使用匿名访客 Cookie 计算独立访客，不承载登录身份。
       COOKIE_MODE: ${COOKIE_MODE:-all}
-      REPORT_TIMEZONE: ${REPORT_TIMEZONE:-Asia/Shanghai}
+      # Fixed UTC-8 default; Etc/GMT+8 uses the IANA reversed-sign convention.
+      REPORT_TIMEZONE: ${REPORT_TIMEZONE:-Etc/GMT+8}
       RETENTION_DAYS: ${RETENTION_DAYS:-90}
       TRUSTED_PROXIES: ${TRUSTED_PROXIES:-}
       GEOIP_DB_PATH: ${GEOIP_DB_PATH:-}

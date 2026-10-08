@@ -13,12 +13,7 @@
       <el-button @click="openOverview">数据总览</el-button>
       <el-button
         v-if="data?.link.ad_platform === 'tiktok'"
-        @click="
-          router.push({
-            name: 'tiktok-events',
-            query: { link_id: String(route.params.id) },
-          })
-        "
+        @click="router.push({ name: 'tiktok-events' })"
         >TikTok 事件记录</el-button
       >
     </PageHeader>
@@ -34,25 +29,9 @@
               format="YYYY/MM/DD"
               range-separator="至"
               :clearable="false"
+              :shortcuts="dateShortcuts"
               style="width: 280px"
             />
-            <!-- Visible presets make the two most-used operating ranges one-click actions. -->
-            <el-button-group>
-              <el-button
-                :type="activeDatePreset === 'today' ? 'primary' : undefined"
-                :aria-pressed="activeDatePreset === 'today'"
-                @click="applyDatePreset(1)"
-                >今天</el-button
-              >
-              <el-button
-                :type="
-                  activeDatePreset === 'three-days' ? 'primary' : undefined
-                "
-                :aria-pressed="activeDatePreset === 'three-days'"
-                @click="applyDatePreset(3)"
-                >近 3 天</el-button
-              >
-            </el-button-group>
           </div>
         </el-form-item>
         <el-form-item label="统计时区">
@@ -61,10 +40,12 @@
             style="width: 190px"
             aria-label="统计时区"
           >
-            <el-option label="上海 · UTC+8" value="Asia/Shanghai" />
-            <el-option label="协调世界时 · UTC" value="UTC" />
-            <el-option label="纽约" value="America/New_York" />
-            <el-option label="洛杉矶" value="America/Los_Angeles" />
+            <el-option
+              v-for="timezone in REPORT_TIMEZONES"
+              :key="timezone.value"
+              :label="timezone.label"
+              :value="timezone.value"
+            />
           </el-select>
         </el-form-item>
         <el-form-item label="广告 ID">
@@ -289,6 +270,11 @@ import { useRoute, useRouter } from "vue-router";
 import PageHeader from "../components/PageHeader.vue";
 import { getLinkStats } from "../api/analytics";
 import { settings } from "../stores/settings";
+import {
+  DEFAULT_REPORT_TIMEZONE,
+  REPORT_TIMEZONES,
+} from "../constants/reportTimezones";
+import { reportDateShortcuts } from "../utils/reportDateShortcuts";
 import { locationLabel, locationVisitTotal } from "../utils";
 
 const route = useRoute(),
@@ -336,20 +322,10 @@ const range = computed({
     filters.end = v?.[1] || "";
   },
 });
-// Presets follow the selected report timezone and include the current calendar day.
-function reportDate(dayOffset = 0) {
-  const tz = filters.tz || settings.value.timezone || "Asia/Shanghai";
-  const today = new Date().toLocaleDateString("en-CA", { timeZone: tz });
-  const date = new Date(`${today}T12:00:00Z`);
-  date.setUTCDate(date.getUTCDate() + dayOffset);
-  return date.toISOString().slice(0, 10);
-}
-const activeDatePreset = computed(() => {
-  if (filters.end !== reportDate()) return "";
-  if (filters.start === filters.end) return "today";
-  if (filters.start === reportDate(-2)) return "three-days";
-  return "";
-});
+// Every statistics page uses the same three shortcut ranges in its report timezone.
+const dateShortcuts = reportDateShortcuts(
+  () => filters.tz || settings.value.timezone || DEFAULT_REPORT_TIMEZONE,
+);
 const tableSort = computed(() => ({
   prop: sort.value,
   order: order.value === "asc" ? "ascending" : "descending",
@@ -368,7 +344,8 @@ const rowKey = (r) =>
 // The backend excludes unresolved sources, leaving one stable display fallback.
 const rowTitle = (r) => r.ad_name || `广告 ${r.source_value}`;
 function defaults() {
-  const tz = settings.value.timezone || "Asia/Shanghai";
+  // New short-link reports start in fixed UTC-8 unless the operator switches it.
+  const tz = settings.value.timezone || DEFAULT_REPORT_TIMEZONE;
   const end = new Date().toLocaleDateString("en-CA", { timeZone: tz });
   // A link's first statistics query is today's data; date controls expose historical ranges.
   return { start: end, end, tz, ad_id: "" };
@@ -384,12 +361,6 @@ function reset() {
   order.value = "desc";
   query();
 }
-function applyDatePreset(days) {
-  filters.end = reportDate();
-  filters.start = reportDate(1 - days);
-  // Query immediately so the shortcut behaves as an action rather than a form draft.
-  query();
-}
 function changePage(value) {
   query(value);
 }
@@ -399,10 +370,8 @@ function sortChanged(value) {
   query();
 }
 function openOverview() {
-  router.push({
-    name: "overview",
-    query: { ...filters, ad_id: "", link_id: String(route.params.id) },
-  });
+  // Do not mirror report filters into a navigation URL.
+  router.push({ name: "overview" });
 }
 async function load() {
   const run = ++generation;
