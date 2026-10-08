@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
-import { canFinishStartupLoader, installStartupLoader, markNovelStartupReady, startupCoverPath, startupProgressAt } from "../src/lib/startupLoader.js";
+import { canFinishStartupLoader, fetchStartupExcerpt, installStartupLoader, markNovelStartupReady, startupCoverPath, startupExcerpt, startupProgressAt, startupStoryRoute } from "../src/lib/startupLoader.js";
 
 test("startup loader accepts persisted local covers and the narrowly trusted historical CDN", () => {
   assert.equal(startupCoverPath({ startup_cover_path: "/novel-uploads/0123456789abcdef0123456789abcdef.webp" }), "/novel-uploads/0123456789abcdef0123456789abcdef.webp");
@@ -9,6 +9,70 @@ test("startup loader accepts persisted local covers and the narrowly trusted his
   assert.equal(startupCoverPath({ startup_cover_path: "https://example.com/cover.webp" }), "");
   assert.equal(startupCoverPath({ startup_cover_path: "https://cdn.overseas-new-media.com.evil.example/xiaoyao-writer/prod/content/cover/cover.webp" }), "");
   assert.equal(startupCoverPath({ startup_cover_path: "/novel-uploads/../private.webp" }), "");
+});
+
+test("startup loader normalizes only a short plain-text chapter excerpt", () => {
+  assert.equal(startupExcerpt({ startup_excerpt: "  First\nchapter.  " }), "First chapter.");
+  assert.equal(startupExcerpt({ startup_excerpt: 123 }), "");
+  assert.equal(Array.from(startupExcerpt({ startup_excerpt: "文".repeat(1901) })).length, 1901);
+});
+
+test("startup loader recognizes only direct novel detail routes", () => {
+  assert.deepEqual(startupStoryRoute("/novel/hello/stories/divorced-my-ex-husband-wants-me-back"), { code:"hello", slug:"divorced-my-ex-husband-wants-me-back" });
+  assert.deepEqual(startupStoryRoute("/novel/hello/stories/a%20story/chapters/2"), { code:"hello", slug:"a story" });
+  assert.equal(startupStoryRoute("/novel/hello/search"), null);
+  assert.equal(startupStoryRoute("/outside/hello/stories/a"), null);
+});
+
+test("startup loader fetches a short first-chapter preview when the server did not inject one", async () => {
+  const calls=[];
+  const request=async (url, options) => {
+    calls.push({ url, headers:options.headers });
+    if (url.endsWith("/stories/divorced-my-ex-husband-wants-me-back")) return { ok:true, json:async()=>({ chapters:[{ chapter_number:2 }] }) };
+    return { ok:true, json:async()=>({ chapter:{ body_html:"<p>First <strong>chapter</strong> &amp; opening.</p>" } }) };
+  };
+  const excerpt=await fetchStartupExcerpt("/novel/hello/stories/divorced-my-ex-husband-wants-me-back", { locale:"ja", request });
+  assert.equal(excerpt, "First chapter & opening.");
+  assert.deepEqual(calls, [
+    { url:"/novel-api/hello/stories/divorced-my-ex-husband-wants-me-back", headers:{ Accept:"application/json", "X-Novel-Language":"ja" } },
+    { url:"/novel-api/hello/stories/divorced-my-ex-husband-wants-me-back/chapters/2", headers:{ Accept:"application/json", "X-Novel-Language":"ja" } },
+  ]);
+});
+
+test("startup loader paints the development preview behind its progress card", async () => {
+  const loader={ classList:{ values:new Set(), add(value){this.values.add(value);} }, setAttribute(){}, remove(){} };
+  const fill={ style:{} },excerptLayer={ textContent:"" };
+  const documentRef={ getElementById:(id)=>({ "novel-startup-loader":loader, "novel-startup-loader-fill":fill, "novel-startup-loader-text":excerptLayer }[id]) };
+  const windowRef={
+    __novelStartupStartedAt:1,
+    location:{ pathname:"/novel/hello/stories/divorced-my-ex-husband-wants-me-back" },
+    fetch:async (url)=>url.endsWith("/stories/divorced-my-ex-husband-wants-me-back")
+      ? { ok:true, json:async()=>({ chapters:[{ chapter_number:1 }] }) }
+      : { ok:true, json:async()=>({ chapter:{ body_html:"<p>Visible first chapter.</p>" } }) },
+    requestAnimationFrame:()=>1,cancelAnimationFrame(){},setTimeout:()=>1,addEventListener(){},removeEventListener(){},dispatchEvent(){},
+  };
+  installStartupLoader({ documentRef, windowRef, now:()=>0 });
+  // 两次 API 解析和一次 then 回调均在微任务队列中完成。
+  await new Promise((resolve)=>setImmediate(resolve));
+  assert.equal(excerptLayer.textContent, "Visible first chapter.");
+  assert.equal(loader.classList.values.has("has-excerpt"), true);
+});
+
+test("startup loader reuses the server-injected excerpt without a duplicate request", async () => {
+  const loader={ classList:{ values:new Set(), add(value){this.values.add(value);} }, setAttribute(){}, remove(){} };
+  const fill={ style:{} },excerptLayer={ textContent:"" };
+  const documentRef={ getElementById:(id)=>({
+    "novel-startup-loader":loader,
+    "novel-startup-loader-fill":fill,
+    "novel-startup-loader-text":excerptLayer,
+    "novel-h5-data":{ textContent:JSON.stringify({ startup_excerpt:"Server preview." }) },
+  }[id]) };
+  let requests=0;
+  const windowRef={ __novelStartupStartedAt:1,location:{ pathname:"/novel/hello/stories/story" },fetch:async()=>{requests+=1;return { ok:false };},requestAnimationFrame:()=>1,cancelAnimationFrame(){},setTimeout:()=>1,addEventListener(){},removeEventListener(){},dispatchEvent(){} };
+  installStartupLoader({ documentRef, windowRef, now:()=>0 });
+  await new Promise((resolve)=>setImmediate(resolve));
+  assert.equal(requests, 0);
+  assert.equal(excerptLayer.textContent, "Server preview.");
 });
 
 test("startup loader reaches 90 percent in three seconds and finishes over the next seven", () => {
@@ -62,6 +126,13 @@ test("every initial novel route notifies the one-time loader after its first ren
 
   assert.match(index, /id="novel-startup-loader"/);
   assert.match(index, /id="novel-startup-loader-cover"/);
+  assert.match(index, /id="novel-startup-loader-text"/);
+  assert.match(index, /novel-startup-loader__reader/);
+  assert.match(index, /min-height:100dvh/);
+  // 正文可作加载背景，但居中的原始反馈卡必须持续存在，避免首屏交互样式回退。
+  assert.match(index, /place-items:center/);
+  assert.match(index, /width:min\(320px,100%\)/);
+  assert.match(index, /height:9px/);
   // The visual progress bar is intentionally unlabeled; aria-valuenow remains for accessibility.
   assert.doesNotMatch(index, /novel-startup-loader-progress/);
   assert.match(index, /src="\/src\/startup\.js"/);

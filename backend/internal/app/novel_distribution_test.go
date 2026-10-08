@@ -253,7 +253,7 @@ func TestNovelDistributionLinksKeepIndependentVisitorsAndVisibleTime(t *testing.
 	}
 	firstID, secondID := create("投手 A", "wife-a"), create("投手 B", "wife-b")
 	firstPage := call(a, "GET", "/novel/wife-a?ad_id=ad-a", "", nil)
-	if firstPage.Code != 200 || !strings.Contains(firstPage.Body.String(), `"entry_story_slug":"craving-for-my-divorced-wife"`) || !strings.Contains(firstPage.Body.String(), `"startup_cover_path":"/novel-uploads/0123456789abcdef0123456789abcdef.webp"`) {
+	if firstPage.Code != 200 || !strings.Contains(firstPage.Body.String(), `"entry_story_slug":"craving-for-my-divorced-wife"`) || !strings.Contains(firstPage.Body.String(), `"startup_cover_path":"/novel-uploads/0123456789abcdef0123456789abcdef.webp"`) || !strings.Contains(firstPage.Body.String(), `"startup_excerpt":"Chapter body"`) {
 		t.Fatalf("bound bootstrap: %d %s", firstPage.Code, firstPage.Body.String())
 	}
 	visitorCookie := firstPage.Result().Cookies()[0]

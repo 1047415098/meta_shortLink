@@ -6,11 +6,60 @@ export const STARTUP_TOTAL_MS = STARTUP_FAST_MS + STARTUP_SLOW_MS;
 const startupCoverPattern = /^\/novel-uploads\/[a-f0-9]{32}\.(jpg|png|webp)$/;
 // Existing campaign novels may retain a cover on this historical CDN during the upload migration.
 const legacyStartupCoverPattern = /^https:\/\/cdn\.overseas-new-media\.com\/xiaoyao-writer\/prod\/content\/cover\/[A-Za-z0-9_-]+\.(?:jpg|png|webp)$/;
+// A substantial preview fills the paper-like loading view without embedding a full chapter.
+const startupPreviewMaxRunes = 1900;
 
 // The server injects this public path into the first document, so no extra API call is needed.
 export function startupCoverPath(bootstrap) {
   const path = bootstrap?.startup_cover_path;
   return typeof path === "string" && (startupCoverPattern.test(path) || legacyStartupCoverPattern.test(path)) ? path : "";
+}
+
+// The server supplies a short, plain-text chapter excerpt in the selected reading language.
+export function startupExcerpt(bootstrap) {
+  const source = bootstrap?.startup_excerpt;
+  if (typeof source !== "string") return "";
+  const text = source.replace(/\s+/g, " ").trim();
+  const runes = Array.from(text);
+  return runes.length > startupPreviewMaxRunes ? `${runes.slice(0, startupPreviewMaxRunes).join("")}…` : text;
+}
+
+export function startupStoryRoute(pathname = "") {
+  // 仅接受小说详情/章节路由，避免加载层根据任意地址发起公开内容请求。
+  const match = String(pathname).match(/^\/novel\/([A-Za-z0-9_-]{3,40})\/stories\/([^/]+)(?:\/chapters\/\d+)?$/);
+  if (!match) return null;
+  try {
+    return { code: match[1], slug: decodeURIComponent(match[2]) };
+  } catch {
+    return null;
+  }
+}
+
+function plainStartupText(html) {
+  // API 返回的是已净化的章节 HTML；加载层始终只写入 textContent，不渲染其中标记。
+  return String(html || "").replace(/<[^>]*>/g, " ").replace(/&nbsp;/gi, " ").replace(/&amp;/gi, "&").replace(/&lt;/gi, "<").replace(/&gt;/gi, ">");
+}
+
+export async function fetchStartupExcerpt(pathname, { locale = "", request = fetch } = {}) {
+  const route = startupStoryRoute(pathname);
+  if (!route || typeof request !== "function") return "";
+  const headers = { Accept: "application/json" };
+  if (typeof locale === "string" && locale) headers["X-Novel-Language"] = locale;
+  try {
+    // 开发服务器没有后端注入的 Bootstrap 时，只读取首个可读章节的一小段公开预览。
+    const storyResponse = await request(`/novel-api/${encodeURIComponent(route.code)}/stories/${encodeURIComponent(route.slug)}`, { headers });
+    if (!storyResponse.ok) return "";
+    const storyData = await storyResponse.json();
+    const chapterNumber = Number(storyData?.chapters?.[0]?.chapter_number);
+    if (!Number.isInteger(chapterNumber) || chapterNumber < 1) return "";
+    const chapterResponse = await request(`/novel-api/${encodeURIComponent(route.code)}/stories/${encodeURIComponent(route.slug)}/chapters/${chapterNumber}`, { headers });
+    if (!chapterResponse.ok) return "";
+    const chapterData = await chapterResponse.json();
+    return startupExcerpt({ startup_excerpt: plainStartupText(chapterData?.chapter?.body_html) });
+  } catch {
+    // 预览失败不影响正常页面请求，加载层保持原有的中性背景。
+    return "";
+  }
 }
 
 export function startupProgressAt(elapsedMs, contentReady) {
@@ -35,19 +84,32 @@ export function installStartupLoader({ documentRef = document, windowRef = windo
   if (!loader) return () => {};
 
   const fill = documentRef.getElementById("novel-startup-loader-fill");
-  const cover = documentRef.getElementById("novel-startup-loader-cover");
+  const excerptLayer = documentRef.getElementById("novel-startup-loader-text");
   let bootstrap = null;
   try {
     bootstrap = JSON.parse(documentRef.getElementById("novel-h5-data")?.textContent || "null");
   } catch {
-    // A malformed bootstrap keeps the neutral background; the app still renders its normal error view.
+    // A malformed bootstrap keeps the neutral loading background.
   }
-  const coverPath = startupCoverPath(bootstrap);
-  if (cover && coverPath) {
-    // Reveal the cover only after a successful load so a deleted upload cannot show a broken image.
-    cover.addEventListener("load", () => loader.classList.add("has-cover"), { once: true });
-    cover.src = coverPath;
+  function showExcerpt(excerpt) {
+    if (!excerpt || !excerptLayer) return;
+    // A single preview keeps the loading layer visually consistent with the real reader page.
+    excerptLayer.textContent = excerpt;
+    loader.classList.add("has-excerpt");
   }
+  const excerpt = startupExcerpt(bootstrap);
+  showExcerpt(excerpt);
+  if (!excerpt && typeof windowRef.fetch === "function") {
+    // Vite 直开详情页没有服务端 HTML 注入，异步补齐同一份受限正文预览。
+    void fetchStartupExcerpt(windowRef.location?.pathname, { locale: bootstrap?.locale, request: windowRef.fetch.bind(windowRef) }).then(showExcerpt);
+  }
+  // Temporary: leave the cover-background hook dormant while the text-content visual is being evaluated.
+  // const cover = documentRef.getElementById("novel-startup-loader-cover");
+  // const coverPath = startupCoverPath(bootstrap);
+  // if (cover && coverPath) {
+  //   cover.addEventListener("load", () => loader.classList.add("has-cover"), { once: true });
+  //   cover.src = coverPath;
+  // }
   const startedAt = Number(windowRef.__novelStartupStartedAt) || now();
   let contentReady = Boolean(windowRef.__novelStartupReady);
   let frameId;

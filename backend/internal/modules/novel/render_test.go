@@ -50,3 +50,13 @@ func TestStartupCoverAllowsOnlyLocalUploadsOrTheHistoricalCDN(t *testing.T) {
 		t.Fatal("untrusted cover host was accepted")
 	}
 }
+
+func TestStartupExcerptRemovesMarkupAndLimitsTheVisibleText(t *testing.T) {
+	if got := startupExcerpt("<p>First &amp; second <strong>chapter</strong>.</p>"); got != "First & second chapter." {
+		t.Fatalf("startup excerpt = %q", got)
+	}
+	long := strings.Repeat("文", startupPreviewMaxRunes+1)
+	if got := startupExcerpt("<p>" + long + "</p>"); len([]rune(got)) != startupPreviewMaxRunes+1 || !strings.HasSuffix(got, "…") {
+		t.Fatalf("startup excerpt limit = %q", got)
+	}
+}

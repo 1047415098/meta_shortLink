@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 	"whatsapp-analytics/internal/modules/links"
@@ -33,6 +34,7 @@ type Bootstrap struct {
 	TikTokStartEventID   string      `json:"tiktok_start_event_id,omitempty"`
 	TikTokQualifiedID    string      `json:"tiktok_qualified_event_id,omitempty"`
 	StartupCoverPath     string      `json:"startup_cover_path,omitempty"`
+	StartupExcerpt       string      `json:"startup_excerpt,omitempty"`
 	Locale               string      `json:"locale"`
 	AvailableLocales     []string    `json:"available_locales"`
 	Error                *PageError  `json:"error,omitempty"`
@@ -52,16 +54,16 @@ func (h *Handler) Render(c *gin.Context, link links.Link, eventID string, record
 	publicLink := &PublicLink{Code: link.Code, TimeSpentThreshold: link.TimeSpentThreshold}
 	available := []string{"en"}
 	startupCoverPath := ""
+	repository := Repository{DB: h.DB}
 	if link.NovelID != nil {
 		// The bootstrap carries the bound slug so the SPA can switch routes without a second entry request.
-		if item, err := (Repository{DB: h.DB}).ByID(c.Request.Context(), *link.NovelID); err == nil {
+		if item, err := repository.ByID(c.Request.Context(), *link.NovelID); err == nil {
 			publicLink.EntryStorySlug = item.Slug
 			// Local uploads and the historical trusted CDN are the only cover sources allowed on the loading layer.
 			if coverPattern.MatchString(item.CoverPath) || legacyStartupCoverPattern.MatchString(item.CoverPath) {
 				startupCoverPath = item.CoverPath
 			}
 		}
-		repository := Repository{DB: h.DB}
 		locales, err := repository.PublishedLocales(c.Request.Context(), *link.NovelID)
 		if link.EntryChapterID != nil {
 			locales, err = repository.PublishedLocalesForEntry(c.Request.Context(), *link.NovelID, *link.EntryChapterID)
@@ -82,7 +84,23 @@ func (h *Handler) Render(c *gin.Context, link links.Link, eventID string, record
 	if platform == "" {
 		platform = "meta"
 	}
-	data := Bootstrap{Link: publicLink, Surface: "novel", AdPlatform: platform, CookieEnabled: h.Config.CookieMode == "all", StartupCoverPath: startupCoverPath, Locale: locale, AvailableLocales: available}
+	startupExcerptText := ""
+	if link.NovelID != nil {
+		chapterNumber := 0
+		if publicLink.EntryChapterNumber != nil {
+			chapterNumber = *publicLink.EntryChapterNumber
+		} else if chapters, err := repository.ListChaptersLocalized(c.Request.Context(), *link.NovelID, locale); err == nil && len(chapters) > 0 {
+			// Legacy links without a fixed entry chapter use their first readable chapter.
+			chapterNumber = chapters[0].ChapterNumber
+		}
+		if chapterNumber > 0 {
+			if chapter, err := repository.PublicChapterLocalized(c.Request.Context(), *link.NovelID, chapterNumber, locale); err == nil {
+				// Only a short, rendered-text excerpt reaches the loading screen; never the full chapter source.
+				startupExcerptText = startupExcerpt(chapter.BodyHTML)
+			}
+		}
+	}
+	data := Bootstrap{Link: publicLink, Surface: "novel", AdPlatform: platform, CookieEnabled: h.Config.CookieMode == "all", StartupCoverPath: startupCoverPath, StartupExcerpt: startupExcerptText, Locale: locale, AvailableLocales: available}
 	c.Header("Content-Language", locale)
 	if allowLanguageCookie && remembered != locale {
 		// 只为真实读者记住语言选择；爬虫和平台预览请求必须保持无 Cookie。
@@ -171,6 +189,22 @@ func novelContentSecurityPolicy(nonce string) string {
 
 var titleTag = regexp.MustCompile(`(?is)<title>.*?</title>`)
 var descriptionTag = regexp.MustCompile(`(?is)<meta\s+name="description"\s+content="[^"]*"\s*/?>`)
+var startupExcerptTag = regexp.MustCompile(`(?s)<[^>]*>`)
+
+// Keep the injected reading preview substantial enough for the paper-like loading view, not a full chapter.
+const startupPreviewMaxRunes = 1900
+
+func startupExcerpt(renderedHTML string) string {
+	// The visual layer receives text only, preventing markup from becoming part of the bootstrap payload.
+	text := strings.Join(strings.Fields(html.UnescapeString(startupExcerptTag.ReplaceAllString(renderedHTML, " "))), " ")
+	// Replacing inline tags can leave a spacing artifact before punctuation; clean it for the visual copy.
+	text = strings.NewReplacer(" .", ".", " ,", ",", " !", "!", " ?", "?", " :", ":", " ;", ";").Replace(text)
+	runes := []rune(text)
+	if len(runes) <= startupPreviewMaxRunes {
+		return text
+	}
+	return string(runes[:startupPreviewMaxRunes]) + "…"
+}
 
 func novelMetadata(page []byte) []byte {
 	title := html.EscapeString("Free Stories — Read Online")

@@ -11,7 +11,10 @@ const currentLanguage = computed(() => availableLocales.value.find((option) => o
 <template>
   <header class="app-header">
     <button v-if="back" class="icon-button" :aria-label="t('goBack')" @click="router.back()"><i class="fa-solid fa-chevron-left" /></button>
-    <RouterLink v-else class="brand-mark" :to="{ name:'home', params:{ code:route.params.code } }" :aria-label="t('storyHome')"><i class="fa-solid fa-book-open" /></RouterLink>
+    <RouterLink v-else class="brand-mark" :to="{ name:'home', params:{ code:route.params.code } }" :aria-label="t('storyHome')">
+      <i class="fa-solid fa-book-open" />
+      <img src="../assets/logo.png" alt="">
+    </RouterLink>
     <span class="header-spacer" />
     <div v-if="showLanguage" class="language-menu">
       <button class="language-trigger" type="button" popovertarget="language-popover" aria-haspopup="menu" :aria-label="t('chooseLanguage')">
