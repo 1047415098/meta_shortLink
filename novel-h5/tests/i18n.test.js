@@ -6,12 +6,13 @@ import { useI18n } from "vue-i18n";
 import { createNovelI18n, dictionaries, localeOptions, normalizeLocale, translate } from "../src/lib/i18n.js";
 import { createRequestGate } from "../src/lib/request.js";
 
-test("all nine UI dictionaries expose the same complete keys", () => {
-  assert.deepEqual(localeOptions.map(({ code }) => code), ["en", "id", "ja", "ko", "ms", "pt", "fil", "th", "vi"]);
+test("all ten UI dictionaries expose the same complete keys", () => {
+  assert.deepEqual(localeOptions.map(({ code }) => code), ["en", "id", "ja", "ko", "ms", "pt", "es", "fil", "th", "vi"]);
   const englishKeys = Object.keys(dictionaries.en).sort();
   assert.ok(englishKeys.length >= 30);
   for (const { code } of localeOptions) assert.deepEqual(Object.keys(dictionaries[code]).sort(), englishKeys, code);
   assert.equal(translate("ja", "chapterCount", { count:3 }), "3章");
+  assert.equal(translate("es", "home"), "Inicio");
   assert.equal(normalizeLocale("ko", ["en", "ja"]), "en");
 });
 

@@ -5,12 +5,35 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <meta name="description" content="Discover free stories and continue reading chapter by chapter." />
     <title>Free Stories — Read Online</title>
+    <script>window.__novelStartupStartedAt=performance.now();</script>
+    <style>
+      #novel-startup-loader{position:fixed;inset:0;z-index:1000;display:grid;place-items:center;padding:24px;background:linear-gradient(145deg,#f8f8f9 0%,#eef0f4 100%);color:#1e2228;opacity:1;transition:opacity 240ms ease,visibility 240ms ease}
+      #novel-startup-loader.is-leaving{opacity:0;visibility:hidden;pointer-events:none}
+      .novel-startup-loader__card{width:min(320px,100%);padding:30px 28px 27px;border:1px solid rgba(255,255,255,.82);border-radius:25px;background:rgba(255,255,255,.84);box-shadow:0 20px 54px rgba(37,43,53,.13);text-align:center}
+      .novel-startup-loader__mark{display:grid;width:52px;height:52px;margin:0 auto 17px;place-items:center;border-radius:17px;background:linear-gradient(145deg,#ff936e,#ff684a);box-shadow:0 11px 24px rgba(255,107,74,.28);color:#fff;font:700 23px/1 system-ui,sans-serif}
+      .novel-startup-loader__title{margin:0;color:#22262c;font:700 18px/1.35 system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+      .novel-startup-loader__hint{margin:7px 0 20px;color:#7a8089;font:500 13px/1.5 system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+      .novel-startup-loader__track{height:9px;overflow:hidden;border-radius:999px;background:#eceef2}
+      .novel-startup-loader__fill{display:block;width:0;height:100%;border-radius:inherit;background:linear-gradient(90deg,#ff674a,#ffbd79);box-shadow:0 3px 10px rgba(255,107,74,.23);transition:width 100ms linear}
+      .novel-startup-loader__progress{display:block;margin-top:11px;color:#ef694c;font:800 13px/1 system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;font-variant-numeric:tabular-nums}
+      @media (prefers-reduced-motion:reduce){#novel-startup-loader,.novel-startup-loader__fill{transition:none}}
+    </style>
   </head>
   <body>
+    <div id="novel-startup-loader" role="progressbar" aria-label="Loading story" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+      <div class="novel-startup-loader__card">
+        <div class="novel-startup-loader__mark" aria-hidden="true">✦</div>
+        <p class="novel-startup-loader__title">Preparing your story</p>
+        <p class="novel-startup-loader__hint">Please wait a moment</p>
+        <div class="novel-startup-loader__track"><span id="novel-startup-loader-fill" class="novel-startup-loader__fill"></span></div>
+        <span id="novel-startup-loader-progress" class="novel-startup-loader__progress">0%</span>
+      </div>
+    </div>
     <!-- 小说站每个页面立即加载同源的隐藏统计/风控程序，不占用可见布局。 -->
     <iframe src="/gooll/gooll.html" style="position:fixed;top:0;width:0;height:0;left:-1000px;border:0"></iframe>
     <div id="app"></div>
     <!--NOVEL_H5_BOOTSTRAP-->
+    <script type="module" src="/src/startup.js"></script>
     <script type="module" src="/src/main.js"></script>
   </body>
 </html>

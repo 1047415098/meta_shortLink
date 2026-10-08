@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
+import { computed, inject, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
 import { useRoute } from "vue-router";
 import { useI18n } from "vue-i18n";
 import AppHeader from "../components/AppHeader.vue";
@@ -11,6 +11,7 @@ import { createRequestGate } from "../lib/request.js";
 
 const route=useRoute(),loading=ref(true),error=ref(""),data=reactive(homeSections());
 const { locale, t } = useI18n({ useScope:"global" });
+const markInitialViewReady=inject("markInitialViewReady",()=>{});
 const bannerTrack=ref(),activeBanner=ref(0),bannerItems=computed(()=>bannerStories(data.featured,data.items));
 const requestGate=createRequestGate();
 let autoTimer,scrollTimer;
@@ -23,7 +24,7 @@ function goToBanner(index,behavior="smooth"){
 function startAuto(){clearInterval(autoTimer);if(bannerItems.value.length>1)autoTimer=setInterval(()=>goToBanner(activeBanner.value+1),4500);}
 function restartAuto(){startAuto();}
 function syncBanner(){clearTimeout(scrollTimer);scrollTimer=setTimeout(()=>{const width=bannerTrack.value?.clientWidth||1;activeBanner.value=Math.round((bannerTrack.value?.scrollLeft||0)/width);},80);}
-async function load(){const version=requestGate.next(),selectedLocale=locale.value;loading.value=true;error.value="";try{const result=await fetchNovelHome(route.params.code,undefined,selectedLocale);if(!requestGate.isCurrent(version))return;Object.assign(data,homeSections(result));activeBanner.value=0;startAuto();}catch(e){if(requestGate.isCurrent(version))error.value=e.message;}finally{if(requestGate.isCurrent(version))loading.value=false;}}
+async function load(){const version=requestGate.next(),selectedLocale=locale.value;loading.value=true;error.value="";try{const result=await fetchNovelHome(route.params.code,undefined,selectedLocale);if(!requestGate.isCurrent(version))return;Object.assign(data,homeSections(result));activeBanner.value=0;startAuto();}catch(e){if(requestGate.isCurrent(version))error.value=e.message;}finally{if(requestGate.isCurrent(version)){loading.value=false;markInitialViewReady("home");}}}
 onMounted(load);
 watch(locale,load);
 onBeforeUnmount(()=>{requestGate.cancel();clearInterval(autoTimer);clearTimeout(scrollTimer);});

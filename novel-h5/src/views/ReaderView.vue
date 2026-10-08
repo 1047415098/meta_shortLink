@@ -14,6 +14,7 @@ import { shouldReportStartReading } from "../lib/entry.js";
 const route=useRoute(),router=useRouter(),story=ref(),chapters=ref([]),chapter=ref(),previous=ref(),next=ref(),loading=ref(true),error=ref(""),drawer=ref(false);
 const bootstrap=inject("bootstrap");
 const { locale, t } = useI18n({ useScope:"global" });
+const markInitialViewReady=inject("markInitialViewReady",()=>{});
 const requestGate=createRequestGate();
 let scrollTimer;
 
@@ -48,6 +49,8 @@ async function load(){
     if(!requestGate.isCurrent(version))return;
     window.scrollTo({ top:scrollY, behavior:"auto" });
     saveProgress(route.params.slug,chapterData.chapter.chapter_number,scrollY);
+    // 正文已进入 DOM 后通知首屏加载层，阅读统计仍按原流程继续执行。
+    markInitialViewReady("reader");
     const isCampaignEntry=shouldReportStartReading({
       entryChapterNumber:bootstrap.link?.entry_chapter_number,
       currentChapterNumber:chapterData.chapter.chapter_number,
@@ -61,7 +64,7 @@ async function load(){
   }catch(e){
     if(requestGate.isCurrent(version)){error.value=e.message;story.value=undefined;chapter.value=undefined;}
   }finally{
-    if(requestGate.isCurrent(version))loading.value=false;
+    if(requestGate.isCurrent(version)){loading.value=false;if(!chapter.value)markInitialViewReady("reader");}
   }
 }
 onMounted(()=>{window.addEventListener("scroll",saveScroll,{ passive:true });void load();});

@@ -1,5 +1,5 @@
 <script setup>
-import { onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { inject, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { useI18n } from "vue-i18n";
 import AppHeader from "../components/AppHeader.vue";
@@ -10,6 +10,7 @@ import { createRequestGate } from "../lib/request.js";
 
 const route=useRoute(),router=useRouter(),story=ref(),chapters=ref([]),related=ref([]),loading=ref(true),error=ref(""),drawer=ref(false);
 const { locale, t } = useI18n({ useScope:"global" });
+const markInitialViewReady=inject("markInitialViewReady",()=>{});
 const requestGate=createRequestGate();
 
 function readerRoute(number){
@@ -31,7 +32,7 @@ async function load(){
     if(!requestGate.isCurrent(version))return;
     story.value=data.story;chapters.value=data.chapters;related.value=data.related;
   }catch(e){if(requestGate.isCurrent(version)){error.value=e.message;story.value=undefined;}}
-  finally{if(requestGate.isCurrent(version))loading.value=false;}
+  finally{if(requestGate.isCurrent(version)){loading.value=false;markInitialViewReady("story");}}
 }
 onMounted(load);
 onBeforeUnmount(()=>requestGate.cancel());

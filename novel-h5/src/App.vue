@@ -1,17 +1,29 @@
 <script setup>
-import { inject, onBeforeUnmount, onMounted, ref } from "vue";
+import { inject, onBeforeUnmount, onMounted, provide, ref } from "vue";
 import { useRouter } from "vue-router";
 import UnavailableView from "./views/UnavailableView.vue";
 import { installMetaPixel, trackMetaTimeSpent } from "./lib/meta.js";
 import { installTikTokPixel, readTikTokTTP, trackTikTokEvent } from "./lib/tiktok.js";
 import { createVisibleTimeTracker, reportReadingTime, reportTimeSpent } from "./lib/timeSpent.js";
 import { entryRouteForBootstrap } from "./lib/entry.js";
+import { markNovelStartupReady } from "./lib/startupLoader.js";
 const bootstrap = inject("bootstrap");
 const router=useRouter();
 // 临时关闭 18+ 确认与 10 秒倒计时：短链访问直接进入小说；AgeGateView 组件保留，后续可恢复。
 const ageGatePassed = ref(true);
 let cleanupTimer,visibleSeconds=0,lastReported=0,readingInFlight=false;
 let experienceStarted=false;
+let initialViewReady=false;
+let expectedInitialRouteName="";
+function markInitialViewReady(routeName){
+  // 短链若直达小说或章节，首页的旧请求不能抢先关闭加载层。
+  if(expectedInitialRouteName&&routeName!==expectedInitialRouteName)return;
+  if(initialViewReady)return;
+  initialViewReady=true;
+  // 首次数据已渲染后才允许首屏进度层消失，避免出现白屏闪烁。
+  markNovelStartupReady();
+}
+provide("markInitialViewReady",markInitialViewReady);
 async function reportReading(useBeacon=false){
   if(visibleSeconds<=lastReported||!bootstrap.ticket||(!useBeacon&&readingInFlight))return;
   const seconds=visibleSeconds;
@@ -40,9 +52,11 @@ function startNovelExperience(){
   window.addEventListener("pagehide",onPageHide);
   // 同一文档内进入绑定小说或章节，避免重新请求入口并重复统计访问。
   const entryRoute=entryRouteForBootstrap(bootstrap.link,router.currentRoute.value);
+  expectedInitialRouteName=entryRoute?.name||"";
   if(entryRoute)void router.replace(entryRoute);
 }
 onMounted(() => {
+  if(bootstrap.error)markInitialViewReady("unavailable");
   if(bootstrap.ad_platform === "meta")installMetaPixel({ pixelId:bootstrap.meta_browser_pixel_id, eventId:bootstrap.meta_pageview_event_id });
   if(bootstrap.ad_platform === "tiktok"&&bootstrap.tiktok_enabled)installTikTokPixel({pixelCode:bootstrap.tiktok_pixel_code});
   if (!bootstrap.link?.code) return;
