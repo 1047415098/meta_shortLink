@@ -29,3 +29,22 @@ test("admin router exposes all three TikTok management pages", async () => {
   for (const route of ["tiktok-pixels", "tiktok-connections", "tiktok-events"])
     assert.match(source, new RegExp(`name: "${route}"`));
 });
+
+test("import analytics menu stays commented while its route remains available", async () => {
+  // 仅隐藏侧边栏入口，避免以后恢复功能时重新补页面与路由。
+  const [layout, router] = await Promise.all([
+    readFile(
+      new URL("../src/layouts/AdminLayout.vue", import.meta.url),
+      "utf8",
+    ),
+    readFile(new URL("../src/router/index.js", import.meta.url), "utf8"),
+  ]);
+  assert.match(
+    layout,
+    /\/\/ \{ name: "ads", icon: TrendCharts, label: "导入统计" \},/,
+  );
+  assert.match(
+    router,
+    /path: "ads",[\s\S]*name: "ads",[\s\S]*AdAnalyticsView\.vue/,
+  );
+});

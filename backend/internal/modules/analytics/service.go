@@ -16,13 +16,19 @@ import (
 // FilterInput carries operator report filters in a JSON body so they never
 // appear in browser history, proxy logs, or API query strings.
 type FilterInput struct {
-	Start   string `json:"start"`
-	End     string `json:"end"`
-	TZ      string `json:"tz"`
-	LinkID  string `json:"link_id"`
-	AdID    string `json:"ad_id"`
-	Surface string `json:"surface"`
-	Page    int    `json:"page"`
+	Start        string `json:"start"`
+	End          string `json:"end"`
+	TZ           string `json:"tz"`
+	LinkID       string `json:"link_id"`
+	AdID         string `json:"ad_id"`
+	Surface      string `json:"surface"`
+	CampaignID   string `json:"campaign_id"`
+	AdgroupID    string `json:"adgroup_id"`
+	CreativeID   string `json:"creative_id"`
+	AdIDV2       string `json:"ad_id_v2"`
+	EventStatus  string `json:"event_status"`
+	TrafficScope string `json:"traffic_scope"`
+	Page         int    `json:"page"`
 }
 
 func ParseFilter(c *gin.Context, timezone string) (Filter, error) {
@@ -50,6 +56,9 @@ func ParseFilterInput(input FilterInput, timezone string) (Filter, FilterInput, 
 	for key, value := range map[string]string{
 		"start": input.Start, "end": input.End, "tz": input.TZ,
 		"link_id": input.LinkID, "ad_id": input.AdID, "surface": input.Surface,
+		"campaign_id": input.CampaignID, "adgroup_id": input.AdgroupID,
+		"creative_id": input.CreativeID, "ad_id_v2": input.AdIDV2,
+		"event_status": input.EventStatus, "traffic_scope": input.TrafficScope,
 	} {
 		if strings.TrimSpace(value) != "" {
 			values.Set(key, value)
@@ -68,9 +77,22 @@ func parseFilterValues(query url.Values, timezone string) (Filter, error) {
 		}
 		return fallback
 	}
-	f := Filter{TZ: defaultQuery("tz", timezone), AdID: query.Get("ad_id"), Surface: query.Get("surface")}
-	if f.Surface != "" && f.Surface != "short_link" && f.Surface != "audio_novel" && f.Surface != "novel" {
+	f := Filter{
+		TZ: defaultQuery("tz", timezone), AdID: query.Get("ad_id"), Surface: query.Get("surface"),
+		CampaignID: query.Get("campaign_id"), AdgroupID: query.Get("adgroup_id"),
+		CreativeID: query.Get("creative_id"), AdIDV2: query.Get("ad_id_v2"),
+		EventStatus: query.Get("event_status"), TrafficScope: defaultQuery("traffic_scope", "all"),
+	}
+	// Every standalone frontend owns one visit surface; cover records must be queryable by the shared admin list too.
+	if f.Surface != "" && f.Surface != "short_link" && f.Surface != "audio_novel" && f.Surface != "novel" && f.Surface != "cover" {
 		return f, errors.New("入口类型无效")
+	}
+	if f.TrafficScope != "all" && f.TrafficScope != "valid" && f.TrafficScope != "abnormal" {
+		return f, errors.New("流量范围无效")
+	}
+	validStatuses := map[string]bool{"": true, "pending": true, "processing": true, "sending": true, "succeeded": true, "accepted": true, "retry": true, "failed": true, "expired": true, "skipped": true}
+	if !validStatuses[f.EventStatus] {
+		return f, errors.New("事件状态无效")
 	}
 	// Keep direct API calls aligned with the two fixed-offset choices in the admin UI.
 	if !config.IsReportTimezone(f.TZ) {
@@ -100,7 +122,7 @@ func parseFilterValues(query url.Values, timezone string) (Filter, error) {
 			return f, errors.New("链接编号无效")
 		}
 	}
-	if len(f.AdID) > 120 {
+	if len(f.AdID) > 120 || len(f.CampaignID) > 120 || len(f.AdgroupID) > 120 || len(f.CreativeID) > 120 || len(f.AdIDV2) > 120 {
 		return f, errors.New("广告编号过长")
 	}
 	return f, nil

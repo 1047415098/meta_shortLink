@@ -115,6 +115,18 @@ const router = createRouter({
           },
         },
         {
+          path: "cover-links",
+          name: "cover-links",
+          component: () => import("../views/CoverLinkListView.vue"),
+          meta: { title: "封面链接管理", requiresAuth: true },
+        },
+        {
+          path: "cover-links/:id/stats",
+          name: "cover-link-stats",
+          component: () => import("../views/CoverLinkStatsView.vue"),
+          meta: { title: "封面投放统计", requiresAuth: true, activeMenu: "cover-links" },
+        },
+        {
           // Keep a dedicated, refreshable page for each short link's ad statistics.
           path: "links/:id/stats",
           name: "link-stats",

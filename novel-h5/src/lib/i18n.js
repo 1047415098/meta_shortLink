@@ -7,7 +7,7 @@ const en = {
   searchPlaceholder:"Search stories", clearSearch:"Clear search", searching:"Searching…", noMatches:"No stories match “{query}”.", searchHint:"Find your next story by title, author, or category.", browseShelf:"Browse the shelf", allStories:"All Stories", loading:"Loading…", loadMore:"Load more",
   openingStory:"Opening story…", openContents:"Open contents", anonymous:"Anonymous", chapterCount:"{count} chapters", noReadableChapters:"This story has no readable chapters yet. Please check back later.", chapter:"Chapter {number}", contents:"Contents", previous:"Previous", continueReading:"Continue Reading", reachedEnd:"You reached the end", mayAlsoLike:"You may also like", closeContents:"Close contents", cover:"{title} cover", restingTitle:"Stories are resting", restingMessage:"This story archive is unavailable.",
   unavailable:"This story archive could not be loaded.", incomplete:"The archive returned an incomplete response.", notFound:"This story could not be found.",
-  ageGateEyebrow:"Adults only", ageGateTitle:"Are you 18 or older?", ageGateDescription:"Please confirm that you are at least 18 years old to continue.", ageGateInstruction:"Slide to confirm you are 18+", ageGateSliderLabel:"Confirm that you are 18 or older", ageGateKeyboardHint:"You can also use the arrow keys.", ageGateUnderage:"Minors are not permitted to enter.", ageGateLeave:"I am under 18 — leave", ageGatePassed:"Age confirmation complete", ageGateWelcome:"Your story is opening.", ageGateEntering:"Continuing in {sec} seconds"
+  ageGateEyebrow:"Adults only", ageGateTitle:"Are you 18 or older?", ageGateDescription:"Please confirm that you are at least 18 years old to continue.", ageGateInstruction:"Slide to confirm you are 18+", ageGateSliderLabel:"Confirm that you are 18 or older", ageGateKeyboardHint:"You can also use the arrow keys.", ageGateUnderage:"Minors are not permitted to enter.", ageGateLeave:"I am under 18 — leave", ageGatePassed:"Age confirmation complete", ageGateWelcome:"Your story is opening.", ageGateEntering:"Continuing in {sec} seconds",
 };
 
 const withEnglishKeys = (values) => ({ ...en, ...values });
@@ -39,6 +39,7 @@ const ageGateTranslations = {
   vi:{ ageGateEyebrow:"Chỉ dành cho người trưởng thành",ageGateTitle:"Bạn đã đủ 18 tuổi chưa?",ageGateDescription:"Vui lòng xác nhận bạn đã đủ 18 tuổi để tiếp tục.",ageGateInstruction:"Vuốt để xác nhận bạn đã đủ 18 tuổi",ageGateSliderLabel:"Xác nhận bạn đã đủ 18 tuổi",ageGateKeyboardHint:"Bạn cũng có thể dùng các phím mũi tên.",ageGateUnderage:"Người chưa đủ tuổi không được phép truy cập.",ageGateLeave:"Tôi chưa đủ 18 tuổi — thoát",ageGatePassed:"Đã xác nhận độ tuổi",ageGateWelcome:"Đang mở truyện của bạn.",ageGateEntering:"Tiếp tục sau {sec} giây" },
 };
 Object.entries(ageGateTranslations).forEach(([locale, messages]) => Object.assign(dictionaries[locale], messages));
+
 
 export const localeOptions = [
   { code:"en", name:"English" }, { code:"id", name:"Bahasa Indonesia" },

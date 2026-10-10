@@ -32,6 +32,14 @@ export function startupTailMs(bootstrap) {
   return Math.round(seconds * 1000);
 }
 
+export function isNovelStartupEntryPath(link, pathname = globalThis.location?.pathname || "") {
+  const code = String(link?.code || "").trim();
+  if (!code) return false;
+  const entryPath = `/novel/${encodeURIComponent(code)}`;
+  // 根短链使用 push 保留首页历史；分享的详情和章节地址继续使用 replace。
+  return pathname === entryPath || pathname === `${entryPath}/`;
+}
+
 // Progress helpers may be called by tests or future UI code, so they receive the same safe fallback as bootstrap data.
 function normalizedStartupTailMs(tailMs) {
   const value = Number(tailMs);

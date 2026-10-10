@@ -6,9 +6,9 @@
           ><el-icon><Connection /></el-icon></span
         ><span v-if="!collapsed">LinkScope<small>广告数据工作台</small></span>
       </div>
-      <div class="workspace-label" v-if="!collapsed">
+      <!-- <div class="workspace-label" v-if="!collapsed">
         WORKSPACE <el-tag size="small" effect="plain">自有数据</el-tag>
-      </div>
+      </div> -->
       <!-- Detail routes keep their parent navigation item selected. -->
       <el-menu
         :default-active="activeMenu"
@@ -39,14 +39,14 @@
           >
         </template>
       </el-menu>
-      <div class="sidebar-bottom" v-if="!collapsed">
+      <!-- <div class="sidebar-bottom" v-if="!collapsed">
         <div class="sidebar-app-icon">
           <el-icon><Connection /></el-icon>
         </div>
         <b>WhatsApp 引流分析</b>
         <p>管理链接，洞察每次访问</p>
         <el-tag type="success" effect="light" size="small">独立数据空间</el-tag>
-      </div>
+      </div> -->
     </el-aside>
     <el-container direction="vertical" class="workspace"
       ><el-header class="topbar" height="64px"
@@ -65,9 +65,10 @@
           >
         </div>
         <div class="topbar-right">
-          <el-tag effect="plain" class="workspace-tag"
+          <!-- <el-tag effect="plain" class="workspace-tag"
             >WhatsApp Analytics</el-tag
-          ><el-divider direction="vertical" /><el-dropdown @command="logout"
+          > -->
+          <el-divider direction="vertical" /><el-dropdown @command="logout"
             ><span class="account-menu"
               ><el-avatar :size="30" :icon="User" /><span>{{
                 user?.username
@@ -142,8 +143,16 @@ const nav = [
     label: "免费小说项目",
     children: [{ name: "novels", label: "小说管理" }],
   },
+  {
+    name: "cover-project",
+    icon: Reading,
+    label: "封面项目",
+    // 封面项目只有链接与统计，不混入任何小说内容管理入口。
+    children: [{ name: "cover-links", label: "封面链接管理" }],
+  },
   { name: "visits", icon: Document, label: "访问明细" },
-  { name: "ads", icon: TrendCharts, label: "导入统计" },
+  // 暂时隐藏“导入统计”菜单；保留路由和页面，后续取消注释即可恢复入口。
+  // { name: "ads", icon: TrendCharts, label: "导入统计" },
   {
     name: "meta-management",
     icon: Connection,

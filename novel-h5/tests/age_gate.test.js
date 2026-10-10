@@ -12,13 +12,13 @@ test("age confirmation and countdown are temporarily bypassed for novel short li
   assert.doesNotMatch(app, /function completeAgeGate/);
 });
 
-test("campaign navigation starts directly after the bootstrap request", async () => {
-  // With the gate off, the normal RouterView is rendered after an unavailable-state check.
+test("free novel keeps only the countdown navigation path", async () => {
   const app = await readFile(new URL("../src/App.vue", import.meta.url), "utf8");
 
   assert.match(app, /const ageGatePassed\s*=\s*ref\(true\)/);
-  assert.match(app, /if\s*\(ageGatePassed\.value\)\s*startNovelExperience\(\)/);
-  assert.match(app, /<RouterView v-else\s*\/>/);
+  assert.match(app, /if\(ageGatePassed\.value\)startNovelExperience\(\)/);
+  assert.match(app, /<RouterView\s*\/>/);
+  assert.doesNotMatch(app, /PhotoWallStartup|photoWallOpen/);
   assert.match(app, /if\s*\(bootstrap\.ticket\)\s*fetch\([^\n]+\/view/);
 });
 

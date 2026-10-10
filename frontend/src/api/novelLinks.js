@@ -33,13 +33,14 @@ export function novelLinkPayload(source = {}) {
       !Number.isFinite(requestedThreshold)
         ? 10
         : requestedThreshold,
-    // The loading tail is a per-link reader experience setting, separate from the event-delivery threshold.
+    // 免费小说唯一使用倒计时主题；该固定值用于兼容后端历史字段。
     startup_tail_seconds:
       source.startup_tail_seconds === "" ||
       source.startup_tail_seconds == null ||
       !Number.isFinite(requestedStartupTail)
         ? 5
         : requestedStartupTail,
+    startup_theme: "countdown",
   };
 }
 

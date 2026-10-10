@@ -50,6 +50,22 @@ func TestNovelPathsUseIndependentDefaultsAndOverrides(t *testing.T) {
 	}
 }
 
+func TestCoverDirUsesIndependentBuildOutput(t *testing.T) {
+	t.Setenv("DATABASE_URL", "postgres://test")
+	t.Setenv("APP_SECRET", "0123456789abcdef0123456789abcdef")
+	t.Setenv("ADMIN_PASSWORD", "test-password")
+	t.Setenv("COVER_DIR", "")
+	c, err := LoadConfig()
+	if err != nil || c.CoverDir != "../cover-h5/dist" {
+		t.Fatalf("cover default = %q, err=%v", c.CoverDir, err)
+	}
+	t.Setenv("COVER_DIR", "/tmp/cover-ui")
+	c, err = LoadConfig()
+	if err != nil || c.CoverDir != "/tmp/cover-ui" {
+		t.Fatalf("cover override = %q, err=%v", c.CoverDir, err)
+	}
+}
+
 func TestAudioNovelAudioDirUsesIndependentDefaultAndOverride(t *testing.T) {
 	t.Setenv("DATABASE_URL", "postgres://test")
 	t.Setenv("APP_SECRET", "0123456789abcdef0123456789abcdef")

@@ -17,11 +17,35 @@ import (
 
 type Handler struct{ *runtime.Core }
 
+// statusFilter 兼容已缓存前端发送的空字符串，同时接受新的数字状态码。
+type statusFilter int
+
+func (s *statusFilter) UnmarshalJSON(data []byte) error {
+	raw := strings.TrimSpace(string(data))
+	if raw == "" || raw == "null" || raw == `""` {
+		*s = 0
+		return nil
+	}
+	if strings.HasPrefix(raw, `"`) && strings.HasSuffix(raw, `"`) {
+		var value string
+		if err := json.Unmarshal(data, &value); err != nil {
+			return err
+		}
+		raw = strings.TrimSpace(value)
+	}
+	value, err := strconv.Atoi(raw)
+	if err != nil {
+		return err
+	}
+	*s = statusFilter(value)
+	return nil
+}
+
 type listInput struct {
 	analytics.FilterInput
-	Path   string `json:"path"`
-	Method string `json:"method"`
-	Status int    `json:"status"`
+	Path   string       `json:"path"`
+	Method string       `json:"method"`
+	Status statusFilter `json:"status"`
 }
 
 func (a *Handler) List(c *gin.Context) {
@@ -89,7 +113,7 @@ func (a *Handler) ListJSON(c *gin.Context) {
 		runtime.Bad(c, err.Error())
 		return
 	}
-	a.list(c, f, input.Page, input.Path, input.Method, input.Status)
+	a.list(c, f, input.Page, input.Path, input.Method, int(input.Status))
 }
 
 func (a *Handler) list(c *gin.Context, f analytics.Filter, page int, path, method string, status int) {

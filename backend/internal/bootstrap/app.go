@@ -15,6 +15,7 @@ import (
 	"whatsapp-analytics/internal/modules/analytics"
 	"whatsapp-analytics/internal/modules/audionovel"
 	"whatsapp-analytics/internal/modules/auth"
+	"whatsapp-analytics/internal/modules/cover"
 	"whatsapp-analytics/internal/modules/landing"
 	"whatsapp-analytics/internal/modules/links"
 	"whatsapp-analytics/internal/modules/meta"
@@ -71,7 +72,8 @@ func New(c config.Config, db *pgxpool.Pool) (*App, error) {
 	// APIHZ 请求起点已由共享限速器保护，8 个 worker 可覆盖两个供应商的等待和重试时间。
 	novelTranslations := novel.NewTranslationService(db, translator, 8)
 	novelHandler := &novel.Handler{Core: core, Meta: metaService, TikTok: tiktokService, Translations: novelTranslations}
-	trackingHandler := &tracking.Handler{Core: core, TikTok: tiktokService, Landing: landingHandler, AudioNovelPage: audioNovelHandler, NovelPage: novelHandler}
+	coverHandler := &cover.Handler{Core: core, Meta: metaService, TikTok: tiktokService}
+	trackingHandler := &tracking.Handler{Core: core, TikTok: tiktokService, Landing: landingHandler, AudioNovelPage: audioNovelHandler, NovelPage: novelHandler, CoverPage: coverHandler}
 	router, err := httptransport.New(core, httptransport.Handlers{
 		Auth:       &auth.Handler{Core: core, Password: hash},
 		Links:      &links.Handler{Core: core},
@@ -81,6 +83,7 @@ func New(c config.Config, db *pgxpool.Pool) (*App, error) {
 		Landing:    landingHandler,
 		AudioNovel: audioNovelHandler,
 		Novel:      novelHandler,
+		Cover:      coverHandler,
 		Tracking:   trackingHandler,
 		Meta:       &meta.Handler{Service: metaService},
 		TikTok:     &tiktok.Handler{Service: tiktokService},

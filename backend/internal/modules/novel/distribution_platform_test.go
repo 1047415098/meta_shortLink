@@ -57,6 +57,20 @@ func TestDistributionStartupTailDefaultsAndLimits(t *testing.T) {
 	}
 }
 
+func TestDistributionStartupThemeDefaultsAndValidates(t *testing.T) {
+	// Free novels always normalize historical or crafted theme input back to countdown.
+	input := DistributionInput{StartupTheme: ""}
+	NormalizeDistributionInput(&input)
+	if input.StartupTheme != links.StartupThemeCountdown {
+		t.Fatalf("default startup theme=%q, want %q", input.StartupTheme, links.StartupThemeCountdown)
+	}
+	input.StartupTheme = links.StartupThemeCoverWall
+	NormalizeDistributionInput(&input)
+	if input.StartupTheme != links.StartupThemeCountdown {
+		t.Fatalf("historical cover theme=%q, want countdown", input.StartupTheme)
+	}
+}
+
 func TestTikTokTemplateUsesOfficialDynamicMacros(t *testing.T) {
 	want := "https://example.com/novel/wife-a?utm_source=tiktok&utm_medium=paid_social&campaign_id=__CAMPAIGN_ID__&adgroup_id=__AID__&creative_id=__CID__&ad_id_v2=__ADID_V2__&placement=__PLACEMENT__"
 	if got := TikTokTemplate("https://example.com/", "wife-a"); got != want {

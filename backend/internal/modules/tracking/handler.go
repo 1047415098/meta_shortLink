@@ -33,6 +33,10 @@ type Handler struct {
 		Render(*gin.Context, links.Link, string, bool, string, bool)
 		Unavailable(*gin.Context, int, string)
 	}
+	CoverPage interface {
+		Render(*gin.Context, links.Link, string, bool, string, bool)
+		Unavailable(*gin.Context, int, string)
+	}
 }
 
 func (a *Handler) Redirect(c *gin.Context) {
@@ -46,6 +50,9 @@ func (a *Handler) AudioNovel(c *gin.Context) {
 }
 
 func (a *Handler) Novel(c *gin.Context) { a.track(c, "novel") }
+
+// Cover records an independent funnel visit without borrowing a novel binding.
+func (a *Handler) Cover(c *gin.Context) { a.track(c, "cover") }
 
 func (a *Handler) track(c *gin.Context, surface string) {
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 1500*time.Millisecond)
@@ -73,9 +80,18 @@ func (a *Handler) track(c *gin.Context, surface string) {
 		a.unavailable(c, surface, 404, "This link was not found.")
 		return
 	}
-	ip := net.ParseIP(c.ClientIP())
-	ua := runtime.Bounded(c.GetHeader("User-Agent"), 1024)
-	high := a.Exceed("click:"+a.Sign(c.ClientIP()), 120, time.Minute)
+	if l.ProductType == "cover" && surface != "cover" {
+		a.unavailable(c, surface, 404, "This link was not found.")
+		return
+	}
+	if surface == "cover" && l.ProductType != "cover" {
+		a.unavailable(c, surface, 404, "This link was not found.")
+		return
+	}
+	clientIP := runtime.Bounded(strings.TrimSpace(c.ClientIP()), 128)
+	ip := net.ParseIP(clientIP)
+	ua := runtime.Bounded(c.GetHeader("User-Agent"), 4096)
+	high := a.Exceed("click:"+a.Sign(clientIP), 120, time.Minute)
 	class, reason := Classify(c.Request.Method, ua, c.GetHeader("Purpose")+" "+c.GetHeader("Sec-Purpose"), high)
 	if surface == "novel" && l.ProductType == "novel" {
 		// Freeze the binding before reading the final link snapshot so a concurrent
@@ -147,8 +163,21 @@ func (a *Handler) track(c *gin.Context, surface string) {
 			return
 		}
 	}
+	if surface == "cover" {
+		// The first real visit locks only the advertising binding; cover links have no content binding.
+		if c.Request.Method == "GET" && class == "normal" {
+			if freezeErr := (Repository{DB: a.DB}).FreezeCoverLink(ctx, l.ID); freezeErr != nil {
+				a.unavailable(c, surface, 410, "This cover link is unavailable.")
+				return
+			}
+		}
+	}
 	visitor, cookieStatus := a.visitor(c, class == "normal" || class == "suspicious")
 	parsed := useragent.Parse(ua)
+	// Keep both parsed fields and the bounded raw User-Agent because authenticated operations needs both views.
+	deviceModel := runtime.Bounded(strings.TrimSpace(parsed.Device), 128)
+	osVersion := runtime.Bounded(strings.TrimSpace(parsed.OSVersion), 128)
+	browserVersion := runtime.Bounded(strings.TrimSpace(parsed.Version), 128)
 	device := "unknown"
 	if parsed.Mobile {
 		device = "mobile"
@@ -160,8 +189,10 @@ func (a *Handler) track(c *gin.Context, surface string) {
 	browser := parsed.Name
 	if strings.Contains(ua, "FBAN") || strings.Contains(ua, "FBAV") {
 		browser = "Facebook 内置浏览器"
+		browserVersion = userAgentMarkerValue(ua, "FBAV/")
 	} else if strings.Contains(ua, "Instagram") {
 		browser = "Instagram 内置浏览器"
+		browserVersion = userAgentMarkerValue(ua, "Instagram ")
 	}
 	if browser == "" {
 		browser = "unknown"
@@ -237,6 +268,30 @@ func (a *Handler) track(c *gin.Context, surface string) {
 		source = "unknown"
 	}
 	b, _ := json.Marshal(params)
+	// Only browser-provided diagnostic hints are retained; credentials and arbitrary proxy headers are excluded.
+	clientHints := map[string]string{}
+	for key, header := range map[string]string{
+		"sec_ch_ua":                    "Sec-CH-UA",
+		"sec_ch_ua_mobile":             "Sec-CH-UA-Mobile",
+		"sec_ch_ua_platform":           "Sec-CH-UA-Platform",
+		"sec_ch_ua_platform_version":   "Sec-CH-UA-Platform-Version",
+		"sec_ch_ua_model":              "Sec-CH-UA-Model",
+		"sec_ch_ua_full_version_list":  "Sec-CH-UA-Full-Version-List",
+		"sec_ch_ua_arch":               "Sec-CH-UA-Arch",
+		"sec_ch_ua_bitness":            "Sec-CH-UA-Bitness",
+		"sec_ch_prefers_color_scheme":  "Sec-CH-Prefers-Color-Scheme",
+		"device_memory":                "Device-Memory",
+		"viewport_width":               "Viewport-Width",
+		"network_effective_connection": "ECT",
+	} {
+		if value := runtime.Bounded(strings.TrimSpace(c.GetHeader(header)), 1024); value != "" {
+			clientHints[key] = value
+		}
+	}
+	clientHintsJSON, _ := json.Marshal(clientHints)
+	requestURL := runtime.Bounded(strings.TrimRight(a.Config.PublicURL, "/")+c.Request.URL.RequestURI(), 4096)
+	referrerURL := runtime.Bounded(strings.TrimSpace(c.GetHeader("Referer")), 4096)
+	acceptLanguage := runtime.Bounded(strings.TrimSpace(c.GetHeader("Accept-Language")), 512)
 	var vid any
 	if visitor != "" {
 		vid = visitor
@@ -248,7 +303,7 @@ func (a *Handler) track(c *gin.Context, surface string) {
 	}
 	var tiktokPixelID *int64
 	tiktokTTP, tiktokContextCipher := "", ""
-	if (surface == "novel" || surface == "audio_novel" || surface == "short_link") && c.Request.Method == "GET" && class == "normal" && adPlatform == "tiktok" {
+	if (surface == "novel" || surface == "audio_novel" || surface == "short_link" || surface == "cover") && c.Request.Method == "GET" && class == "normal" && adPlatform == "tiktok" {
 		tiktokPixelID = l.TikTokPixelID
 		if cookie, cookieErr := c.Cookie("_ttp"); cookieErr == nil {
 			tiktokTTP = safeCookieValue(cookie, 512)
@@ -273,11 +328,13 @@ func (a *Handler) track(c *gin.Context, surface string) {
 	// Direct mode returns a measured handoff page, so the stored status matches
 	// the 200 response while the event type continues to identify the link mode.
 	eventType, status := "redirect", 200
-	if l.Mode == "landing" || surface == "audio_novel" || surface == "novel" {
+	if l.Mode == "landing" || surface == "audio_novel" || surface == "novel" || surface == "cover" {
 		eventType, status = "landing", 200
 	}
-	// Store before emitting the Redirect. No raw IP, full URL query or raw User-Agent is persisted.
-	e = (Repository{DB: a.DB}).Record(ctx, Event{ID: eventID, LinkID: l.ID, NovelID: l.NovelID, EntryChapterID: l.EntryChapterID, AudioNovelID: l.AudioNovelID, VisitorID: vid, CookieStatus: cookieStatus, Method: c.Request.Method, TargetURL: l.TargetURL, Device: device, OS: osName, Browser: browser, Country: country, Region: region, City: city, Source: source, CampaignID: campaign, AdsetID: adset, AdID: ad, Referrer: ref, Parameters: b, AttributionConflict: conflict, Classification: class, Reason: reason, Type: eventType, Surface: surface, Status: status, MetaConnectionID: l.MetaConnectionID, MetaPixelID: l.MetaPixelID, TikTokPixelID: tiktokPixelID, AdPlatform: adPlatform, TikTokTTCLID: ttclid, TikTokTTP: tiktokTTP, TikTokAdgroupID: tiktokAdgroupID, TikTokCreativeID: tiktokCreativeID, TikTokAdIDV2: tiktokAdIDV2, TikTokPlacement: tiktokPlacement, TikTokContextCipher: tiktokContextCipher, TimeSpentThreshold: l.TimeSpentThreshold})
+	// Store before emitting the redirect; the admin-only diagnostic snapshot is bounded and excludes credentials.
+	startupTheme := links.StartupThemeCountdown
+	// The free-novel product now has one stable countdown presentation.
+	e = (Repository{DB: a.DB}).Record(ctx, Event{ID: eventID, LinkID: l.ID, NovelID: l.NovelID, EntryChapterID: l.EntryChapterID, AudioNovelID: l.AudioNovelID, VisitorID: vid, CookieStatus: cookieStatus, Method: c.Request.Method, TargetURL: l.TargetURL, ClientIP: clientIP, UserAgent: ua, RequestURL: requestURL, ReferrerURL: referrerURL, AcceptLanguage: acceptLanguage, ClientHints: clientHintsJSON, Device: device, DeviceModel: deviceModel, OS: osName, OSVersion: osVersion, Browser: browser, BrowserVersion: browserVersion, Country: country, Region: region, City: city, Source: source, CampaignID: campaign, AdsetID: adset, AdID: ad, Referrer: ref, Parameters: b, AttributionConflict: conflict, Classification: class, Reason: reason, Type: eventType, Surface: surface, Status: status, MetaConnectionID: l.MetaConnectionID, MetaPixelID: l.MetaPixelID, TikTokPixelID: tiktokPixelID, AdPlatform: adPlatform, TikTokTTCLID: ttclid, TikTokTTP: tiktokTTP, TikTokAdgroupID: tiktokAdgroupID, TikTokCreativeID: tiktokCreativeID, TikTokAdIDV2: tiktokAdIDV2, TikTokPlacement: tiktokPlacement, TikTokContextCipher: tiktokContextCipher, TimeSpentThreshold: l.TimeSpentThreshold, StartupTheme: startupTheme})
 	if e != nil {
 		a.WriteFailures.Add(1)
 		slog.Error("CLICK_WRITE_FAILED: redirect continues; analytics gap", "link_id", l.ID, "error", e)
@@ -292,6 +349,12 @@ func (a *Handler) track(c *gin.Context, surface string) {
 		// analytics cookies, so crawler and preview requests remain cookie-free.
 		allowLanguageCookie := c.Request.Method == "GET" && (class == "normal" || class == "suspicious")
 		a.NovelPage.Render(c, l, eventID, e == nil, country, allowLanguageCookie)
+		return
+	}
+	if surface == "cover" {
+		// IP language selection and anonymous cookies follow the same eligibility rules as the novel H5.
+		allowLanguageCookie := c.Request.Method == "GET" && (class == "normal" || class == "suspicious")
+		a.CoverPage.Render(c, l, eventID, e == nil, country, allowLanguageCookie)
 		return
 	}
 	if l.Mode == "landing" {
@@ -316,6 +379,19 @@ func (a *Handler) track(c *gin.Context, surface string) {
 	a.Landing.RenderDirect(c, l)
 }
 
+// userAgentMarkerValue extracts only a bounded embedded-app version, never the complete User-Agent.
+func userAgentMarkerValue(raw, marker string) string {
+	start := strings.Index(raw, marker)
+	if start < 0 {
+		return ""
+	}
+	value := raw[start+len(marker):]
+	if end := strings.IndexAny(value, " ;]"); end >= 0 {
+		value = value[:end]
+	}
+	return runtime.Bounded(strings.TrimSpace(value), 128)
+}
+
 func (a *Handler) unavailable(c *gin.Context, surface string, status int, message string) {
 	if surface == "audio_novel" && a.AudioNovelPage != nil {
 		a.AudioNovelPage.Unavailable(c, status, message)
@@ -323,6 +399,10 @@ func (a *Handler) unavailable(c *gin.Context, surface string, status int, messag
 	}
 	if surface == "novel" && a.NovelPage != nil {
 		a.NovelPage.Unavailable(c, status, message)
+		return
+	}
+	if surface == "cover" && a.CoverPage != nil {
+		a.CoverPage.Unavailable(c, status, message)
 		return
 	}
 	a.Landing.Unavailable(c, status, message)

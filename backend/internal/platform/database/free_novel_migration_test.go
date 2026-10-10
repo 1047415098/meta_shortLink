@@ -60,3 +60,22 @@ func TestNovelLinkStartupTailMigrationUsesSafeDefaultAndBounds(t *testing.T) {
 		}
 	}
 }
+
+func TestNovelLinkStartupThemeMigrationUsesStablePresentationKeys(t *testing.T) {
+	// The new field keeps every existing link on the safe countdown presentation.
+	sqlBytes, err := migrations.ReadFile("migrations/031_novel_link_startup_theme.sql")
+	if err != nil {
+		t.Fatalf("read startup-theme migration: %v", err)
+	}
+	sql := string(sqlBytes)
+	for _, required := range []string{
+		"startup_theme text NOT NULL DEFAULT 'countdown'",
+		"short_links_startup_theme_check",
+		"click_events_startup_theme_check",
+		"'countdown','cover_wall'",
+	} {
+		if !strings.Contains(sql, required) {
+			t.Fatalf("startup-theme migration does not contain %q", required)
+		}
+	}
+}

@@ -10,4 +10,6 @@ const bootstrap = readBootstrap(), router = createNovelRouter();
 router.beforeEach((to) => bootstrap.link?.code && to.params.code !== bootstrap.link.code ? { name:"home", params:{ code:bootstrap.link.code }, query:to.query } : true);
 const localeController=createNovelI18n({bootstrap});
 // Vue I18n 管界面文案，控制器只负责可用语言与 Cookie 持久化；接口语言由请求头传递。
-createApp(App).provide("bootstrap", bootstrap).provide("localeController",localeController).use(router).use(localeController.plugin).mount("#app");
+const app=createApp(App).provide("bootstrap", bootstrap).provide("localeController",localeController).use(router).use(localeController.plugin);
+// 等首次路由解析完成再挂载，避免入口章节跳转读到尚未就绪的路由。
+router.isReady().then(() => app.mount("#app"));

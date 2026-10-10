@@ -1,4 +1,4 @@
-import { request } from "./http";
+import { request } from "./http.js";
 export const getAnalytics = (filters) =>
   request("/analytics/query", {
     method: "POST",
@@ -6,6 +6,8 @@ export const getAnalytics = (filters) =>
   });
 export const getVisits = (filters) =>
   request("/clicks/query", { method: "POST", body: JSON.stringify(filters) });
+// Detail requests use only the visit identifier; report filters remain in component state.
+export const getVisit = (id) => request("/clicks/" + encodeURIComponent(id));
 // Submit filters in JSON while retaining the shared session and request headers.
 export const getLinkStats = (id, filters) =>
   request("/links/" + encodeURIComponent(id) + "/stats", {

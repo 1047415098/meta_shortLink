@@ -12,6 +12,7 @@ import (
 	"whatsapp-analytics/internal/modules/analytics"
 	"whatsapp-analytics/internal/modules/audionovel"
 	"whatsapp-analytics/internal/modules/auth"
+	"whatsapp-analytics/internal/modules/cover"
 	"whatsapp-analytics/internal/modules/landing"
 	"whatsapp-analytics/internal/modules/links"
 	"whatsapp-analytics/internal/modules/meta"
@@ -32,6 +33,7 @@ type Handlers struct {
 	Landing    *landing.Handler
 	AudioNovel *audionovel.Handler
 	Novel      *novel.Handler
+	Cover      *cover.Handler
 	Tracking   *tracking.Handler
 	Meta       *meta.Handler
 	TikTok     *tiktok.Handler
@@ -93,6 +95,8 @@ func New(core *runtime.Core, h Handlers) (*gin.Engine, error) {
 	api.PATCH("/links/:id", h.Links.Update)
 	api.GET("/analytics", h.Analytics.Overview)
 	api.GET("/clicks", h.Analytics.Clicks)
+	// A single authenticated detail request returns the frozen visit and safe delivery diagnostics.
+	api.GET("/clicks/:id", h.Analytics.ClickDetail)
 	api.GET("/exports/clicks", h.Analytics.Export)
 	// Admin report filters travel in POST JSON, never in request URLs.
 	api.POST("/analytics/query", h.Analytics.OverviewJSON)
@@ -148,6 +152,12 @@ func New(core *runtime.Core, h Handlers) (*gin.Engine, error) {
 	api.PATCH("/novel-links/:id", h.Novel.UpdateDistributionLink)
 	api.DELETE("/novel-links/:id", h.Novel.DeleteDistributionLink)
 	api.POST("/novel-links/:id/stats", h.Novel.DistributionStats)
+	// 封面项目只管理独立投放链接，不开放小说内容的新增、编辑或推荐接口。
+	api.POST("/cover-links/query", h.Cover.ListLinks)
+	api.POST("/cover-links", h.Cover.CreateLink)
+	api.PATCH("/cover-links/:id", h.Cover.UpdateLink)
+	api.DELETE("/cover-links/:id", h.Cover.DeleteLink)
+	api.POST("/cover-links/:id/stats", h.Cover.Stats)
 	api.GET("/settings", func(c *gin.Context) {
 		c.JSON(200, gin.H{"public_base_url": core.Config.PublicURL, "timezone": core.Config.Timezone, "cookie_mode": core.Config.CookieMode, "retention_days": core.Config.RetentionDays, "geo_enabled": core.Geo != nil})
 	})
@@ -160,7 +170,7 @@ func New(core *runtime.Core, h Handlers) (*gin.Engine, error) {
 	r.HEAD("/admin", adminIndex)
 	r.GET("/admin/*path", adminIndex)
 	r.HEAD("/admin/*path", adminIndex)
-	for prefix, root := range map[string]string{"/admin-assets/": filepath.Join(core.Config.FrontendDir, "admin-assets"), "/landing-assets/": filepath.Join(core.Config.LandingDir, "landing-assets"), "/audio-novel-assets/": filepath.Join(core.Config.AudioNovelDir, "audio-novel-assets"), "/novel-assets/": filepath.Join(core.Config.NovelDir, "novel-assets"), "/assets/": filepath.Join(core.Config.FrontendDir, "assets")} {
+	for prefix, root := range map[string]string{"/admin-assets/": filepath.Join(core.Config.FrontendDir, "admin-assets"), "/landing-assets/": filepath.Join(core.Config.LandingDir, "landing-assets"), "/audio-novel-assets/": filepath.Join(core.Config.AudioNovelDir, "audio-novel-assets"), "/novel-assets/": filepath.Join(core.Config.NovelDir, "novel-assets"), "/cover-assets/": filepath.Join(core.Config.CoverDir, "cover-assets"), "/assets/": filepath.Join(core.Config.FrontendDir, "assets")} {
 		r.GET(prefix+"*filepath", staticfiles.Handler(root))
 		r.HEAD(prefix+"*filepath", staticfiles.Handler(root))
 	}
@@ -199,6 +209,12 @@ func New(core *runtime.Core, h Handlers) (*gin.Engine, error) {
 	r.POST("/novel/:code/start-reading", h.Novel.StartReading)
 	r.POST("/novel/:code/time-spent", h.Novel.TimeSpent)
 	r.POST("/novel/:code/reading-time", h.Novel.ReadingTime)
+	// Standalone cover funnel routes remain before the generic short-code handler.
+	r.GET("/cover/:code", h.Tracking.Cover)
+	r.HEAD("/cover/:code", h.Tracking.Cover)
+	r.POST("/cover/:code/view", h.Cover.View)
+	r.POST("/cover/:code/time-spent", h.Cover.TimeSpent)
+	r.POST("/cover/:code/visible-time", h.Cover.VisibleTime)
 	// Audio novel routes stay before the generic short-code route so the product prefix is never treated as a code.
 	r.GET("/audio-novel/:code", h.Tracking.AudioNovel)
 	r.HEAD("/audio-novel/:code", h.Tracking.AudioNovel)

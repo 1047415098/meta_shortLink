@@ -129,10 +129,20 @@ test("audio novel list and router expose the dedicated campaign page", async () 
 });
 
 test("audio novel statistics explain playback funnels and attribution boundaries", async () => {
-  const source = await readFile(
-    new URL("../src/views/AudioNovelLinkStatsView.vue", import.meta.url),
-    "utf8",
-  );
+  const [source, visitList, detail] = await Promise.all([
+    readFile(
+      new URL("../src/views/AudioNovelLinkStatsView.vue", import.meta.url),
+      "utf8",
+    ),
+    readFile(
+      new URL("../src/components/ProjectVisitRecords.vue", import.meta.url),
+      "utf8",
+    ),
+    readFile(
+      new URL("../src/components/VisitDetailDialog.vue", import.meta.url),
+      "utf8",
+    ),
+  ]);
   for (const key of [
     "visits",
     "unique_visitors",
@@ -160,10 +170,12 @@ test("audio novel statistics explain playback funnels and attribution boundaries
     "event_status",
   ])
     assert.match(source, new RegExp(filter));
-  assert.match(source, /未采集/);
+  // Playback rows now share one project visit table; click identifiers remain in the detail dialog.
+  assert.match(visitList, /playback_seconds/);
+  assert.match(visitList, /未采集/);
   assert.match(source, /平台 API 已接收不代表最终广告归因/);
   assert.match(source, /播放完成仅用于内部统计/);
-  assert.match(source, /ttclid/);
+  assert.match(detail, /tiktok_ttclid/);
   // Operators must see a current delivery configuration blocker before
   // interpreting an empty or pending event report as a tracking failure.
   assert.match(source, /delivery_config_status/);

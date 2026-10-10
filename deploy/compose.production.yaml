@@ -18,7 +18,7 @@ services:
       timeout: 3s
       retries: 30
   app:
-    image: linkscope-lu81:20260914
+    image: linkscope-lu81:cover-project-visit-detail-20261010
     build:
       context: ..
       dockerfile: deploy/Dockerfile.runtime
@@ -60,6 +60,8 @@ services:
       AUDIO_NOVEL_AUDIO_DIR: /app/data/audio-novel-audio
       NOVEL_DIR: /app/novel-h5
       NOVEL_UPLOAD_DIR: /app/data/novel-uploads
+      # 封面项目独立于免费小说站运行，共用同一套安全和投放归因后端。
+      COVER_DIR: /app/cover-h5
     volumes:
       - ../geoip:/app/geoip:ro
       # 语音小说封面独立持久化，更新应用容器不会丢失。

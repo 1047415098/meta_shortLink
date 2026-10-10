@@ -103,138 +103,21 @@
           </el-card>
         </div>
 
-        <section class="panel">
-          <div class="panel-heading">
-            <div>
-              <h2>访问与播放明细</h2>
-              <p>仅统计正常 GET 入口；历史未上报的时长显示“未采集”。</p>
-            </div>
-            <el-tag effect="plain">{{ number(data.total) }} 次</el-tag>
-          </div>
-          <el-table :data="data.items" empty-text="所选日期暂无访问">
-            <el-table-column label="访问时间" min-width="175">
-              <template #default="{ row }">{{
-                timestamp(row.occurred_at)
-              }}</template>
-            </el-table-column>
-            <el-table-column label="匿名访客" min-width="150">
-              <template #default="{ row }">
-                <span class="visitor">{{
-                  row.visitor_id ? row.visitor_id.slice(0, 12) : "无 Cookie"
-                }}</span>
-              </template>
-            </el-table-column>
-            <el-table-column label="地区" min-width="160">
-              <template #default="{ row }">
-                {{
-                  [row.country, row.region, row.city]
-                    .filter(Boolean)
-                    .join(" / ") || "未知"
-                }}
-              </template>
-            </el-table-column>
-            <el-table-column label="设备 / 浏览器" min-width="180">
-              <template #default="{ row }"
-                >{{ row.device }} · {{ row.browser }}</template
-              >
-            </el-table-column>
-            <el-table-column prop="source" label="来源" min-width="110" />
-            <el-table-column
-              v-if="!isTikTok"
-              prop="ad_id"
-              label="广告 ID"
-              min-width="130"
-            />
-            <el-table-column label="Pixel" min-width="180">
-              <template #default="{ row }">
-                {{ row.pixel_name || "—" }}
-                <div class="muted">{{ row.pixel_code || "—" }}</div>
-              </template>
-            </el-table-column>
-            <el-table-column
-              v-if="isTikTok"
-              label="Campaign / Ad Group"
-              min-width="200"
-            >
-              <template #default="{ row }">
-                {{ row.campaign_id || "—" }}
-                <div class="muted">{{ row.adgroup_id || "—" }}</div>
-              </template>
-            </el-table-column>
-            <el-table-column
-              v-if="isTikTok"
-              label="Creative / Ad"
-              min-width="190"
-            >
-              <template #default="{ row }">
-                {{ row.creative_id || "—" }}
-                <div class="muted">{{ row.ad_id_v2 || "—" }}</div>
-              </template>
-            </el-table-column>
-            <el-table-column v-if="isTikTok" label="点击标识" min-width="135">
-              <template #default="{ row }">
-                <span class="visitor">{{ row.ttclid || "自然访问" }}</span>
-                <div class="muted">{{ row.placement || "—" }}</div>
-              </template>
-            </el-table-column>
-            <el-table-column label="页面可见" width="110">
-              <template #default="{ row }">
-                {{
-                  row.visible_seconds == null
-                    ? "未采集"
-                    : duration(row.visible_seconds)
-                }}
-              </template>
-            </el-table-column>
-            <el-table-column label="实际播放" width="110">
-              <template #default="{ row }">
-                {{
-                  row.playback_seconds == null
-                    ? "未采集"
-                    : duration(row.playback_seconds)
-                }}
-              </template>
-            </el-table-column>
-            <el-table-column label="播放漏斗" min-width="190">
-              <template #default="{ row }">
-                <el-tag size="small" :type="row.started ? 'success' : 'info'">
-                  {{ row.started ? "已开始" : "未开始" }}
-                </el-tag>
-                <el-tag size="small" :type="row.qualified ? 'success' : 'info'">
-                  {{ row.qualified ? "已达标" : "未达标" }}
-                </el-tag>
-                <el-tag size="small" :type="row.completed ? 'success' : 'info'">
-                  {{ row.completed ? "已完成" : "未完成" }}
-                </el-tag>
-              </template>
-            </el-table-column>
-            <el-table-column label="平台事件" min-width="210">
-              <template #default="{ row }">
-                <div class="event-status">
-                  PageView：{{ eventStatusLabel(row.pageview_event_status) }}
-                </div>
-                <div class="event-status">
-                  StartListening：{{ eventStatusLabel(row.start_event_status) }}
-                </div>
-                <div class="event-status">
-                  ViewContent：{{
-                    eventStatusLabel(row.qualified_event_status)
-                  }}
-                </div>
-              </template>
-            </el-table-column>
-          </el-table>
-          <el-pagination
-            v-if="data.total > data.page_size"
-            class="pagination"
-            background
-            layout="total, prev, pager, next"
-            :total="data.total"
-            :page-size="data.page_size"
-            :current-page="filters.page"
-            @current-change="changePage"
-          />
-        </section>
+        <!-- 单表同时承载有效播放行为与异常请求诊断，顶部卡片口径保持不变。 -->
+        <ProjectVisitRecords
+          :link-id="route.params.id"
+          surface="audio_novel"
+          :start="filters.start"
+          :end="filters.end"
+          :timezone="filters.tz"
+          :ad-id="filters.ad_id"
+          :campaign-id="filters.campaign_id"
+          :adgroup-id="filters.adgroup_id"
+          :creative-id="filters.creative_id"
+          :ad-id-v2="filters.ad_id_v2"
+          :event-status="filters.event_status"
+          :request-key="recordsVersion"
+        />
       </template>
     </div>
   </section>
@@ -245,6 +128,7 @@ import { computed, onMounted, reactive, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { ElMessage } from "element-plus";
 import PageHeader from "../components/PageHeader.vue";
+import ProjectVisitRecords from "../components/ProjectVisitRecords.vue";
 import { getAudioNovelLinkStats } from "../api/audioNovelLinks.js";
 import { settings } from "../stores/settings.js";
 import {
@@ -257,6 +141,8 @@ import { tiktokEventStatuses, tiktokStatusLabels } from "../utils/tiktok.js";
 const route = useRoute();
 const router = useRouter();
 const data = ref(null);
+// Keep the shared visit list synchronized with the last completed playback report query.
+const recordsVersion = ref(0);
 const loading = ref(false);
 // Audio reports share the fixed UTC-8 default with all operator statistics.
 const timezone = settings.value.timezone || DEFAULT_REPORT_TIMEZONE;
@@ -402,16 +288,11 @@ function eventStatusLabel(status) {
   };
   return labels[status] || tiktokStatusLabels[status] || status || "—";
 }
-const timestamp = (value) =>
-  new Date(value).toLocaleString("zh-CN", {
-    timeZone: data.value?.timezone || filters.tz,
-    hour12: false,
-  });
-
 async function load() {
   loading.value = true;
   try {
     data.value = await getAudioNovelLinkStats(route.params.id, { ...filters });
+    recordsVersion.value++;
   } catch (error) {
     ElMessage.error(error.message);
   } finally {
@@ -420,10 +301,6 @@ async function load() {
 }
 function query() {
   filters.page = 1;
-  load();
-}
-function changePage(page) {
-  filters.page = page;
   load();
 }
 function back() {
@@ -465,19 +342,6 @@ onMounted(load);
   margin: 15px 0;
   color: #253044;
   font-size: 28px;
-}
-.visitor {
-  font-family: monospace;
-}
-:deep(.el-tag + .el-tag) {
-  margin-left: 6px;
-}
-.event-status + .event-status {
-  margin-top: 4px;
-}
-.pagination {
-  justify-content: flex-end;
-  margin-top: 20px;
 }
 @media (max-width: 1050px) {
   .filters,

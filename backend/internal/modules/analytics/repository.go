@@ -3,6 +3,7 @@ package analytics
 import (
 	"context"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -10,8 +11,47 @@ import (
 
 type Repository struct{ DB *pgxpool.Pool }
 
+// eventListQuery adds project-only filters to the shared visit list while the
+// dashboard keeps its existing broad aggregation scope and positional SQL.
+func eventListQuery(f Filter) (string, []any) {
+	where, args := eventWhere, f.args()
+	for _, item := range []struct {
+		value, column string
+	}{
+		{f.CampaignID, "campaign_id"},
+		{f.AdgroupID, "tiktok_adgroup_id"},
+		{f.CreativeID, "tiktok_creative_id"},
+		{f.AdIDV2, "tiktok_ad_id_v2"},
+	} {
+		if item.value == "" {
+			continue
+		}
+		args = append(args, item.value)
+		where += fmt.Sprintf(" AND e.%s=$%d", item.column, len(args))
+	}
+	validVisit := `e.classification='normal' AND e.method='GET' AND
+		((e.surface='short_link' AND e.event_type IN ('landing','redirect')) OR
+		(e.surface IN ('audio_novel','novel','cover') AND e.event_type='landing'))`
+	if f.TrafficScope == "valid" {
+		where += " AND (" + validVisit + ")"
+	} else if f.TrafficScope == "abnormal" {
+		where += " AND NOT (" + validVisit + ")"
+	}
+	if f.EventStatus != "" {
+		args = append(args, f.EventStatus)
+		where += fmt.Sprintf(` AND (EXISTS(SELECT 1 FROM meta_events me_filter
+			WHERE me_filter.visit_id=e.id AND NOT me_filter.is_test AND me_filter.status=$%d)
+			OR EXISTS(SELECT 1 FROM tiktok_events te_filter
+			WHERE te_filter.visit_id=e.id AND NOT te_filter.is_test AND te_filter.status=$%d))`, len(args), len(args))
+	}
+	return where, args
+}
+
 func (a Repository) Events(ctx context.Context, f Filter, limit, offset int) ([]Event, error) {
-	rows, e := a.DB.Query(ctx, "SELECT "+eventCols+" FROM click_events e JOIN short_links l ON l.id=e.link_id"+eventWhere+" ORDER BY e.occurred_at DESC,e.id LIMIT $6 OFFSET $7", append(f.args(), limit, offset)...)
+	where, args := eventListQuery(f)
+	args = append(args, limit, offset)
+	rows, e := a.DB.Query(ctx, "SELECT "+eventCols+" FROM click_events e JOIN short_links l ON l.id=e.link_id"+where+
+		fmt.Sprintf(" ORDER BY e.occurred_at DESC,e.id DESC LIMIT $%d OFFSET $%d", len(args)-1, len(args)), args...)
 	out := []Event{}
 	if e != nil {
 		return out, e
@@ -19,7 +59,10 @@ func (a Repository) Events(ctx context.Context, f Filter, limit, offset int) ([]
 	defer rows.Close()
 	for rows.Next() {
 		var v Event
-		if e = rows.Scan(&v.ID, &v.OccurredAt, &v.LinkID, &v.Code, &v.VisitorID, &v.CookieStatus, &v.Method, &v.Device, &v.OS, &v.Browser, &v.Country, &v.Region, &v.City, &v.Source, &v.AdID, &v.Classification, &v.Reason, &v.Referrer, &v.AttributionConflict, &v.EventType, &v.Surface, &v.WhatsAppClickedAt, &v.AutoRedirectedAt); e != nil {
+		if e = rows.Scan(&v.ID, &v.OccurredAt, &v.LinkID, &v.Code, &v.VisitorID, &v.CookieStatus, &v.Method, &v.Device, &v.OS, &v.Browser, &v.Country, &v.Region, &v.City, &v.Source, &v.AdID, &v.Classification, &v.Reason, &v.Referrer, &v.AttributionConflict, &v.EventType, &v.Surface, &v.WhatsAppClickedAt, &v.AutoRedirectedAt,
+			&v.AdPlatform, &v.CampaignID, &v.AdsetID, &v.AdgroupID, &v.CreativeID, &v.AdIDV2, &v.Placement,
+			&v.VisibleSeconds, &v.PlaybackSeconds, &v.MediaConsumedSeconds, &v.AudioStarted, &v.AudioQualified, &v.AudioCompleted,
+			&v.EntryChapterID, &v.EntryChapterNumber, &v.EntryChapterTitle, &v.ReadingStarted, &v.ReadingQualified); e != nil {
 			return out, e
 		}
 		out = append(out, v)
@@ -118,6 +161,7 @@ func (r Repository) Overview(ctx context.Context, f Filter) (OverviewData, error
 }
 func (r Repository) Count(ctx context.Context, f Filter) (int64, error) {
 	var total int64
-	e := r.DB.QueryRow(ctx, "SELECT count(*) FROM click_events e"+eventWhere, f.args()...).Scan(&total)
+	where, args := eventListQuery(f)
+	e := r.DB.QueryRow(ctx, "SELECT count(*) FROM click_events e"+where, args...).Scan(&total)
 	return total, e
 }

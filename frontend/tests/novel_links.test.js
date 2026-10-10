@@ -69,6 +69,8 @@ test("novel link payload always uses hidden dynamic attribution defaults", () =>
   assert.equal(payload.ad_id, "");
   assert.equal(payload.time_spent_threshold, 10);
   assert.equal(payload.startup_tail_seconds, 5);
+  // 免费小说恢复为唯一的倒计时进度首屏，历史主题值也不会重新启用封面墙。
+  assert.equal(payload.startup_theme, "countdown");
   assert.equal(
     novelLinkPayload({ time_spent_threshold: 30 }).time_spent_threshold,
     30,
@@ -77,6 +79,12 @@ test("novel link payload always uses hidden dynamic attribution defaults", () =>
     novelLinkPayload({ startup_tail_seconds: 12 }).startup_tail_seconds,
     12,
   );
+  const coverWallPayload = novelLinkPayload({
+    startup_theme: "cover_wall",
+    startup_tail_seconds: 42,
+  });
+  assert.equal(coverWallPayload.startup_theme, "countdown");
+  assert.equal(coverWallPayload.startup_tail_seconds, 42);
 });
 
 test("novel link payload selects exactly one platform", () => {
@@ -106,7 +114,7 @@ test("novel link payload selects exactly one platform", () => {
   assert.equal(meta.meta_connection_id, 3);
 });
 
-test("novel link form exposes separate loading-tail and dwell-time settings", async () => {
+test("novel link form exposes countdown-tail and dwell-time settings only", async () => {
   // The operator controls reader loading and event delivery independently; dynamic attribution fields stay hidden.
   const source = await readFile(
     new URL("../src/views/NovelLinkListView.vue", import.meta.url),
@@ -124,6 +132,10 @@ test("novel link form exposes separate loading-tail and dwell-time settings", as
   }
   assert.match(template, /label="停留时长回传（秒）"/);
   assert.match(template, /label="首屏加载剩余 10%（秒）"/);
+  assert.doesNotMatch(
+    template,
+    /首屏引导页主题|form\.startup_theme|row\.startup_theme|cover_wall/,
+  );
   assert.match(template, /前 3 秒固定从 0% 走到 90%/);
   assert.match(template, /row\.startup_tail_seconds \|\| 5/);
   assert.match(template, /达到设置的前台可见时长后才回传一次 Meta TimeSpent/);
@@ -239,7 +251,7 @@ test("admin registers the numeric input used by the dwell-time field", async () 
   assert.match(source, /ElInputNumber,\s*\n\s*ElSelect/);
 });
 
-test("TikTok novel statistics expose funnel, delivery and attribution boundaries", async () => {
+test("TikTok novel statistics expose delivery and attribution boundaries", async () => {
   const source = await readFile(
     new URL("../src/views/NovelLinkStatsView.vue", import.meta.url),
     "utf8",
@@ -282,14 +294,14 @@ test("novel statistics show the fixed ten-second unique visitor metric", async (
 
 test("novel visit statistics show the frozen entry chapter and identify legacy visits", async () => {
   const source = await readFile(
-    new URL("../src/views/NovelLinkStatsView.vue", import.meta.url),
+    new URL("../src/components/ProjectVisitRecords.vue", import.meta.url),
     "utf8",
   );
   const template = source.split("<script setup>")[0];
 
-  // 该列必须使用访问快照，避免章节后续改名时覆盖历史投放数据。
-  assert.match(template, /label="入口章节"/);
-  assert.match(template, /row\.entry_chapter_number/);
-  assert.match(template, /row\.entry_chapter_title/);
-  assert.match(template, /未记录（兼容旧链接）/);
+  // 合并后的行为列继续使用访问快照，避免章节后续改名时覆盖历史投放数据。
+  assert.match(template, /surface === 'novel'/);
+  assert.match(source, /row\.entry_chapter_number/);
+  assert.match(source, /row\.entry_chapter_title/);
+  assert.match(source, /未绑定入口章节/);
 });

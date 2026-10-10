@@ -51,6 +51,8 @@ services:
       AUDIO_NOVEL_AUDIO_DIR: /app/data/audio-novel-audio
       NOVEL_DIR: /app/novel-h5
       NOVEL_UPLOAD_DIR: /app/data/novel-uploads
+      # 封面项目使用独立前端构建，不再打包进免费小说站。
+      COVER_DIR: /app/cover-h5
     volumes:
       - ./geoip:/app/geoip:ro
       - audio_novel_uploads:/app/data/audio-novel-uploads

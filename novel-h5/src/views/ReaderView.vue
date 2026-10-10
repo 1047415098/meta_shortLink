@@ -15,6 +15,7 @@ const route=useRoute(),router=useRouter(),story=ref(),chapters=ref([]),chapter=r
 const bootstrap=inject("bootstrap");
 const { locale, t } = useI18n({ useScope:"global" });
 const markInitialViewReady=inject("markInitialViewReady",()=>{});
+const startReaderTracking=inject("startReaderTracking",()=>{});
 const requestGate=createRequestGate();
 let scrollTimer;
 
@@ -51,6 +52,8 @@ async function load(){
     saveProgress(route.params.slug,chapterData.chapter.chapter_number,scrollY);
     // 正文已进入 DOM 后通知首屏加载层，阅读统计仍按原流程继续执行。
     markInitialViewReady("reader");
+    // 只有真实章节正文已渲染才开始累计停留，避免将加载页或营销漏斗计入阅读时长。
+    startReaderTracking();
     const isCampaignEntry=shouldReportStartReading({
       entryChapterNumber:bootstrap.link?.entry_chapter_number,
       currentChapterNumber:chapterData.chapter.chapter_number,

@@ -6,7 +6,7 @@ import { installMetaPixel, trackMetaTimeSpent } from "./lib/meta.js";
 import { installTikTokPixel, readTikTokTTP, trackTikTokEvent } from "./lib/tiktok.js";
 import { createVisibleTimeTracker, reportReadingTime, reportTimeSpent } from "./lib/timeSpent.js";
 import { entryRouteForBootstrap } from "./lib/entry.js";
-import { markNovelStartupReady } from "./lib/startupLoader.js";
+import { isNovelStartupEntryPath, markNovelStartupReady } from "./lib/startupLoader.js";
 const bootstrap = inject("bootstrap");
 const router=useRouter();
 // 临时关闭 18+ 确认与 10 秒倒计时：短链访问直接进入小说；AgeGateView 组件保留，后续可恢复。
@@ -40,28 +40,39 @@ async function reportReading(useBeacon=false){
 }
 function onVisibilityChange(){if(document.visibilityState==="hidden")reportReading();}
 function onPageHide(){reportReading(true);}
-function startNovelExperience(){
+function startReaderTracking(){
   if(experienceStarted||!bootstrap.link?.code)return;
   experienceStarted=true;
-  // 年龄门槛暂时关闭后，短链进入即开始累计真实前台可见阅读时长。
+  // 仅在 ReaderView 确认正文已进入 DOM 后开始可见时长，首屏主题停留不算阅读。
   cleanupTimer = createVisibleTimeTracker({ threshold:Number(bootstrap.link.time_spent_threshold || 0), onTick:(seconds)=>{visibleSeconds=seconds;if(seconds>=lastReported+10)void reportReading();}, onThreshold:() => {
     if(bootstrap.ad_platform === "meta"){trackMetaTimeSpent(bootstrap.meta_time_spent_event_id);void reportTimeSpent({ code:bootstrap.link.code, ticket:bootstrap.ticket });}
     if(bootstrap.ad_platform === "tiktok")void reportReading();
   } });
   document.addEventListener("visibilitychange",onVisibilityChange);
   window.addEventListener("pagehide",onPageHide);
+}
+provide("startReaderTracking",startReaderTracking);
+
+function startNovelExperience(){
+  if(!bootstrap.link?.code)return;
+  // 入口路由只负责打开绑定小说；真实阅读统计等待 ReaderView 完整渲染后才启动。
   // 同一文档内进入绑定小说或章节，避免重新请求入口并重复统计访问。
   const entryRoute=entryRouteForBootstrap(bootstrap.link,router.currentRoute.value);
   expectedInitialRouteName=entryRoute?.name||"";
-  if(entryRoute)void router.replace(entryRoute);
+  if(!entryRoute)return;
+  // 倒计时入口保留首页历史记录，读者可从第一章返回书架继续选择。
+  if(isNovelStartupEntryPath(bootstrap.link))void router.push(entryRoute);
+  else void router.replace(entryRoute);
 }
+
 onMounted(() => {
   if(bootstrap.error)markInitialViewReady("unavailable");
   if(bootstrap.ad_platform === "meta")installMetaPixel({ pixelId:bootstrap.meta_browser_pixel_id, eventId:bootstrap.meta_pageview_event_id });
   if(bootstrap.ad_platform === "tiktok"&&bootstrap.tiktok_enabled)installTikTokPixel({pixelCode:bootstrap.tiktok_pixel_code});
   if (!bootstrap.link?.code) return;
-  // 保留入口访问确认和平台 PageView；内容停留统计会在短链进入后直接启动。
+  // 保留入口访问确认和平台 PageView；阅读事件仍要等正文完成渲染。
   if (bootstrap.ticket) fetch(`/novel/${encodeURIComponent(bootstrap.link.code)}/view`, { method:"POST", headers:{ "Content-Type":"application/x-www-form-urlencoded" }, body:new URLSearchParams({ ticket:bootstrap.ticket }), keepalive:true }).catch(()=>{});
+  // 倒计时主题和普通链接保留既有的直接进入行为。
   if(ageGatePassed.value)startNovelExperience();
 });
 onBeforeUnmount(() => {reportReading(true);cleanupTimer?.();document.removeEventListener("visibilitychange",onVisibilityChange);window.removeEventListener("pagehide",onPageHide);});
@@ -69,6 +80,6 @@ onBeforeUnmount(() => {reportReading(true);cleanupTimer?.();document.removeEvent
 <template>
   <main class="app-shell">
     <UnavailableView v-if="bootstrap.error" :error="bootstrap.error" />
-    <RouterView v-else />
+    <div v-else class="app-route-layer"><RouterView /></div>
   </main>
 </template>

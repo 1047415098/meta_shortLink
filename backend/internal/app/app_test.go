@@ -61,6 +61,11 @@ func setup(t *testing.T) *App {
 	if e := os.WriteFile(filepath.Join(c.NovelDir, "index.html"), []byte(`<!doctype html><html><head><title>Novel</title><meta name="description" content="test" /><!--NOVEL_H5_BOOTSTRAP--><script type="module" src="/novel-assets/app-test1234.js"></script></head><body><div id="app"></div></body></html>`), 0600); e != nil {
 		t.Fatal(e)
 	}
+	// Integration requests render the standalone cover funnel from its own build directory.
+	c.CoverDir = t.TempDir()
+	if e := os.WriteFile(filepath.Join(c.CoverDir, "index.html"), []byte(`<!doctype html><html><head><title>Cover</title><!--COVER_H5_BOOTSTRAP--><script type="module" src="/cover-assets/app-test1234.js"></script></head><body><div id="app"></div></body></html>`), 0600); e != nil {
+		t.Fatal(e)
+	}
 	a, e := New(c, p)
 	if e != nil {
 		t.Fatal(e)

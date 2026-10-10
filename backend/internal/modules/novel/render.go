@@ -44,7 +44,9 @@ type PublicLink struct {
 	EntryStorySlug     string `json:"entry_story_slug,omitempty"`
 	EntryChapterNumber *int   `json:"entry_chapter_number,omitempty"`
 	TimeSpentThreshold int    `json:"time_spent_threshold"`
-	StartupTailSeconds int    `json:"startup_tail_seconds"`
+	StartupTailSeconds int    `json:"startup_tail_seconds,omitempty"`
+	// StartupTheme arrives from the immutable visit snapshot for recorded readers.
+	StartupTheme string `json:"startup_theme"`
 }
 type PageError struct {
 	Status  int    `json:"status"`
@@ -53,7 +55,7 @@ type PageError struct {
 
 func (h *Handler) Render(c *gin.Context, link links.Link, eventID string, recorded bool, country string, allowLanguageCookie bool) {
 	// This per-link value is embedded in the first document, so the loading layer needs no extra request.
-	publicLink := &PublicLink{Code: link.Code, TimeSpentThreshold: link.TimeSpentThreshold, StartupTailSeconds: link.StartupTailSeconds}
+	publicLink := &PublicLink{Code: link.Code, TimeSpentThreshold: link.TimeSpentThreshold, StartupTailSeconds: link.StartupTailSeconds, StartupTheme: links.NormalizeStartupTheme(link.StartupTheme)}
 	available := []string{"en"}
 	startupCoverPath := ""
 	repository := Repository{DB: h.DB}
@@ -76,10 +78,13 @@ func (h *Handler) Render(c *gin.Context, link links.Link, eventID string, record
 	}
 	if recorded {
 		// Route from the immutable visit snapshot, not mutable chapter metadata.
-		_ = h.DB.QueryRow(c.Request.Context(), "SELECT entry_chapter_number FROM click_events WHERE id=$1", eventID).Scan(&publicLink.EntryChapterNumber)
+		_ = h.DB.QueryRow(c.Request.Context(), "SELECT entry_chapter_number,startup_theme FROM click_events WHERE id=$1", eventID).Scan(&publicLink.EntryChapterNumber, &publicLink.StartupTheme)
+		publicLink.StartupTheme = links.NormalizeStartupTheme(publicLink.StartupTheme)
 	} else if link.EntryChapterID != nil {
 		_ = h.DB.QueryRow(c.Request.Context(), "SELECT chapter_number FROM novel_chapters WHERE id=$1", link.EntryChapterID).Scan(&publicLink.EntryChapterNumber)
 	}
+	// 免费小说项目只保留倒计时首屏；历史主题快照也不再恢复封面墙。
+	publicLink.StartupTheme = links.StartupThemeCountdown
 	remembered, _ := c.Cookie(LanguageCookieName)
 	locale := ResolveLocale(c.Query("lang"), remembered, country, available)
 	platform := link.AdPlatform

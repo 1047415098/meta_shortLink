@@ -42,9 +42,7 @@
             entryChapterLabel(row)
           }}</template></el-table-column
         ><el-table-column label="首屏尾段" width="110"
-          ><template #default="{ row }">{{
-            row.startup_tail_seconds || 5
-          }} 秒</template></el-table-column
+          ><template #default="{ row }">{{ row.startup_tail_seconds || 5 }} 秒</template></el-table-column
         ><el-table-column label="访问" prop="visit_count" width="90" />
         <el-table-column label="状态" width="90"
           ><template #default="{ row }"
@@ -198,6 +196,7 @@
             />
           </el-select>
         </el-form-item>
+        <!-- 免费小说只保留倒计时进度条；封面墙已迁移到独立封面项目。 -->
         <el-form-item label="首屏加载剩余 10%（秒）">
           <el-input-number
             v-model="form.startup_tail_seconds"
@@ -206,7 +205,8 @@
             :step="1"
           />
           <small class="muted"
-            >前 3 秒固定从 0% 走到 90%；这里控制最后 10% 的完成时长，默认 5 秒。</small
+            >前 3 秒固定从 0% 走到 90%；这里控制最后 10% 的完成时长，默认 5
+            秒。</small
           >
         </el-form-item>
         <el-form-item label="停留时长回传（秒）"

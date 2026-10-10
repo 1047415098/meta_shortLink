@@ -787,9 +787,10 @@ func TestAudioNovelDistributionStatsIsolatePlaybackFunnelsAndDelivery(t *testing
 	if response.Code != 200 || shanghaiDay.Summary.Visits != 2 {
 		t.Fatalf("Shanghai date boundary: %d %s", response.Code, response.Body.String())
 	}
-	utcDay, response := stats(firstID, `{"start":"2026-09-01","end":"2026-09-01","tz":"Etc/GMT+8","page":1}`)
-	if response.Code != 200 || utcDay.Summary.Visits != 2 {
-		t.Fatalf("UTC date boundary: %d %s", response.Code, response.Body.String())
+	minusEightDay, response := stats(firstID, `{"start":"2026-09-01","end":"2026-09-01","tz":"Etc/GMT+8","page":1}`)
+	// IANA Etc/GMT signs are reversed: Etc/GMT+8 is fixed UTC-8 and all three fixtures fall on September 1 there.
+	if response.Code != 200 || minusEightDay.Summary.Visits != 3 {
+		t.Fatalf("UTC-8 date boundary: %d %s", response.Code, response.Body.String())
 	}
 	filtered, response := stats(firstID, `{"start":"2026-09-01","end":"2026-09-02","tz":"Etc/GMT+8","campaign_id":"campaign-a","adgroup_id":"group-a","creative_id":"creative-a","ad_id_v2":"ad-a","event_status":"accepted","page":1}`)
 	if response.Code != 200 || filtered.Summary.Visits != 1 {
@@ -811,7 +812,8 @@ func TestAudioNovelDistributionStatsIsolatePlaybackFunnelsAndDelivery(t *testing
 	metaPage := call(a, "GET", "/audio-novel/audio-stats-meta?fbclid=meta-click&campaign_id=meta-campaign&ad_id=meta-ad", "", nil)
 	metaBootstrap := decodeAudioBootstrap(t, metaPage)
 	metaVisitID := strings.Split(metaBootstrap.PlaybackTicket, ".")[0]
-	if _, err = a.DB.Exec(context.Background(), `UPDATE click_events SET occurred_at='2026-09-02 02:30:00+00'::timestamptz WHERE id=$1`, metaVisitID); err != nil {
+	// 10:30 UTC remains September 2 in both supported fixed report offsets.
+	if _, err = a.DB.Exec(context.Background(), `UPDATE click_events SET occurred_at='2026-09-02 10:30:00+00'::timestamptz WHERE id=$1`, metaVisitID); err != nil {
 		t.Fatal(err)
 	}
 	var metaPixelCode string

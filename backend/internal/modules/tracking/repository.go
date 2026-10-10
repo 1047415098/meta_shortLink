@@ -9,16 +9,21 @@ import (
 
 type Repository struct{ DB *pgxpool.Pool }
 type Event struct {
-	MetaPixelID                                                                                                                *int64
-	MetaConnectionID                                                                                                           *int64
-	TikTokPixelID                                                                                                              *int64
-	NovelID                                                                                                                    *int64
-	EntryChapterID                                                                                                             *int64
-	AudioNovelID                                                                                                               *int64
-	ID                                                                                                                         string
-	LinkID                                                                                                                     int64
-	VisitorID                                                                                                                  any
-	CookieStatus, Method, TargetURL, Device, OS, Browser, Country, Region, City, Source, CampaignID, AdsetID, AdID, Referrer   string
+	MetaPixelID                                                                                                              *int64
+	MetaConnectionID                                                                                                         *int64
+	TikTokPixelID                                                                                                            *int64
+	NovelID                                                                                                                  *int64
+	EntryChapterID                                                                                                           *int64
+	AudioNovelID                                                                                                             *int64
+	ID                                                                                                                       string
+	LinkID                                                                                                                   int64
+	VisitorID                                                                                                                any
+	CookieStatus, Method, TargetURL, Device, OS, Browser, Country, Region, City, Source, CampaignID, AdsetID, AdID, Referrer string
+	// Parsed device versions keep common analysis fields directly queryable.
+	DeviceModel, OSVersion, BrowserVersion string
+	// Request diagnostics are admin-only and never include authentication or Cookie headers.
+	ClientIP, UserAgent, RequestURL, ReferrerURL, AcceptLanguage                                                               string
+	ClientHints                                                                                                                []byte
 	AdPlatform, TikTokTTCLID, TikTokTTP, TikTokAdgroupID, TikTokCreativeID, TikTokAdIDV2, TikTokPlacement, TikTokContextCipher string
 	Parameters                                                                                                                 []byte
 	AttributionConflict                                                                                                        bool
@@ -26,6 +31,8 @@ type Event struct {
 	Surface                                                                                                                    string
 	Status                                                                                                                     int
 	TimeSpentThreshold                                                                                                         int
+	// StartupTheme is the visit snapshot; later link edits never rewrite this reader's first screen.
+	StartupTheme string
 }
 
 func (r Repository) Record(ctx context.Context, v Event) error {
@@ -38,8 +45,8 @@ func (r Repository) Record(ctx context.Context, v Event) error {
  LEFT JOIN LATERAL (SELECT * FROM meta_pixels p WHERE p.connection_id=c.id AND ($25::bigint IS NULL OR p.id=$25) ORDER BY (p.pixel_id=c.pixel_id) DESC,p.id LIMIT 1) p ON true WHERE c.id=$24
 	 ), tiktok_target AS (
 	 SELECT p.id,p.pixel_code FROM tiktok_pixels p WHERE p.id=$29
-	 ) INSERT INTO click_events(id,link_id,visitor_id,cookie_status,method,target_url,device,os,browser,country,region,city,source,campaign_id,adset_id,ad_id,referrer,parameters,attribution_conflict,classification,reason,event_type,status,meta_connection_id,meta_account_id,meta_measurement,meta_pixel_id,meta_pageview_enabled,meta_manual_enabled,meta_auto_enabled,meta_manual_event_name,surface,time_spent_threshold,novel_id,ad_platform,tiktok_pixel_id,tiktok_pixel_code,tiktok_ttclid,tiktok_ttp,tiktok_adgroup_id,tiktok_creative_id,tiktok_ad_id_v2,tiktok_placement,tiktok_context_cipher,audio_novel_id,audio_novel_title,entry_chapter_id,entry_chapter_number,entry_chapter_title)
-	 SELECT $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,COALESCE(t.account_id,''),COALESCE(t.enabled,false),t.pixel_record_id,COALESCE(t.pageview_enabled,false),COALESCE(t.manual_enabled,false),COALESCE(t.auto_enabled,false),COALESCE(t.manual_event_name,'Contact'),$26,$27,$28,$30,tt.id,COALESCE(tt.pixel_code,''),$31,$32,$33,$34,$35,$36,$37,$38,COALESCE((SELECT title FROM audio_novels WHERE id=$38),''),$39,(SELECT chapter_number FROM novel_chapters WHERE id=$39),COALESCE((SELECT title FROM novel_chapters WHERE id=$39),'') FROM (SELECT 1) anchor LEFT JOIN target t ON true LEFT JOIN tiktok_target tt ON true`, v.ID, v.LinkID, v.VisitorID, v.CookieStatus, v.Method, v.TargetURL, v.Device, v.OS, v.Browser, v.Country, v.Region, v.City, v.Source, v.CampaignID, v.AdsetID, v.AdID, v.Referrer, v.Parameters, v.AttributionConflict, v.Classification, v.Reason, v.Type, v.Status, v.MetaConnectionID, v.MetaPixelID, v.Surface, v.TimeSpentThreshold, v.NovelID, v.TikTokPixelID, v.AdPlatform, v.TikTokTTCLID, v.TikTokTTP, v.TikTokAdgroupID, v.TikTokCreativeID, v.TikTokAdIDV2, v.TikTokPlacement, v.TikTokContextCipher, v.AudioNovelID, v.EntryChapterID)
+	 ) INSERT INTO click_events(id,link_id,visitor_id,cookie_status,method,target_url,device,os,browser,country,region,city,source,campaign_id,adset_id,ad_id,referrer,parameters,attribution_conflict,classification,reason,event_type,status,meta_connection_id,meta_account_id,meta_measurement,meta_pixel_id,meta_pageview_enabled,meta_manual_enabled,meta_auto_enabled,meta_manual_event_name,surface,time_spent_threshold,novel_id,ad_platform,tiktok_pixel_id,tiktok_pixel_code,tiktok_ttclid,tiktok_ttp,tiktok_adgroup_id,tiktok_creative_id,tiktok_ad_id_v2,tiktok_placement,tiktok_context_cipher,audio_novel_id,audio_novel_title,entry_chapter_id,entry_chapter_number,entry_chapter_title,startup_theme,device_model,os_version,browser_version,client_ip,user_agent,request_url,referrer_url,accept_language,client_hints)
+	 SELECT $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,COALESCE(t.account_id,''),COALESCE(t.enabled,false),t.pixel_record_id,COALESCE(t.pageview_enabled,false),COALESCE(t.manual_enabled,false),COALESCE(t.auto_enabled,false),COALESCE(t.manual_event_name,'Contact'),$26,$27,$28,$30,tt.id,COALESCE(tt.pixel_code,''),$31,$32,$33,$34,$35,$36,$37,$38,COALESCE((SELECT title FROM audio_novels WHERE id=$38),''),$39,(SELECT chapter_number FROM novel_chapters WHERE id=$39),COALESCE((SELECT title FROM novel_chapters WHERE id=$39),''),CASE WHEN $40 IN ('countdown','cover_wall') THEN $40 ELSE 'countdown' END,$41,$42,$43,$44,$45,$46,$47,$48,$49 FROM (SELECT 1) anchor LEFT JOIN target t ON true LEFT JOIN tiktok_target tt ON true`, v.ID, v.LinkID, v.VisitorID, v.CookieStatus, v.Method, v.TargetURL, v.Device, v.OS, v.Browser, v.Country, v.Region, v.City, v.Source, v.CampaignID, v.AdsetID, v.AdID, v.Referrer, v.Parameters, v.AttributionConflict, v.Classification, v.Reason, v.Type, v.Status, v.MetaConnectionID, v.MetaPixelID, v.Surface, v.TimeSpentThreshold, v.NovelID, v.TikTokPixelID, v.AdPlatform, v.TikTokTTCLID, v.TikTokTTP, v.TikTokAdgroupID, v.TikTokCreativeID, v.TikTokAdIDV2, v.TikTokPlacement, v.TikTokContextCipher, v.AudioNovelID, v.EntryChapterID, v.StartupTheme, v.DeviceModel, v.OSVersion, v.BrowserVersion, v.ClientIP, v.UserAgent, v.RequestURL, v.ReferrerURL, v.AcceptLanguage, v.ClientHints)
 	return e
 }
 
@@ -93,6 +100,21 @@ func (r Repository) FreezeNovelLink(ctx context.Context, linkID int64) error {
 			SELECT 1 FROM novel_chapters c
 			WHERE c.id=l.entry_chapter_id AND c.novel_id=l.novel_id AND c.enabled AND c.deleted_at IS NULL
 		))`, linkID)
+	if err != nil {
+		return err
+	}
+	if result.RowsAffected() == 0 {
+		return pgx.ErrNoRows
+	}
+	return nil
+}
+
+// FreezeCoverLink locks a valid platform/Pixel pair on the first normal reader.
+func (r Repository) FreezeCoverLink(ctx context.Context, linkID int64) error {
+	result, err := r.DB.Exec(ctx, `UPDATE short_links SET first_visited_at=COALESCE(first_visited_at,now())
+		WHERE id=$1 AND product_type='cover' AND enabled AND
+		((ad_platform='meta' AND meta_connection_id IS NOT NULL AND meta_pixel_id IS NOT NULL AND tiktok_pixel_id IS NULL) OR
+		 (ad_platform='tiktok' AND tiktok_pixel_id IS NOT NULL AND meta_connection_id IS NULL AND meta_pixel_id IS NULL))`, linkID)
 	if err != nil {
 		return err
 	}

@@ -11,7 +11,7 @@ import (
 )
 
 func Scan(row pgx.Row) (l Link, e error) {
-	e = row.Scan(&l.ID, &l.Code, &l.Name, &l.TargetURL, &l.Enabled, &l.CampaignID, &l.AdsetID, &l.AdID, &l.Channel, &l.CreatedAt, &l.Mode, &l.LandingBrand, &l.LandingTitle, &l.LandingDescription, &l.LandingDetails, &l.LandingDelay, &l.MetaConnectionID, &l.AttributionMode, &l.MetaPixelID, &l.TimeSpentThreshold, &l.StartupTailSeconds, &l.ProductType, &l.NovelID, &l.AdPlatform, &l.TikTokPixelID, &l.AudioNovelID, &l.EntryChapterID)
+	e = row.Scan(&l.ID, &l.Code, &l.Name, &l.TargetURL, &l.Enabled, &l.CampaignID, &l.AdsetID, &l.AdID, &l.Channel, &l.CreatedAt, &l.Mode, &l.LandingBrand, &l.LandingTitle, &l.LandingDescription, &l.LandingDetails, &l.LandingDelay, &l.MetaConnectionID, &l.AttributionMode, &l.MetaPixelID, &l.TimeSpentThreshold, &l.StartupTailSeconds, &l.StartupTheme, &l.ProductType, &l.NovelID, &l.AdPlatform, &l.TikTokPixelID, &l.AudioNovelID, &l.EntryChapterID)
 	return
 }
 

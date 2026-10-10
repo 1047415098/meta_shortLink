@@ -258,6 +258,17 @@
             </p>
           </div>
         </el-card>
+        <!-- 普通短链接保留广告聚合表，同时补充与系统页面一致的逐次访问记录。 -->
+        <ProjectVisitRecords
+          :link-id="route.params.id"
+          surface="short_link"
+          :start="filters.start"
+          :end="filters.end"
+          :timezone="filters.tz"
+          :ad-id="isTikTok ? '' : filters.ad_id"
+          :ad-id-v2="isTikTok ? filters.ad_id : ''"
+          :request-key="recordsVersion"
+        />
       </template>
       <el-empty v-else-if="!busy && !error" description="暂无统计数据" />
     </div>
@@ -268,6 +279,7 @@
 import { computed, onBeforeUnmount, reactive, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import PageHeader from "../components/PageHeader.vue";
+import ProjectVisitRecords from "../components/ProjectVisitRecords.vue";
 import { getLinkStats } from "../api/analytics";
 import { settings } from "../stores/settings";
 import {
@@ -282,6 +294,8 @@ const route = useRoute(),
 const data = ref(null),
   busy = ref(false),
   error = ref("");
+// Visit rows use their own pagination but share the last successfully applied report filters.
+const recordsVersion = ref(0);
 const filters = reactive({ start: "", end: "", tz: "", ad_id: "" });
 const page = ref(1),
   sort = ref("visits"),
@@ -388,7 +402,10 @@ async function load() {
       order: order.value,
     });
     // Ignore stale responses when users change links, dates or sorting quickly.
-    if (alive && run === generation) data.value = result;
+    if (alive && run === generation) {
+      data.value = result;
+      recordsVersion.value++;
+    }
   } catch (e) {
     if (alive && run === generation) error.value = e.message;
   } finally {

@@ -91,6 +91,18 @@ test("startup loader keeps the first three seconds fixed and reads each link's f
   assert.equal(canFinishStartupLoader(8000, true), true);
 });
 
+test("free novel startup no longer contains the standalone cover-wall flow", async () => {
+  const [app, bootstrap, vite] = await Promise.all([
+    readFile(new URL("../src/App.vue", import.meta.url), "utf8"),
+    readFile(new URL("../src/bootstrap.js", import.meta.url), "utf8"),
+    readFile(new URL("../vite.config.js", import.meta.url), "utf8"),
+  ]);
+  // 免费小说始终保留原来的倒计时首屏；封面墙仅由独立 /cover/:code 项目承载。
+  assert.doesNotMatch(app, /PhotoWallStartup|cover_wall|photoWallOpen/);
+  assert.doesNotMatch(bootstrap, /cover_wall/);
+  assert.doesNotMatch(vite, /funnel-stage/);
+});
+
 test("startup loader closes when content becomes ready after the configured default minimum", () => {
   let clock = 8000;
   let scheduledFrame;
