@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"slices"
 	"strings"
 	"time"
 
@@ -13,7 +14,7 @@ import (
 
 var (
 	ErrBindingLocked = errors.New("advertising binding is locked after the first visit")
-	ErrHasVisits     = errors.New("visited cover links cannot be deleted")
+	ErrLinksNotFound = errors.New("one or more cover links do not exist")
 	ErrPixelInvalid  = errors.New("advertising pixel is invalid or disabled")
 )
 
@@ -33,7 +34,8 @@ func scanLink(row pgx.Row) (Link, error) {
 }
 
 func (r Repository) List(ctx context.Context) ([]Link, error) {
-	rows, err := r.DB.Query(ctx, "SELECT "+linkColumns+" FROM short_links l LEFT JOIN tiktok_pixels tp ON tp.id=l.tiktok_pixel_id WHERE l.product_type='cover' ORDER BY l.id DESC")
+	// Archived links stay in the database for reports but no longer appear in the active management list.
+	rows, err := r.DB.Query(ctx, "SELECT "+linkColumns+" FROM short_links l LEFT JOIN tiktok_pixels tp ON tp.id=l.tiktok_pixel_id WHERE l.product_type='cover' AND l.archived_at IS NULL ORDER BY l.id DESC")
 	if err != nil {
 		return nil, err
 	}
@@ -89,7 +91,7 @@ func (r Repository) Update(ctx context.Context, id int64, input LinkInput, actor
 	var currentMetaConnectionID, currentMetaPixelID, currentTikTokPixelID *int64
 	var firstVisitedAt *time.Time
 	if err = tx.QueryRow(ctx, `SELECT ad_platform,meta_connection_id,meta_pixel_id,tiktok_pixel_id,first_visited_at
-		FROM short_links WHERE id=$1 AND product_type='cover' FOR UPDATE`, id).
+		FROM short_links WHERE id=$1 AND product_type='cover' AND archived_at IS NULL FOR UPDATE`, id).
 		Scan(&currentPlatform, &currentMetaConnectionID, &currentMetaPixelID, &currentTikTokPixelID, &firstVisitedAt); err != nil {
 		return Link{}, err
 	}
@@ -104,7 +106,7 @@ func (r Repository) Update(ctx context.Context, id int64, input LinkInput, actor
 	item, err := scanLink(tx.QueryRow(ctx, `UPDATE short_links SET name=$2,enabled=$3,channel=$4,
 		meta_connection_id=$5,meta_pixel_id=$6,tiktok_pixel_id=$7,ad_platform=$8,attribution_mode='dynamic',
 		time_spent_threshold=$9,startup_theme='cover_wall',startup_tail_seconds=5
-		WHERE id=$1 AND product_type='cover'
+		WHERE id=$1 AND product_type='cover' AND archived_at IS NULL
 		RETURNING id,code,name,enabled,product_type,meta_connection_id,meta_pixel_id,tiktok_pixel_id,
 		COALESCE((SELECT pixel_code FROM tiktok_pixels WHERE id=tiktok_pixel_id),''),
 		COALESCE((SELECT name FROM tiktok_pixels WHERE id=tiktok_pixel_id),''),ad_platform,attribution_mode,time_spent_threshold,
@@ -121,25 +123,73 @@ func (r Repository) Update(ctx context.Context, id int64, input LinkInput, actor
 }
 
 func (r Repository) Delete(ctx context.Context, id int64, actor string) error {
+	_, err := r.archive(ctx, []int64{id}, actor, "cover_link.delete")
+	if errors.Is(err, ErrLinksNotFound) {
+		return pgx.ErrNoRows
+	}
+	return err
+}
+
+// DeleteBatch archives the complete selection atomically while retaining every historical report row.
+func (r Repository) DeleteBatch(ctx context.Context, ids []int64, actor string) (int64, error) {
+	return r.archive(ctx, ids, actor, "cover_link.delete_batch")
+}
+
+func (r Repository) archive(ctx context.Context, ids []int64, actor, action string) (int64, error) {
 	tx, err := r.DB.Begin(ctx)
 	if err != nil {
-		return err
+		return 0, err
 	}
 	defer tx.Rollback(ctx)
-	item, err := scanLink(tx.QueryRow(ctx, "SELECT "+linkColumns+" FROM short_links l LEFT JOIN tiktok_pixels tp ON tp.id=l.tiktok_pixel_id WHERE l.id=$1 AND l.product_type='cover' FOR UPDATE OF l", id))
+	orderedIDs := append([]int64(nil), ids...)
+	slices.Sort(orderedIDs)
+	rows, err := tx.Query(ctx, `SELECT id,code,name FROM short_links
+		WHERE id=ANY($1::bigint[]) AND product_type='cover' AND archived_at IS NULL ORDER BY id FOR UPDATE`, orderedIDs)
 	if err != nil {
-		return err
+		return 0, err
 	}
-	if item.FirstVisitedAt != nil {
-		return ErrHasVisits
+	type archivedLink struct {
+		ID   int64  `json:"id"`
+		Code string `json:"code"`
+		Name string `json:"name"`
 	}
-	if _, err = tx.Exec(ctx, "DELETE FROM short_links WHERE id=$1 AND product_type='cover'", id); err != nil {
-		return err
+	items := make([]archivedLink, 0, len(orderedIDs))
+	for rows.Next() {
+		var item archivedLink
+		if err = rows.Scan(&item.ID, &item.Code, &item.Name); err != nil {
+			rows.Close()
+			return 0, err
+		}
+		items = append(items, item)
 	}
-	if err = audit(ctx, tx, actor, "cover_link.delete", item); err != nil {
-		return err
+	err = rows.Err()
+	rows.Close()
+	if err != nil {
+		return 0, err
 	}
-	return tx.Commit(ctx)
+	if len(items) != len(orderedIDs) {
+		return 0, ErrLinksNotFound
+	}
+	// Disabling and archiving makes public access fail immediately without deleting analytics or delivery history.
+	result, err := tx.Exec(ctx, `UPDATE short_links SET enabled=false,archived_at=now()
+		WHERE id=ANY($1::bigint[]) AND product_type='cover' AND archived_at IS NULL`, orderedIDs)
+	if err != nil {
+		return 0, err
+	}
+	if result.RowsAffected() != int64(len(orderedIDs)) {
+		return 0, ErrLinksNotFound
+	}
+	detail, err := json.Marshal(map[string]any{"count": len(items), "links": items})
+	if err != nil {
+		return 0, err
+	}
+	if _, err = tx.Exec(ctx, "INSERT INTO audit_logs(actor,action,detail) VALUES($1,$2,$3)", actor, action, detail); err != nil {
+		return 0, err
+	}
+	if err = tx.Commit(ctx); err != nil {
+		return 0, err
+	}
+	return int64(len(items)), nil
 }
 
 func validatePixel(ctx context.Context, tx pgx.Tx, input LinkInput, allowDisabled bool) error {

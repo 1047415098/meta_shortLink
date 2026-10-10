@@ -1,0 +1,78 @@
+# 宝塔服务器复用宿主机 Nginx，只启动应用与独立 PostgreSQL，避免占用现有 80/443 端口。
+name: linkscope-lu81
+
+services:
+  db:
+    # 固定已验证的 PostgreSQL 镜像摘要，数据库端口不暴露到宿主机。
+    image: postgres:17-alpine@sha256:18cfe3ef5e6815560c98237d6216d1e5119702fb0f3894c8785dd58b8bbe5d73
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: analytics
+      POSTGRES_USER: analytics
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set the server database password}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: [CMD-SHELL, pg_isready -U analytics -d analytics]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+
+  app:
+    image: linkscope-lu81:cover-project-visit-detail-20261010
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.runtime
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    # 8080 已被现有宝塔站点占用，使用仅本机可访问的 18080 作为反向代理入口。
+    ports:
+      - "127.0.0.1:18080:8080"
+    environment:
+      DATABASE_URL: postgres://analytics:${POSTGRES_PASSWORD}@db:5432/analytics?sslmode=disable
+      PUBLIC_BASE_URL: https://meta.lu81.com
+      ADMIN_USER: ${ADMIN_USER:-admin}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?Set the administrator password}
+      APP_SECRET: ${APP_SECRET:?Set the server application secret}
+      META_ENCRYPTION_KEYS: ${META_ENCRYPTION_KEYS:-}
+      META_ENCRYPTION_KEY_ID: ${META_ENCRYPTION_KEY_ID:-}
+      TIKTOK_ENABLED: ${TIKTOK_ENABLED:-false}
+      TIKTOK_EVENTS_URL: ${TIKTOK_EVENTS_URL:-https://business-api.tiktok.com/open_api/v1.3/event/track/}
+      APIHZ_TRANSLATION_ID: ${APIHZ_TRANSLATION_ID:-}
+      APIHZ_TRANSLATION_KEY: ${APIHZ_TRANSLATION_KEY:-}
+      APIHZ_TRANSLATION_URL: ${APIHZ_TRANSLATION_URL:-https://cn.apihz.cn/api/zici/fanyiapihz.php}
+      DEEPL_AUTH_KEY: ${DEEPL_AUTH_KEY:-}
+      DEEPL_TRANSLATION_URL: ${DEEPL_TRANSLATION_URL:-https://api-free.deepl.com/v2/translate}
+      COOKIE_MODE: ${COOKIE_MODE:-all}
+      REPORT_TIMEZONE: Etc/GMT+8
+      RETENTION_DAYS: 90
+      # 仅信任当前 Docker 网桥网关，宝塔 Nginx 会覆盖公网传入的转发头。
+      TRUSTED_PROXIES: ${TRUSTED_PROXIES:?Set the exact Docker gateway address}
+      GEOIP_DB_PATH: /app/geoip/dbip-city-lite-2026-09.mmdb
+      AUDIO_NOVEL_DIR: /app/audio-novel
+      AUDIO_NOVEL_UPLOAD_DIR: /app/data/audio-novel-uploads
+      AUDIO_NOVEL_AUDIO_DIR: /app/data/audio-novel-audio
+      NOVEL_DIR: /app/novel-h5
+      NOVEL_UPLOAD_DIR: /app/data/novel-uploads
+      COVER_DIR: /app/cover-h5
+    volumes:
+      - ../geoip:/app/geoip:ro
+      - audio_novel_uploads:/app/data/audio-novel-uploads
+      - audio_novel_audio:/app/data/audio-novel-audio
+      - novel_uploads:/app/data/novel-uploads
+
+volumes:
+  # 数据库卷由当前 Compose 项目管理。
+  postgres_data:
+  # 上传文件卷已由迁移流程创建并恢复，显式复用它们以避免 Compose 误创空卷。
+  audio_novel_uploads:
+    external: true
+    name: linkscope-lu81_audio_novel_uploads
+  audio_novel_audio:
+    external: true
+    name: linkscope-lu81_audio_novel_audio
+  novel_uploads:
+    external: true
+    name: linkscope-lu81_novel_uploads

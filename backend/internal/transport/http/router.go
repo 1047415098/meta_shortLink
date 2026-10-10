@@ -157,6 +157,8 @@ func New(core *runtime.Core, h Handlers) (*gin.Engine, error) {
 	api.POST("/cover-links", h.Cover.CreateLink)
 	api.PATCH("/cover-links/:id", h.Cover.UpdateLink)
 	api.DELETE("/cover-links/:id", h.Cover.DeleteLink)
+	// 批量删除使用 JSON POST，避免代理层忽略 DELETE 请求体。
+	api.POST("/cover-links/batch-delete", h.Cover.DeleteLinks)
 	api.POST("/cover-links/:id/stats", h.Cover.Stats)
 	api.GET("/settings", func(c *gin.Context) {
 		c.JSON(200, gin.H{"public_base_url": core.Config.PublicURL, "timezone": core.Config.Timezone, "cookie_mode": core.Config.CookieMode, "retention_days": core.Config.RetentionDays, "geo_enabled": core.Geo != nil})

@@ -125,7 +125,74 @@ func TestCoverProjectLinkAttributionAndStatisticsAreIsolated(t *testing.T) {
 	if locked.Code != http.StatusConflict {
 		t.Fatalf("visited cover binding update: %d %s", locked.Code, locked.Body.String())
 	}
-	if response := call(a, http.MethodDelete, "/api/v1/cover-links/"+itoa(link.ID), "", admin); response.Code != http.StatusConflict {
-		t.Fatalf("visited cover delete: %d %s", response.Code, response.Body.String())
+	// 删除只归档链接：公开入口失效、管理列表隐藏，但原有统计仍可读取。
+	if response := call(a, http.MethodDelete, "/api/v1/cover-links/"+itoa(link.ID), "", admin); response.Code != http.StatusNoContent {
+		t.Fatalf("visited cover archive: %d %s", response.Code, response.Body.String())
+	}
+	if response := call(a, http.MethodGet, "/cover/cover-a", "", nil); response.Code != http.StatusNotFound {
+		t.Fatalf("archived cover remains public: %d %s", response.Code, response.Body.String())
+	}
+	listed := call(a, http.MethodPost, "/api/v1/cover-links/query", `{}`, admin)
+	if listed.Code != http.StatusOK || strings.Contains(listed.Body.String(), `"code":"cover-a"`) {
+		t.Fatalf("archived cover remains listed: %d %s", listed.Code, listed.Body.String())
+	}
+	retained := call(a, http.MethodPost, "/api/v1/cover-links/"+itoa(link.ID)+"/stats", fmt.Sprintf(`{"start":%q,"end":%q,"tz":"Etc/GMT+8","page":1}`, today, today), admin)
+	if retained.Code != http.StatusOK || !strings.Contains(retained.Body.String(), `"visits":1`) {
+		t.Fatalf("archived cover statistics were lost: %d %s", retained.Code, retained.Body.String())
+	}
+	var clicks, audits int
+	if err := a.DB.QueryRow(context.Background(), "SELECT count(*) FROM click_events WHERE link_id=$1", link.ID).Scan(&clicks); err != nil || clicks != 1 {
+		t.Fatalf("archived cover visits were removed: count=%d err=%v", clicks, err)
+	}
+	if err := a.DB.QueryRow(context.Background(), "SELECT count(*) FROM audit_logs WHERE action='cover_link.delete'").Scan(&audits); err != nil || audits != 1 {
+		t.Fatalf("cover archive audit missing: count=%d err=%v", audits, err)
+	}
+}
+
+func TestCoverProjectBatchArchiveIsAtomic(t *testing.T) {
+	a := setup(t)
+	admin := login(t, a)
+	connectionID, pixelID := testLinkMetaBinding(t, a)
+	create := func(code string) int64 {
+		// Each fixture uses the same valid Pixel because archiving does not alter attribution data.
+		response := call(a, http.MethodPost, "/api/v1/cover-links", fmt.Sprintf(`{"name":%q,"code":%q,"enabled":true,"ad_platform":"meta","meta_connection_id":%d,"meta_pixel_id":%d,"time_spent_threshold":10}`, code, code, connectionID, pixelID), admin)
+		if response.Code != http.StatusOK {
+			t.Fatalf("create %s: %d %s", code, response.Code, response.Body.String())
+		}
+		var item struct {
+			ID int64 `json:"id"`
+		}
+		if err := json.Unmarshal(response.Body.Bytes(), &item); err != nil {
+			t.Fatal(err)
+		}
+		return item.ID
+	}
+	firstID, secondID := create("cover-batch-a"), create("cover-batch-b")
+	path := "/api/v1/cover-links/batch-delete"
+	if response := call(a, http.MethodPost, path, fmt.Sprintf(`{"ids":[%d,%d]}`, firstID, secondID), nil); response.Code != http.StatusUnauthorized {
+		t.Fatalf("anonymous batch archive: %d %s", response.Code, response.Body.String())
+	}
+	for _, body := range []string{`{"ids":[]}`, `{"ids":[0]}`, fmt.Sprintf(`{"ids":[%d,%d]}`, firstID, firstID)} {
+		if response := call(a, http.MethodPost, path, body, admin); response.Code != http.StatusBadRequest {
+			t.Fatalf("invalid batch archive %s: %d %s", body, response.Code, response.Body.String())
+		}
+	}
+	if response := call(a, http.MethodPost, path, fmt.Sprintf(`{"ids":[%d,999999]}`, firstID), admin); response.Code != http.StatusNotFound {
+		t.Fatalf("missing batch archive: %d %s", response.Code, response.Body.String())
+	}
+	var activeBefore int
+	if err := a.DB.QueryRow(context.Background(), "SELECT count(*) FROM short_links WHERE id=ANY($1::bigint[]) AND archived_at IS NULL", []int64{firstID, secondID}).Scan(&activeBefore); err != nil || activeBefore != 2 {
+		t.Fatalf("missing selection caused partial archive: count=%d err=%v", activeBefore, err)
+	}
+	response := call(a, http.MethodPost, path, fmt.Sprintf(`{"ids":[%d,%d]}`, firstID, secondID), admin)
+	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"deleted":2`) {
+		t.Fatalf("batch archive: %d %s", response.Code, response.Body.String())
+	}
+	var archived, audits int
+	if err := a.DB.QueryRow(context.Background(), "SELECT count(*) FROM short_links WHERE id=ANY($1::bigint[]) AND archived_at IS NOT NULL AND NOT enabled", []int64{firstID, secondID}).Scan(&archived); err != nil || archived != 2 {
+		t.Fatalf("batch archive state: count=%d err=%v", archived, err)
+	}
+	if err := a.DB.QueryRow(context.Background(), "SELECT count(*) FROM audit_logs WHERE action='cover_link.delete_batch'").Scan(&audits); err != nil || audits != 1 {
+		t.Fatalf("batch archive audit missing: count=%d err=%v", audits, err)
 	}
 }

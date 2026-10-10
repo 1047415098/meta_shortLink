@@ -31,7 +31,8 @@ var ErrInvalidAdvertisingBinding = errors.New("所选广告平台的 Pixel 不�
 var ErrAdvertisingBindingLocked = errors.New("该短链接已有访问记录，广告平台已锁定；如需更换平台请新建短链接")
 
 func (r Repository) ByCode(ctx context.Context, code string) (Link, error) {
-	return Scan(r.DB.QueryRow(ctx, "SELECT "+Columns+" FROM short_links WHERE code=$1", code))
+	// Archived campaign links keep their reports but are no longer public entry points.
+	return Scan(r.DB.QueryRow(ctx, "SELECT "+Columns+" FROM short_links WHERE code=$1 AND archived_at IS NULL", code))
 }
 func (r Repository) ByID(ctx context.Context, id int64) (Link, error) {
 	return Scan(r.DB.QueryRow(ctx, "SELECT "+Columns+" FROM short_links WHERE id=$1", id))

@@ -5,6 +5,7 @@ import (
 	"crypto/hmac"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/url"
 	"strconv"
 	"strings"
@@ -89,8 +90,6 @@ func (h *Handler) DeleteLink(c *gin.Context) {
 	defer cancel()
 	err := (Repository{DB: h.DB}).Delete(ctx, id, h.Config.AdminUser)
 	switch {
-	case errors.Is(err, ErrHasVisits):
-		c.JSON(409, gin.H{"error": "该链接已有访问记录，只能停用，不能删除"})
 	case errors.Is(err, pgx.ErrNoRows):
 		c.Status(404)
 	case err != nil:
@@ -98,6 +97,49 @@ func (h *Handler) DeleteLink(c *gin.Context) {
 	default:
 		c.Status(204)
 	}
+}
+
+type deleteLinksRequest struct {
+	IDs []int64 `json:"ids"`
+}
+
+// DeleteLinks archives 1–1000 cover links in one transaction and keeps all historical statistics.
+func (h *Handler) DeleteLinks(c *gin.Context) {
+	var input deleteLinksRequest
+	decoder := json.NewDecoder(c.Request.Body)
+	decoder.DisallowUnknownFields()
+	if c.ContentType() != "application/json" || decoder.Decode(&input) != nil || decoder.Decode(&struct{}{}) != io.EOF {
+		runtime.Bad(c, "请使用 JSON 提交要删除的封面链接")
+		return
+	}
+	if len(input.IDs) == 0 || len(input.IDs) > 1000 {
+		runtime.Bad(c, "请选择 1–1000 条封面链接")
+		return
+	}
+	seen := make(map[int64]struct{}, len(input.IDs))
+	for _, id := range input.IDs {
+		if id < 1 {
+			runtime.Bad(c, "封面链接编号无效")
+			return
+		}
+		if _, exists := seen[id]; exists {
+			runtime.Bad(c, "封面链接编号不能重复")
+			return
+		}
+		seen[id] = struct{}{}
+	}
+	ctx, cancel := context.WithTimeout(c.Request.Context(), 10*time.Second)
+	defer cancel()
+	deleted, err := (Repository{DB: h.DB}).DeleteBatch(ctx, input.IDs, h.Config.AdminUser)
+	if errors.Is(err, ErrLinksNotFound) {
+		c.JSON(404, gin.H{"error": "部分封面链接不存在，请刷新后重试"})
+		return
+	}
+	if err != nil {
+		runtime.ServerError(c, err)
+		return
+	}
+	c.JSON(200, gin.H{"deleted": deleted})
 }
 
 func (h *Handler) writeLink(c *gin.Context, item Link, err error) {
